@@ -5,19 +5,27 @@ import { useTasks } from '../hooks/useTasks';
 import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
-import { History, RefreshCw } from 'lucide-react';
+import { RefreshCw, ChevronDown } from 'lucide-react';
+import { USER_INITIALS } from '../supabaseClient';
+
+const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
 
 export default function TasksPage() {
   const { profile } = useAuth();
+  const [viewingEmail, setViewingEmail] = useState(null); // null = propia vista
+
+  const effectiveEmail = viewingEmail || profile?.email;
+  const effectiveInitials = USER_INITIALS[effectiveEmail] || profile?.initials;
+  const isViewingOther = viewingEmail && viewingEmail !== profile?.email;
+
   const {
     tasksByCategory, loading, fetchTasks,
     createTask, createSubtask, updateTask,
     completeTask, deleteTask, reorderTasks,
     getSubtasks, CATEGORIES,
-  } = useTasks();
+  } = useTasks(viewingEmail);
 
   const [selectedTask, setSelectedTask] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -27,8 +35,6 @@ export default function TasksPage() {
   const handleDragEnd = (event) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
-    // Encontrar en qué categoría está la tarea
     for (const category of CATEGORIES) {
       const catTasks = tasksByCategory[category];
       const oldIndex = catTasks.findIndex(t => t.id === active.id);
@@ -47,14 +53,7 @@ export default function TasksPage() {
     fetchTasks();
   };
 
-  if (loading) {
-    return (
-      <div style={styles.loading}>
-        <div style={styles.loadingSpinner} />
-        Cargando tareas...
-      </div>
-    );
-  }
+  const totalTasks = Object.values(tasksByCategory).flat().length;
 
   return (
     <div style={styles.container}>
@@ -62,43 +61,73 @@ export default function TasksPage() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Tareas Pendientes</h1>
-          <p style={styles.subtitle}>
-            {profile?.initials} · {Object.values(tasksByCategory).flat().length} tareas activas
-          </p>
-        </div>
-        <div style={styles.headerActions}>
-          <button onClick={fetchTasks} style={styles.iconBtn} title="Actualizar">
-            <RefreshCw size={16} color="#5f6368" />
-          </button>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            style={{ ...styles.iconBtn, ...(showHistory ? styles.iconBtnActive : {}) }}
-            title="Historial"
-          >
-            <History size={16} color={showHistory ? '#1a73e8' : '#5f6368'} />
-          </button>
-        </div>
-      </div>
-
-      {/* Columnas de tareas en layout horizontal */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <div style={styles.columnsWrapper}>
-          <div style={styles.columns}>
-            {CATEGORIES.map(category => (
-              <TaskColumn
-                key={category}
-                category={category}
-                tasks={tasksByCategory[category] || []}
-                onOpenTask={setSelectedTask}
-                onCompleteTask={handleCompleteTask}
-                onCreateTask={createTask}
-              />
-            ))}
+          <div style={styles.subtitleRow}>
+            {/* Selector de usuario (solo propietarios) */}
+            {profile?.isOwner ? (
+              <div style={styles.userSelectorWrapper}>
+                <select
+                  value={viewingEmail || profile?.email}
+                  onChange={e => {
+                    setViewingEmail(e.target.value === profile?.email ? null : e.target.value);
+                    setSelectedTask(null);
+                  }}
+                  style={styles.userSelector}
+                >
+                  {ALL_USERS.map(u => (
+                    <option key={u.email} value={u.email}>
+                      {u.initials}{u.email === profile?.email ? ' (yo)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} color="#5f6368" style={styles.selectorIcon} />
+              </div>
+            ) : (
+              <span style={styles.userBadge}>{profile?.initials}</span>
+            )}
+            <span style={styles.taskCountText}>
+              {isViewingOther && (
+                <span style={styles.viewingBadge}>Vista de {effectiveInitials}</span>
+              )}
+              · {totalTasks} tareas activas
+            </span>
           </div>
         </div>
-      </DndContext>
+        <button onClick={fetchTasks} style={styles.refreshBtn} title="Actualizar">
+          <RefreshCw size={16} color="#5f6368" />
+        </button>
+      </div>
 
-      {/* Panel lateral de detalle */}
+      {/* Banner vista de otro usuario */}
+      {isViewingOther && (
+        <div style={styles.viewingBanner}>
+          Estás viendo y editando las tareas de <strong>{effectiveInitials}</strong>.
+          <button onClick={() => { setViewingEmail(null); setSelectedTask(null); }} style={styles.bannerBtn}>
+            Volver a mi vista
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div style={styles.loading}>Cargando tareas...</div>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <div style={styles.columnsWrapper}>
+            <div style={styles.columns}>
+              {CATEGORIES.map(category => (
+                <TaskColumn
+                  key={category}
+                  category={category}
+                  tasks={tasksByCategory[category] || []}
+                  onOpenTask={setSelectedTask}
+                  onCompleteTask={handleCompleteTask}
+                  onCreateTask={createTask}
+                />
+              ))}
+            </div>
+          </div>
+        </DndContext>
+      )}
+
       {selectedTask && (
         <TaskPanel
           task={selectedTask}
@@ -115,52 +144,52 @@ export default function TasksPage() {
 }
 
 const styles = {
-  container: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
+  container: { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-    flexShrink: 0,
+    display: 'flex', justifyContent: 'space-between',
+    alignItems: 'flex-start', marginBottom: 16, flexShrink: 0,
   },
-  title: {
-    fontSize: 24, fontWeight: 700,
-    color: '#202124', margin: '0 0 4px',
+  title: { fontSize: 24, fontWeight: 700, color: '#202124', margin: '0 0 6px' },
+  subtitleRow: { display: 'flex', alignItems: 'center', gap: 8 },
+  userSelectorWrapper: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
+  userSelector: {
+    appearance: 'none', border: '1px solid #dadce0',
+    borderRadius: 8, padding: '5px 28px 5px 10px',
+    fontSize: 13, fontWeight: 600, color: '#202124',
+    background: '#fff', cursor: 'pointer', outline: 'none',
+    fontFamily: 'inherit',
   },
-  subtitle: { fontSize: 14, color: '#5f6368', margin: 0 },
-  headerActions: { display: 'flex', gap: 8 },
-  iconBtn: {
+  selectorIcon: { position: 'absolute', right: 8, pointerEvents: 'none' },
+  userBadge: {
+    fontSize: 13, fontWeight: 600, color: '#1a73e8',
+    background: '#e8f0fe', borderRadius: 8,
+    padding: '4px 10px',
+  },
+  taskCountText: { fontSize: 14, color: '#5f6368', display: 'flex', alignItems: 'center', gap: 6 },
+  viewingBadge: {
+    background: '#fce8e6', color: '#c5221f',
+    fontSize: 11, fontWeight: 600,
+    padding: '2px 8px', borderRadius: 20,
+  },
+  refreshBtn: {
     background: '#fff', border: '1px solid #dadce0',
     borderRadius: 8, padding: '8px 10px',
     cursor: 'pointer', display: 'flex', alignItems: 'center',
   },
-  iconBtnActive: {
-    background: '#e8f0fe', borderColor: '#1a73e8',
+  viewingBanner: {
+    background: '#fff3e0', border: '1px solid #ffe0b2',
+    borderRadius: 8, padding: '10px 16px',
+    fontSize: 13, color: '#e65100',
+    marginBottom: 16, flexShrink: 0,
+    display: 'flex', alignItems: 'center', gap: 12,
   },
-  columnsWrapper: {
-    flex: 1,
-    overflow: 'auto',
+  bannerBtn: {
+    marginLeft: 'auto', padding: '5px 12px',
+    background: '#e65100', color: '#fff',
+    border: 'none', borderRadius: 6,
+    fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
   },
-  columns: {
-    display: 'flex',
-    gap: 16,
-    padding: '4px 4px 24px',
-    minWidth: 'max-content',
-  },
-  loading: {
-    display: 'flex', alignItems: 'center',
-    justifyContent: 'center', gap: 12,
-    height: '100%', color: '#5f6368', fontSize: 14,
-  },
-  loadingSpinner: {
-    width: 20, height: 20, borderRadius: '50%',
-    border: '2px solid #e8eaed',
-    borderTopColor: '#1a73e8',
-    animation: 'spin 0.8s linear infinite',
-  },
+  columnsWrapper: { flex: 1, overflow: 'auto' },
+  columns: { display: 'flex', gap: 16, padding: '4px 4px 24px', minWidth: 'max-content' },
+  loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#5f6368', fontSize: 14 },
 };
