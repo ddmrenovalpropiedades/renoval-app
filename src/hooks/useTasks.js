@@ -4,29 +4,50 @@ import { useAuth } from '../context/AuthContext';
 
 const CATEGORIES = ['Entrada', 'Salida', 'Equipo', 'Solicitudes', 'Misceláneo'];
 
-export function useTasks() {
+export function useTasks(targetEmail = null) {
   const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Email efectivo: si se pasa targetEmail (vista de propietario), usar ese
+  const effectiveEmail = targetEmail || user?.email;
+
   const fetchTasks = useCallback(async () => {
-    if (!user?.email) return;
+    if (!effectiveEmail) return;
     setLoading(true);
+
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
       .eq('completed', false)
       .is('parent_id', null)
+      .or(`owner_email.eq.${effectiveEmail},assigned_to.eq.${effectiveEmail}`)
+      .lte('next_occurrence', new Date().toISOString().split('T')[0])
       .order('position', { ascending: true })
       .order('created_at', { ascending: false });
 
-    if (!error) setTasks(data || []);
+    // También traer tareas sin next_occurrence (no recurrentes)
+    const { data: noDate } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('completed', false)
+      .is('parent_id', null)
+      .is('next_occurrence', null)
+      .or(`owner_email.eq.${effectiveEmail},assigned_to.eq.${effectiveEmail}`)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (!error) {
+      const all = [...(data || []), ...(noDate || [])];
+      // Deduplicar por id
+      const unique = Array.from(new Map(all.map(t => [t.id, t])).values());
+      setTasks(unique);
+    }
     setLoading(false);
-  }, [user]);
+  }, [effectiveEmail]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
-  // Obtener subtareas de una tarea
   const getSubtasks = async (parentId) => {
     const { data } = await supabase
       .from('tasks')
@@ -37,16 +58,14 @@ export function useTasks() {
     return data || [];
   };
 
-  // Crear tarea
   const createTask = async (taskData) => {
-    const email = user.email;
+    const email = effectiveEmail;
     const categoryTasks = tasks.filter(t =>
       t.category === taskData.category &&
       (t.owner_email === email || t.assigned_to === email)
     );
     const minPosition = categoryTasks.length > 0
-      ? Math.min(...categoryTasks.map(t => t.position)) - 1
-      : 0;
+      ? Math.min(...categoryTasks.map(t => t.position)) - 1 : 0;
 
     const newTask = {
       owner_email: email,
@@ -56,25 +75,21 @@ export function useTasks() {
       assigned_to: taskData.assigned_to || null,
       recurrence: taskData.recurrence || 'none',
       recurrence_config: taskData.recurrence_config || null,
+      next_occurrence: null,
       position: minPosition,
       completed: false,
     };
 
     const { data, error } = await supabase.from('tasks').insert(newTask).select().single();
     if (!error) {
-      setTasks(prev => [data, ...prev.filter(t =>
-        !(t.category === data.category && t.owner_email !== email && t.assigned_to !== email)
-      ), ...prev.filter(t =>
-        t.category === data.category && t.owner_email !== email && t.assigned_to !== email
-      )]);
-      // Si es Solicitudes, crear copia en Equipo del destinatario
+      setTasks(prev => [data, ...prev]);
       if (taskData.category === 'Solicitudes' && taskData.assigned_to) {
         await supabase.from('tasks').insert({
           owner_email: taskData.assigned_to,
           title: taskData.title,
           category: 'Equipo',
           notes: taskData.notes || null,
-          assigned_to: email, // quien delegó
+          assigned_to: email,
           position: -Date.now(),
           completed: false,
         });
@@ -83,12 +98,12 @@ export function useTasks() {
     return { data, error };
   };
 
-  // Crear subtarea
   const createSubtask = async (parentId, title) => {
+    const parent = tasks.find(t => t.id === parentId);
     const { data, error } = await supabase.from('tasks').insert({
-      owner_email: user.email,
+      owner_email: effectiveEmail,
       title,
-      category: tasks.find(t => t.id === parentId)?.category || 'Entrada',
+      category: parent?.category || 'Entrada',
       parent_id: parentId,
       position: Date.now(),
       completed: false,
@@ -96,7 +111,6 @@ export function useTasks() {
     return { data, error };
   };
 
-  // Actualizar tarea
   const updateTask = async (id, updates) => {
     const { data, error } = await supabase
       .from('tasks').update(updates).eq('id', id).select().single();
@@ -106,7 +120,6 @@ export function useTasks() {
     return { data, error };
   };
 
-  // Completar tarea
   const completeTask = async (task) => {
     // Guardar en historial
     await supabase.from('tasks_history').insert({
@@ -117,32 +130,26 @@ export function useTasks() {
       assigned_to: task.assigned_to,
     });
 
-    // Si es recurrente, calcular próxima ocurrencia
     if (task.recurrence && task.recurrence !== 'none') {
+      // Calcular próxima ocurrencia y ocultar hasta entonces
       const next = getNextOccurrence(task);
       await supabase.from('tasks').update({
-        completed: false,
-        position: -Date.now(),
         next_occurrence: next,
       }).eq('id', task.id);
-      setTasks(prev => prev.map(t => t.id === task.id
-        ? { ...t, completed: false, next_occurrence: next }
-        : t
-      ));
+      // Quitar de la vista local hasta la próxima fecha
+      setTasks(prev => prev.filter(t => t.id !== task.id));
     } else {
-      // Eliminar tarea y sus subtareas (CASCADE)
       await supabase.from('tasks').delete().eq('id', task.id);
       setTasks(prev => prev.filter(t => t.id !== task.id));
 
-      // Si es tarea de Equipo o Solicitudes, completar el espejo
+      // Sincronizar espejo Equipo ↔ Solicitudes
       if (task.category === 'Equipo' && task.assigned_to) {
         const { data: mirror } = await supabase
-          .from('tasks')
-          .select('*')
+          .from('tasks').select('*')
           .eq('owner_email', task.assigned_to)
           .eq('category', 'Solicitudes')
           .eq('title', task.title)
-          .single();
+          .maybeSingle();
         if (mirror) {
           await supabase.from('tasks_history').insert({
             owner_email: mirror.owner_email,
@@ -156,12 +163,11 @@ export function useTasks() {
       }
       if (task.category === 'Solicitudes' && task.assigned_to) {
         const { data: mirror } = await supabase
-          .from('tasks')
-          .select('*')
+          .from('tasks').select('*')
           .eq('owner_email', task.assigned_to)
           .eq('category', 'Equipo')
           .eq('title', task.title)
-          .single();
+          .maybeSingle();
         if (mirror) {
           await supabase.from('tasks').delete().eq('id', mirror.id);
         }
@@ -169,47 +175,68 @@ export function useTasks() {
     }
   };
 
-  // Eliminar tarea
   const deleteTask = async (id) => {
     await supabase.from('tasks').delete().eq('id', id);
     setTasks(prev => prev.filter(t => t.id !== id));
   };
 
-  // Reordenar tareas (drag & drop)
   const reorderTasks = async (category, orderedIds) => {
     setTasks(prev => {
-      const others = prev.filter(t => t.category !== category ||
-        (t.owner_email !== user.email && t.assigned_to !== user.email));
+      const others = prev.filter(t => t.category !== category);
       const reordered = orderedIds.map((id, index) => {
         const task = prev.find(t => t.id === id);
         return { ...task, position: index };
       });
       return [...reordered, ...others];
     });
-    // Actualizar posiciones en BD
     for (let i = 0; i < orderedIds.length; i++) {
       await supabase.from('tasks').update({ position: i }).eq('id', orderedIds[i]);
     }
   };
 
-  // Calcular próxima ocurrencia
   const getNextOccurrence = (task) => {
+    const config = task.recurrence_config || {};
     const now = new Date();
+
     switch (task.recurrence) {
-      case 'daily':   now.setDate(now.getDate() + 1); break;
-      case 'weekly':  now.setDate(now.getDate() + 7); break;
-      case 'monthly': now.setMonth(now.getMonth() + 1); break;
-      case 'yearly':  now.setFullYear(now.getFullYear() + 1); break;
+      case 'daily':
+        now.setDate(now.getDate() + 1);
+        break;
+      case 'weekly': {
+        const weekdays = config.weekdays || [1];
+        // Encontrar el próximo día de la semana configurado
+        let daysAhead = 1;
+        for (let i = 1; i <= 7; i++) {
+          const next = new Date(now);
+          next.setDate(now.getDate() + i);
+          if (weekdays.includes(next.getDay())) { daysAhead = i; break; }
+        }
+        now.setDate(now.getDate() + daysAhead);
+        break;
+      }
+      case 'monthly': {
+        const day = config.day || now.getDate();
+        now.setMonth(now.getMonth() + 1);
+        now.setDate(day);
+        break;
+      }
+      case 'yearly': {
+        const day = config.day || now.getDate();
+        const month = config.month ? config.month - 1 : now.getMonth();
+        now.setFullYear(now.getFullYear() + 1);
+        now.setMonth(month);
+        now.setDate(day);
+        break;
+      }
       default: break;
     }
     return now.toISOString().split('T')[0];
   };
 
-  // Agrupar tareas por categoría para el usuario actual
   const tasksByCategory = CATEGORIES.reduce((acc, cat) => {
     acc[cat] = tasks.filter(t =>
       t.category === cat &&
-      (t.owner_email === user?.email || t.assigned_to === user?.email)
+      (t.owner_email === effectiveEmail || t.assigned_to === effectiveEmail)
     );
     return acc;
   }, {});
