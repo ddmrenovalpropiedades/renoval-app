@@ -54,7 +54,15 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
 
   const handleAddSubtask = async () => {
     if (!newSubtask.trim()) return;
-    const { data } = await createSubtask(task.id, newSubtask.trim());
+    const { supabase } = await import('../supabaseClient');
+    const { data, error } = await supabase.from('tasks').insert({
+      owner_email: task.owner_email,
+      title: newSubtask.trim(),
+      category: task.category,
+      parent_id: task.id,
+      position: Date.now(),
+      completed: false,
+    }).select().single();
     if (data) setSubtasks(prev => [...prev, data]);
     setNewSubtask('');
     subtaskInputRef.current?.focus();
