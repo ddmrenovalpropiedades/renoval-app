@@ -6,6 +6,7 @@ import {
   Building2
 } from 'lucide-react';
 import UserManagement from '../components/UserManagement';
+import TasksPage from './TasksPage';
 
 const NAV_ITEMS = [
   { id: 'pizarra',    label: 'Pizarra',              icon: LayoutGrid,   ownerOnly: false },
@@ -92,6 +93,8 @@ export default function AppShell() {
 
 function ModuleRenderer({ module, profile }) {
   switch (module) {
+    case 'tareas':
+      return <TasksPage />;
     case 'usuarios':
       return <UserManagement />;
     default:
