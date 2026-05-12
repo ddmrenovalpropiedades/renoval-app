@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, RefreshCw, ChevronDown, GripVertical, Check } from 'lucide-react';
+import { X, Plus, Trash2, RefreshCw, Check } from 'lucide-react';
 import { USER_INITIALS } from '../supabaseClient';
 
 const RECURRENCE_OPTIONS = [
@@ -24,7 +24,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
 
   useEffect(() => {
     loadSubtasks();
-  }, [task.id]);
+  }, [task.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSubtasks = async () => {
     const data = await getSubtasks(task.id);
