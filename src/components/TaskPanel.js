@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, RefreshCw, Check } from 'lucide-react';
-import { USER_INITIALS } from '../supabaseClient';
+import { USER_INITIALS, supabase } from '../supabaseClient';
 
 const RECURRENCE_OPTIONS = [
   { value: 'none',    label: 'No se repite' },
@@ -54,7 +54,6 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
 
   const handleAddSubtask = async () => {
     if (!newSubtask.trim()) return;
-    const { supabase } = await import('../supabaseClient');
     const { data } = await supabase.from('tasks').insert({
       owner_email: task.owner_email,
       title: newSubtask.trim(),
@@ -74,7 +73,6 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
   };
 
   const handleCompleteSubtask = async (subtask) => {
-    const { supabase } = await import('../supabaseClient');
     await supabase.from('tasks').delete().eq('id', subtask.id);
     const remaining = subtasks.filter(s => s.id !== subtask.id);
     setSubtasks(remaining);
@@ -85,7 +83,6 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
   };
 
   const handleDeleteSubtask = async (subtaskId) => {
-    const { supabase } = await import('../supabaseClient');
     await supabase.from('tasks').delete().eq('id', subtaskId);
     setSubtasks(prev => prev.filter(s => s.id !== subtaskId));
   };
