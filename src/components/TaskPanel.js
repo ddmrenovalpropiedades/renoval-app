@@ -48,6 +48,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
 
   const handleSave = async (extra = {}) => {
     if (!title.trim()) return;
+    if (task._dormant && Object.keys(extra).length === 0) return; // don't auto-save dormant
     await onUpdate(task.id, {
       title: title.trim(),
       notes: notes.trim() || null,
@@ -153,7 +154,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
             <textarea
               value={title}
               onChange={e => setTitle(e.target.value)}
-              onBlur={() => handleSave()}
+              onBlur={() => !task._dormant && handleSave()}
               style={styles.titleInput}
               rows={1}
               placeholder="Título de la tarea"
