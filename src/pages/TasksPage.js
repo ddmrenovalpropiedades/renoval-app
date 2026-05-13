@@ -205,6 +205,6 @@ const styles = {
     fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
   },
   columnsWrapper: { flex: 1, overflow: 'auto' },
-  columns: { display: 'flex', gap: 16, padding: '4px 4px 24px', minWidth: 'max-content' },
+  columns: { display: 'flex', gap: 16, padding: '4px 4px 24px', minWidth: 'max-content', alignItems: 'flex-start' },
   loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#5f6368', fontSize: 14 },
 };
