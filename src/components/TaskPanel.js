@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Trash2, RefreshCw, AlertCircle, Check } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { formatLocalDate } from '../hooks/useTasks';
 import AnimatedCheckbox from './AnimatedCheckbox';
 
 const RECURRENCE_OPTIONS = [
@@ -20,6 +21,38 @@ const WEEKDAYS = [
 const getCategoryColor = (cat) => {
   const colors = { 'Entrada': '#1565C0', 'Salida': '#2E7D32', 'Equipo': '#6A1B9A', 'Solicitudes': '#E65100', 'Misceláneo': '#37474F' };
   return colors[cat] || '#5f6368';
+};
+
+function SaveRecurrenceButton({ onClick }) {
+  const [pressed, setPressed] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleClick = async () => {
+    setPressed(true);
+    await onClick();
+    setPressed(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <button onClick={handleClick} style={{
+      ...saveRecBtnStyle,
+      transform: pressed ? 'scale(0.96)' : 'scale(1)',
+      background: saved ? '#34a853' : '#1a73e8',
+    }}>
+      <Check size={14} style={{ marginRight: 6 }} />
+      {saved ? '✓ Guardada' : 'Guardar recurrencia'}
+    </button>
+  );
+}
+
+const saveRecBtnStyle = {
+  marginTop: 12, padding: '8px 16px',
+  color: '#fff', border: 'none', borderRadius: 8,
+  fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+  fontWeight: 500, display: 'flex', alignItems: 'center',
+  transition: 'all 0.15s ease',
 };
 
 export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplete, createSubtask, getSubtasks }) {
@@ -141,7 +174,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
           {task._dormant && (
             <div style={{ background: '#e8f0fe', padding: '10px 20px', fontSize: 13, color: '#1a73e8', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>🔄</span>
-              <span>Tarea recurrente dormida · próxima aparición: <strong>{task.next_occurrence ? new Date(task.next_occurrence + 'T12:00:00').toLocaleDateString('es-CL') : '—'}</strong></span>
+              <span>Tarea recurrente dormida · próxima aparición: <strong>{task.next_occurrence ? formatLocalDate(task.next_occurrence) : '—'}</strong></span>
             </div>
           )}
           {/* Título */}
@@ -288,10 +321,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
               </div>
             )}
             {recurrence !== 'none' && (
-              <button onClick={handleSaveRecurrence} style={styles.saveRecurrenceBtn}>
-                <Check size={14} style={{ marginRight: 6 }} />
-                Guardar recurrencia
-              </button>
+              <SaveRecurrenceButton onClick={handleSaveRecurrence} />
             )}
           </div>
         </div>
