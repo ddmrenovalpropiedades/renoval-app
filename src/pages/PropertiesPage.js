@@ -119,7 +119,11 @@ export default function PropertiesPage() {
       );
     }
     if (filterE.length > 0) {
-      result = result.filter(p => filterE.includes(p.e1) || filterE.includes(p.e2));
+      result = result.filter(p => {
+        const propEncargados = [p.e1, p.e2].filter(Boolean);
+        // Mostrar filas que contengan TODOS los encargados seleccionados
+        return filterE.every(e => propEncargados.includes(e));
+      });
     }
     return result;
   }, [properties, search, filterE]);
