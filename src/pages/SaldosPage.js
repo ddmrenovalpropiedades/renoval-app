@@ -20,17 +20,19 @@ const parseArriendo = (val) => {
 };
 
 // ── Color logic ───────────────────────────────────────────────
+const isPagada = (val) => {
+  if (!val) return false;
+  return val.toLowerCase() === 'pagada';
+};
+
 const getCellStyle = (val, tipo) => {
-  const base = { padding: '6px 8px', borderRadius: 4, fontSize: 12, textAlign: 'right', minWidth: 80 };
-  if (!val || val === '') return { ...base, background: '#FAF3E0', color: 'transparent' };
+  const base = { padding: 0, fontSize: 12, textAlign: 'center', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 };
+  if (!val || val === '') return { ...base, background: '#FAF3E0' };
 
-  const lower = typeof val === 'string' ? val.toLowerCase() : '';
-  if (lower === 'pagada') return { ...base, background: '#fff', color: '#bdbdbd' };
-  if (['temporalmente no', 'error desconocido'].includes(lower))
-    return { ...base, background: '#fff', color: '#bdbdbd' };
-
+  if (isPagada(val)) return { ...base, background: '#fff', color: '#bdbdbd' };
+  // Non-pagada text values (errors, etc) → black text
   const n = parseAmount(val);
-  if (n === null) return { ...base, background: '#fff', color: '#9aa0a6' };
+  if (n === null) return { ...base, background: '#fff', color: '#202124' };
 
   if (tipo === 'agua') {
     if (n < 40000) return { ...base, background: '#fff', color: '#bdbdbd' };
@@ -73,15 +75,19 @@ function EditableCell({ value, tipo, alerta, onChange }) {
   if (editing) {
     return (
       <input value={local} onChange={e => setLocal(e.target.value)} onBlur={handleBlur}
-        autoFocus style={{ ...cellStyle, border: '1px solid #1a73e8', outline: 'none', width: '100%' }} />
+        autoFocus style={{ ...cellStyle, border: '1px solid #1a73e8', outline: 'none', width: '100%', textAlign: 'center', padding: '4px 6px' }} />
     );
   }
 
+  const display = tipo === 'arriendo' && value && !isNaN(parseFloat(value))
+    ? '$' + Math.round(parseFloat(value)).toLocaleString('es-CL')
+    : value || '';
+
   return (
     <div onClick={() => { setLocal(value || ''); setEditing(true); }}
-      style={{ ...cellStyle, cursor: 'text', display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
+      style={{ ...cellStyle, cursor: 'text', minHeight: 28, padding: '4px 6px' }}>
       {alerta && <AlertCircle size={11} color="#ea4335" style={{ flexShrink: 0 }} title="Deuda anterior pendiente" />}
-      {value || ''}
+      {display}
     </div>
   );
 }
@@ -271,9 +277,9 @@ export default function SaldosPage() {
     { key: 'luz_an',  label: 'LUZ An',  tipo: 'luz',  alerta: null, groupEnd: true },
     { key: 'gas_ac',  label: 'GAS Ac',  tipo: 'gas',  alerta: 'alerta_gas', groupStart: true },
     { key: 'gas_an',  label: 'GAS An',  tipo: 'gas',  alerta: null, groupEnd: true },
-    { key: 'deuda_arriendo', label: 'DEUDA ARR.', tipo: 'arriendo', alerta: null, groupStart: true, groupEnd: true },
     { key: 'gc_ac',   label: 'GC Ac',   tipo: 'gc',   alerta: null, groupStart: true },
     { key: 'gc_an',   label: 'GC An',   tipo: 'gc',   alerta: null, groupEnd: true },
+    { key: 'deuda_arriendo', label: 'DEUDA ARR.', tipo: 'arriendo', alerta: null, groupStart: true, groupEnd: true },
   ];
 
   return (
@@ -338,8 +344,8 @@ export default function SaldosPage() {
             <thead>
               <tr>
                 <th style={{ ...styles.th, minWidth: 280, textAlign: 'left' }}>PROPIEDAD</th>
-                <th style={{ ...styles.th, minWidth: 160, textAlign: 'left' }}>PROPIETARIO</th>
-                {COLS.map(c => <th key={c.key} style={{ ...styles.th, minWidth: 88, textAlign: 'right', ...(c.groupStart ? { borderLeft: '2px solid #bdbdbd' } : {}), ...(c.groupEnd ? { borderRight: '2px solid #bdbdbd' } : {}) }}>{c.label}</th>)}
+                <th style={{ ...styles.th, minWidth: 160, textAlign: 'center' }}>PROPIETARIO</th>
+                {COLS.map(c => <th key={c.key} style={{ ...styles.th, minWidth: 70, textAlign: 'center', ...(c.groupStart ? { borderLeft: '2px solid #bdbdbd' } : {}), ...(c.groupEnd ? { borderRight: '2px solid #bdbdbd' } : {}) }}>{c.label}</th>)}
                 <th style={{ ...styles.th, minWidth: 40 }}></th>
                 <th style={{ ...styles.th, minWidth: 50, textAlign: 'center' }}>E1</th>
                 <th style={{ ...styles.th, minWidth: 50, textAlign: 'center' }}>E2</th>
@@ -352,9 +358,9 @@ export default function SaldosPage() {
                 const hasEdits = !!(edits[row.id] && Object.keys(edits[row.id]).length > 0);
                 const merged = { ...row, ...(edits[row.id] || {}) };
                 return (
-                  <tr key={row.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}>
-                    <td style={{ ...styles.td, fontSize: 12 }}>{row.propiedad}</td>
-                    <td style={{ ...styles.td, fontSize: 11, color: '#5f6368', textAlign: 'left' }}>{row.propietario || ''}</td>
+                  <tr key={row.id} style={{ background: '#fff' }}>
+                    <td style={{ ...styles.tdFixed, fontSize: 12 }}>{row.propiedad}</td>
+                    <td style={{ ...styles.tdFixed, fontSize: 11, color: '#5f6368', textAlign: 'center' }}>{row.propietario || ''}</td>
                     {COLS.map(c => (
                       <td key={c.key} style={{ ...styles.td, padding: '4px 6px', ...(c.groupStart ? { borderLeft: '2px solid #bdbdbd' } : {}), ...(c.groupEnd ? { borderRight: '2px solid #bdbdbd' } : {}) }}>
                         <EditableCell
@@ -365,17 +371,17 @@ export default function SaldosPage() {
                         />
                       </td>
                     ))}
-                    <td style={{ ...styles.td, textAlign: 'center', padding: '4px 6px' }}>
+                    <td style={{ ...styles.tdFixed, textAlign: 'center' }}>
                       {hasEdits && (
                         <button onClick={() => handleSaveRow(row.id)} style={styles.saveRowBtn} title="Guardar cambios">
                           <Save size={13} color="#1a73e8" />
                         </button>
                       )}
                     </td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                    <td style={{ ...styles.tdFixed, textAlign: 'center' }}>
                       {row.e1 && <span style={{ ...styles.badge, background: `${ENCARGADO_COLORS[row.e1] || '#9aa0a6'}22`, color: ENCARGADO_COLORS[row.e1] || '#9aa0a6', border: `1px solid ${ENCARGADO_COLORS[row.e1] || '#9aa0a6'}44` }}>{row.e1}</span>}
                     </td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                    <td style={{ ...styles.tdFixed, textAlign: 'center' }}>
                       {row.e2 && <span style={{ ...styles.badge, background: `${ENCARGADO_COLORS[row.e2] || '#9aa0a6'}22`, color: ENCARGADO_COLORS[row.e2] || '#9aa0a6', border: `1px solid ${ENCARGADO_COLORS[row.e2] || '#9aa0a6'}44` }}>{row.e2}</span>}
                     </td>
                   </tr>
@@ -414,7 +420,8 @@ const styles = {
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  td: { padding: '6px 10px', fontSize: 13, color: '#202124', borderBottom: '1px solid #e8eaed', borderRight: '1px solid #e8eaed', verticalAlign: 'middle' },
+  td: { padding: 0, fontSize: 13, color: '#202124', borderBottom: '1px solid #e8eaed', borderRight: '1px solid #e8eaed', verticalAlign: 'middle' },
+  tdFixed: { padding: '6px 10px', fontSize: 13, color: '#202124', borderBottom: '1px solid #e8eaed', borderRight: '1px solid #e8eaed', verticalAlign: 'middle' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   saveRowBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'inline-flex', alignItems: 'center' },
