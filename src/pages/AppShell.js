@@ -8,6 +8,7 @@ import {
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
 import PropertiesPage from './PropertiesPage';
+import SaldosPage from './SaldosPage';
 
 const NAV_ITEMS = [
   { id: 'cartera',    label: 'Cartera',               icon: Building2,    ownerOnly: false },
@@ -15,7 +16,7 @@ const NAV_ITEMS = [
   { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,   ownerOnly: false },
   { id: 'tareas',     label: 'Tareas Pendientes',     icon: CheckSquare,  ownerOnly: false },
   { id: 'cuentas',    label: 'Cuentas por Cobrar',    icon: DollarSign,   ownerOnly: true  },
-  { id: 'servicios',  label: 'Servicios y Gastos',    icon: Zap,          ownerOnly: false },
+  { id: 'servicios',  label: 'Saldos',                icon: Zap,          ownerOnly: false },
   { id: 'usuarios',   label: 'Usuarios',              icon: Users,        ownerOnly: true  },
 ];
 
@@ -97,6 +98,8 @@ function ModuleRenderer({ module, profile }) {
   switch (module) {
     case 'cartera':
       return <PropertiesPage />;
+    case 'servicios':
+      return <SaldosPage />;
     case 'tareas':
       return <TasksPage />;
     case 'usuarios':
