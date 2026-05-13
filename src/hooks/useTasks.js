@@ -158,14 +158,29 @@ export function useTasks(targetEmail = null) {
 
       // Sincronizar espejo Solicitudes ↔ Equipo
       if (task.category === 'Equipo') {
-        // Buscar solicitud original por solicitud_id o por título+delegante
-        let mirrorQuery = supabase.from('tasks').select('*').eq('category', 'Solicitudes');
+        // Estructura BD: Equipo.owner_email=destinatario, Equipo.assigned_to=remitente
+        // Solicitud espejo: owner_email=remitente, assigned_to=destinatario
+        const remitente = task.assigned_to;  // quien delegó
+        const destinatario = task.owner_email; // quien recibe
+
+        let mirror = null;
+        // Primero intentar por solicitud_id
         if (task.solicitud_id) {
-          mirrorQuery = mirrorQuery.eq('id', task.solicitud_id);
-        } else {
-          mirrorQuery = mirrorQuery.eq('title', task.title).eq('assigned_to', task.assigned_to);
+          const { data } = await supabase.from('tasks')
+            .select('*').eq('id', task.solicitud_id).eq('category', 'Solicitudes').maybeSingle();
+          mirror = data;
         }
-        const { data: mirror } = await mirrorQuery.maybeSingle();
+        // Fallback: buscar por remitente + título + destinatario
+        if (!mirror && remitente) {
+          const { data } = await supabase.from('tasks')
+            .select('*')
+            .eq('category', 'Solicitudes')
+            .eq('owner_email', remitente)
+            .eq('assigned_to', destinatario)
+            .eq('title', task.title)
+            .maybeSingle();
+          mirror = data;
+        }
         if (mirror) {
           await supabase.from('tasks_history').insert({
             owner_email: mirror.owner_email,
@@ -177,23 +192,22 @@ export function useTasks(targetEmail = null) {
         }
       }
       if (task.category === 'Solicitudes') {
-        // Borrar tarea de Equipo del destinatario
-        let equipoQuery = supabase.from('tasks').select('id').eq('category', 'Equipo');
+        // Solicitud.owner_email=remitente, Solicitud.assigned_to=destinatario
+        const destinatario = task.assigned_to;
+
+        // Buscar tarea Equipo por solicitud_id primero
         if (task.id) {
-          equipoQuery = equipoQuery.eq('solicitud_id', task.id);
-        }
-        const { data: equipoRows } = await equipoQuery;
-        if (equipoRows && equipoRows.length > 0) {
-          for (const row of equipoRows) {
-            await supabase.from('tasks').delete().eq('id', row.id);
-          }
-        } else {
-          // Fallback: buscar por título y owner del destinatario
-          if (task.assigned_to) {
-            await supabase.from('tasks')
-              .delete()
+          const { data: equipoRows } = await supabase.from('tasks')
+            .select('id').eq('solicitud_id', task.id).eq('category', 'Equipo');
+          if (equipoRows && equipoRows.length > 0) {
+            for (const row of equipoRows) {
+              await supabase.from('tasks').delete().eq('id', row.id);
+            }
+          } else if (destinatario) {
+            // Fallback: por destinatario + título
+            await supabase.from('tasks').delete()
               .eq('category', 'Equipo')
-              .eq('owner_email', task.assigned_to)
+              .eq('owner_email', destinatario)
               .eq('title', task.title);
           }
         }
