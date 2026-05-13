@@ -126,12 +126,37 @@ export function useTasks(targetEmail = null) {
   const updateTask = async (id, updates) => {
     // Si se cambia recurrencia, recalcular next_occurrence
     if (updates.recurrence && updates.recurrence !== 'none' && updates.recurrence_config) {
-      updates.next_occurrence = null; // se mostrará de inmediato con nueva config
+      updates.next_occurrence = null;
     }
     const { data, error } = await supabase
       .from('tasks').update(updates).eq('id', id).select().single();
     if (!error) {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
+
+      // Sincronizar notas y recurrencia con la tarea espejo (Solicitudes ↔ Equipo)
+      const syncFields = {};
+      if ('notes' in updates) syncFields.notes = updates.notes;
+      if ('recurrence' in updates) syncFields.recurrence = updates.recurrence;
+      if ('recurrence_config' in updates) syncFields.recurrence_config = updates.recurrence_config;
+      if ('next_occurrence' in updates) syncFields.next_occurrence = updates.next_occurrence;
+      if ('urgent' in updates) syncFields.urgent = updates.urgent;
+      if ('due_date' in updates) syncFields.due_date = updates.due_date;
+
+      if (Object.keys(syncFields).length > 0 && data) {
+        if (data.category === 'Solicitudes') {
+          // Sincronizar hacia la tarea de Equipo del destinatario
+          await supabase.from('tasks')
+            .update(syncFields)
+            .eq('solicitud_id', id)
+            .eq('category', 'Equipo');
+        } else if (data.category === 'Equipo' && data.solicitud_id) {
+          // Sincronizar hacia la Solicitud original
+          await supabase.from('tasks')
+            .update(syncFields)
+            .eq('id', data.solicitud_id)
+            .eq('category', 'Solicitudes');
+        }
+      }
     }
     return { data, error };
   };
