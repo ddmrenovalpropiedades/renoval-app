@@ -55,7 +55,7 @@ const saveRecBtnStyle = {
   transition: 'all 0.15s ease',
 };
 
-export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplete, createSubtask, getSubtasks }) {
+export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplete, createSubtask, getSubtasks, onSubtasksChanged }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes || '');
   const [recurrence, setRecurrence] = useState(task.recurrence || 'none');
@@ -95,15 +95,12 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
 
   const handleAddSubtask = async () => {
     if (!newSubtask.trim()) return;
-    const { data } = await supabase.from('tasks').insert({
-      owner_email: task.owner_email,
-      title: newSubtask.trim(),
-      category: task.category,
-      parent_id: task.id,
-      position: Date.now(),
-      completed: false,
-    }).select().single();
-    if (data) setSubtasks(prev => [...prev, data]);
+    // Use createSubtask from hook — handles mirroring to Equipo automatically
+    const { data } = await createSubtask(task.id, newSubtask.trim());
+    if (data) {
+      setSubtasks(prev => [...prev, data]);
+      if (onSubtasksChanged) onSubtasksChanged();
+    }
     setNewSubtask('');
     subtaskInputRef.current?.focus();
   };
