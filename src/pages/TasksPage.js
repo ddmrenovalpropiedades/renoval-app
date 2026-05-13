@@ -15,6 +15,7 @@ export default function TasksPage() {
   const { profile } = useAuth();
   const [viewingEmail, setViewingEmail] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [subtaskReloadTrigger, setSubtaskReloadTrigger] = useState(0);
 
   const effectiveEmail = viewingEmail || profile?.email;
   const effectiveInitials = USER_INITIALS[effectiveEmail] || profile?.initials;
@@ -130,6 +131,7 @@ export default function TasksPage() {
                   onCreateTask={createTask}
                   currentUserEmail={effectiveEmail}
                   dormantTasks={dormantByCategory[category] || []}
+                  subtaskReloadTrigger={subtaskReloadTrigger}
                 />
               ))}
             </div>
@@ -146,12 +148,13 @@ export default function TasksPage() {
       {selectedTask && (
         <TaskPanel
           task={selectedTask}
-          onClose={() => setSelectedTask(null)}
+          onClose={() => { setSelectedTask(null); fetchTasks(); }}
           onUpdate={updateTask}
           onDelete={deleteTask}
           onComplete={handleCompleteTask}
           createSubtask={createSubtask}
           getSubtasks={getSubtasks}
+          onSubtasksChanged={() => { fetchTasks(); setSubtaskReloadTrigger(k => k + 1); }}
         />
       )}
     </div>
