@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, RefreshCw, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
+import { Plus, RefreshCw, ChevronDown, ChevronRight, Clock } from 'lucide-react';
 import { supabase, USER_INITIALS } from '../supabaseClient';
 import AnimatedCheckbox from './AnimatedCheckbox';
 import SubtaskPanel from './SubtaskPanel';
+import { formatLocalDate } from '../hooks/useTasks';
 
 const CATEGORY_COLORS = {
   'Entrada':     { header: '#1565C0', light: '#E3F2FD' },
@@ -16,24 +17,21 @@ const CATEGORY_COLORS = {
 
 const WORKERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
 
-// Subtarea en el listado
 function SubtaskItem({ subtask, onComplete, onOpen }) {
   return (
     <div style={styles.subtaskItem}>
-      <AnimatedCheckbox onClick={() => onComplete(subtask)} size={16} color="#1a73e8" urgent={subtask.urgent} />
+      <AnimatedCheckbox onClick={() => onComplete(subtask)} size={16} urgent={subtask.urgent} />
       <span onClick={() => onOpen(subtask)} style={{ ...styles.subtaskLabel, cursor: 'pointer' }}>
         {subtask.title}
       </span>
-      {subtask.urgent && <AlertCircle size={11} color="#ea4335" style={{ flexShrink: 0 }} />}
-      {subtask.due_date && new Date(subtask.due_date) < new Date() && (
-        <span style={styles.overdueDot} title="Vencida" />
+      {subtask.urgent && (
+        <span style={styles.urgentDot} title="Urgente">!</span>
       )}
     </div>
   );
 }
 
-// Tarea principal
-function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
+function TaskItem({ task, onOpen, onComplete, currentUserEmail, onSubtaskComplete }) {
   const [subtasks, setSubtasks] = useState([]);
   const [expanded, setExpanded] = useState(true);
   const [selectedSubtask, setSelectedSubtask] = useState(null);
@@ -41,40 +39,43 @@ function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
 
-  useEffect(() => { loadSubtasks(); }, [task.id]); // eslint-disable-line
-
-  const loadSubtasks = async () => {
-    const { data } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('parent_id', task.id)
-      .eq('completed', false)
+  const loadSubtasks = useCallback(async () => {
+    const { data } = await supabase.from('tasks').select('*')
+      .eq('parent_id', task.id).eq('completed', false)
       .order('position', { ascending: true });
     setSubtasks(data || []);
-  };
+  }, [task.id]);
 
-  // Refrescar subtareas cuando cambia el panel
-  const handleSubtaskUpdate = (id, updates) => {
-    setSubtasks(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
-  };
+  useEffect(() => { loadSubtasks(); }, [loadSubtasks]);
 
   const handleCompleteSubtask = async (subtask) => {
+    // If Equipo subtask, also delete mirror in Solicitudes
+    if (task.category === 'Equipo' && subtask.solicitud_id) {
+      await supabase.from('tasks').delete().eq('id', subtask.solicitud_id);
+    }
+    // If Solicitudes subtask, also delete mirror in Equipo
+    if (task.category === 'Solicitudes') {
+      const { data: mirror } = await supabase.from('tasks').select('id')
+        .eq('solicitud_id', subtask.id).eq('category', 'Equipo').maybeSingle();
+      if (mirror) await supabase.from('tasks').delete().eq('id', mirror.id);
+    }
     await supabase.from('tasks').delete().eq('id', subtask.id);
     const remaining = subtasks.filter(s => s.id !== subtask.id);
     setSubtasks(remaining);
     if (remaining.length === 0) onComplete(task);
   };
 
-  const hasSubtasks = subtasks.length > 0;
+  const handleSubtaskUpdate = (id, updates) => {
+    setSubtasks(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  };
+
   const isUrgent = task.urgent;
   const isOverdue = task.due_date && new Date(task.due_date) < new Date();
+  const hasSubtasks = subtasks.length > 0;
 
-  // Prefijo: en Solicitudes mostrar siglas del destinatario, en Equipo mostrar siglas del remitente
+  // Display prefix
   let prefix = '';
-  if (task.category === 'Solicitudes' && task.assigned_to) {
-    prefix = `[${USER_INITIALS[task.assigned_to] || '?'}] `;
-  } else if (task.category === 'Equipo' && task.assigned_to) {
-    // assigned_to en Equipo = quien delegó la tarea
+  if ((task.category === 'Solicitudes' || task.category === 'Equipo') && task.assigned_to) {
     prefix = `[${USER_INITIALS[task.assigned_to] || '?'}] `;
   }
 
@@ -82,21 +83,9 @@ function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
     <div ref={setNodeRef} style={{ ...styles.taskWrapper, ...style }}>
       <div style={styles.taskItem}>
         <span {...listeners} {...attributes} style={styles.grip}>⠿</span>
-        <AnimatedCheckbox
-          onClick={() => !hasSubtasks && onComplete(task)}
-          color={categoryColor}
-          urgent={isUrgent}
-        />
+        <AnimatedCheckbox onClick={() => !hasSubtasks && onComplete(task)} urgent={isUrgent} />
         <span onClick={() => onOpen(task)} style={styles.taskTitle}>
-          {isUrgent && (
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 14, height: 14, borderRadius: '50%',
-            background: '#ea4335', color: '#fff',
-            fontSize: 10, fontWeight: 900,
-            marginRight: 5, flexShrink: 0, lineHeight: 1,
-          }}>!</span>
-        )}
+          {isUrgent && <span style={styles.urgentDot} title="Urgente">!</span>}
           {prefix}{task.title}
           {task.recurrence && task.recurrence !== 'none' && (
             <RefreshCw size={10} style={{ marginLeft: 5, color: '#9aa0a6', verticalAlign: 'middle' }} />
@@ -105,7 +94,6 @@ function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
         </span>
       </div>
 
-      {/* Subtareas */}
       {hasSubtasks && (
         <>
           <div style={styles.subtaskToggle}>
@@ -117,32 +105,61 @@ function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
           {expanded && (
             <div style={styles.subtaskList}>
               {subtasks.map(sub => (
-                <SubtaskItem
-                  key={sub.id}
-                  subtask={sub}
+                <SubtaskItem key={sub.id} subtask={sub}
                   onComplete={handleCompleteSubtask}
-                  onOpen={setSelectedSubtask}
-                />
+                  onOpen={setSelectedSubtask} />
               ))}
             </div>
           )}
         </>
       )}
 
-      {/* Panel de subtarea */}
       {selectedSubtask && (
-        <SubtaskPanel
-          subtask={selectedSubtask}
+        <SubtaskPanel subtask={selectedSubtask}
           onClose={() => setSelectedSubtask(null)}
           onUpdate={handleSubtaskUpdate}
-          onComplete={handleCompleteSubtask}
-        />
+          onComplete={handleCompleteSubtask} />
       )}
     </div>
   );
 }
 
-// Modal para asignar destinatario al crear solicitud
+// Mini history for Solicitudes column
+function SolicitudesHistory({ currentUserEmail }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetch = async () => {
+      const { data } = await supabase.from('tasks_history')
+        .select('*').eq('owner_email', currentUserEmail).eq('category', 'Solicitudes')
+        .order('completed_at', { ascending: false }).limit(10);
+      setItems(data || []);
+      setLoading(false);
+    };
+    fetch();
+  }, [currentUserEmail]);
+
+  if (loading) return <div style={styles.historyEmpty}>Cargando...</div>;
+  if (!items.length) return <div style={styles.historyEmpty}>Sin tareas completadas aún.</div>;
+
+  return (
+    <div>
+      {items.map(item => (
+        <div key={item.id} style={styles.historyItem}>
+          <span style={styles.historyPrefix}>
+            {item.assigned_to ? `[${USER_INITIALS[item.assigned_to] || '?'}]` : ''}
+          </span>
+          <span style={styles.historyTitle}>{item.title}</span>
+          <span style={styles.historyDate}>
+            {new Date(item.completed_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
   const [title, setTitle] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
@@ -154,38 +171,25 @@ function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
         <h3 style={styles.modalTitle}>Nueva Solicitud</h3>
         <div style={styles.modalField}>
           <label style={styles.modalLabel}>Tarea</label>
-          <input
-            autoFocus
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="Descripción de la tarea..."
-            style={styles.modalInput}
-            onKeyDown={e => e.key === 'Escape' && onCancel()}
-          />
+          <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="Descripción de la tarea..." style={styles.modalInput}
+            onKeyDown={e => e.key === 'Escape' && onCancel()} />
         </div>
         <div style={styles.modalField}>
           <label style={styles.modalLabel}>Asignar a</label>
           <div style={styles.workerGrid}>
             {others.map(w => (
-              <button
-                key={w.email}
-                onClick={() => setAssignedTo(w.email)}
-                style={{
-                  ...styles.workerBtn,
-                  ...(assignedTo === w.email ? styles.workerBtnActive : {}),
-                }}
-              >
+              <button key={w.email} onClick={() => setAssignedTo(w.email)}
+                style={{ ...styles.workerBtn, ...(assignedTo === w.email ? styles.workerBtnActive : {}) }}>
                 {w.initials}
               </button>
             ))}
           </div>
         </div>
         <div style={styles.modalActions}>
-          <button
-            onClick={() => title.trim() && assignedTo && onConfirm(title.trim(), assignedTo)}
+          <button onClick={() => title.trim() && assignedTo && onConfirm(title.trim(), assignedTo)}
             disabled={!title.trim() || !assignedTo}
-            style={{ ...styles.modalConfirm, ...(!title.trim() || !assignedTo ? styles.modalConfirmDisabled : {}) }}
-          >
+            style={{ ...styles.modalConfirm, ...(!title.trim() || !assignedTo ? styles.modalConfirmDisabled : {}) }}>
             Crear solicitud
           </button>
           <button onClick={onCancel} style={styles.modalCancel}>Cancelar</button>
@@ -195,13 +199,13 @@ function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
   );
 }
 
-// Columna principal
 export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail }) {
   const colors = CATEGORY_COLORS[category];
   const [newTitle, setNewTitle] = useState('');
   const [adding, setAdding] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [showDormant, setShowDormant] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const isSolicitudes = category === 'Solicitudes';
 
@@ -213,24 +217,12 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
     setAdding(false);
   };
 
-  const handleNewTask = () => {
-    if (isSolicitudes) {
-      setShowAssignModal(true);
-    } else {
-      setAdding(true);
-    }
-  };
+  const handleNewTask = () => isSolicitudes ? setShowAssignModal(true) : setAdding(true);
 
   const handleSolicitudConfirm = async (title, assignedTo) => {
-    const senderInitials = USER_INITIALS[currentUserEmail] || '?';
-    const recipientInitials = USER_INITIALS[assignedTo] || '?';
-    await onCreateTask({
-      title,
-      category,
-      assigned_to: assignedTo,
-      senderInitials,
-      recipientInitials,
-    });
+    await onCreateTask({ title, category, assigned_to: assignedTo,
+      senderInitials: USER_INITIALS[currentUserEmail] || '?',
+      recipientInitials: USER_INITIALS[assignedTo] || '?' });
     setShowAssignModal(false);
   };
 
@@ -242,6 +234,11 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
         </button>
         <span style={{ ...styles.categoryName, color: colors.header }}>{category.toUpperCase()}</span>
         <span style={styles.taskCount}>{tasks.length}</span>
+        {isSolicitudes && (
+          <button onClick={() => setShowHistory(!showHistory)} style={{ ...styles.addBtn, color: colors.header }} title="Historial de solicitudes">
+            <Clock size={14} />
+          </button>
+        )}
         <button onClick={handleNewTask} style={{ ...styles.addBtn, color: colors.header }} title="Nueva tarea">
           <Plus size={16} />
         </button>
@@ -251,27 +248,17 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
         <div style={styles.taskList}>
           <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
             {tasks.map(task => (
-              <TaskItem
-                key={task.id}
-                task={task}
-                onOpen={onOpenTask}
-                onComplete={onCompleteTask}
-                categoryColor={colors.header}
-                currentUserEmail={currentUserEmail}
-              />
+              <TaskItem key={task.id} task={task}
+                onOpen={onOpenTask} onComplete={onCompleteTask}
+                currentUserEmail={currentUserEmail} />
             ))}
           </SortableContext>
 
           {adding && !isSolicitudes ? (
             <form onSubmit={handleAdd} style={styles.addForm}>
-              <input
-                autoFocus
-                value={newTitle}
-                onChange={e => setNewTitle(e.target.value)}
-                placeholder="Título de la tarea..."
-                style={styles.addInput}
-                onKeyDown={e => e.key === 'Escape' && setAdding(false)}
-              />
+              <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                placeholder="Título de la tarea..." style={styles.addInput}
+                onKeyDown={e => e.key === 'Escape' && setAdding(false)} />
               <div style={styles.addFormActions}>
                 <button type="submit" style={styles.addConfirmBtn}>Agregar</button>
                 <button type="button" onClick={() => setAdding(false)} style={styles.addCancelBtn}>Cancelar</button>
@@ -284,7 +271,18 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
             </button>
           )}
 
-          {/* Tareas recurrentes dormidas */}
+          {/* Mini historial Solicitudes */}
+          {isSolicitudes && showHistory && (
+            <div style={styles.historySection}>
+              <div style={styles.historySectionTitle}>
+                <Clock size={11} color="#E65100" />
+                <span>Últimas 10 completadas</span>
+              </div>
+              <SolicitudesHistory currentUserEmail={currentUserEmail} />
+            </div>
+          )}
+
+          {/* Tareas dormidas */}
           {dormantTasks.length > 0 && (
             <div style={styles.dormantSection}>
               <button onClick={() => setShowDormant(!showDormant)} style={styles.dormantToggle}>
@@ -294,46 +292,38 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
                 </span>
                 {showDormant ? <ChevronDown size={11} color="#9aa0a6" /> : <ChevronRight size={11} color="#9aa0a6" />}
               </button>
-              {showDormant && dormantTasks.map(task => (
-                <div key={task.id} style={styles.dormantItem} onClick={() => onOpenTask(task)}>
-                  <RefreshCw size={11} color="#1a73e8" style={{ flexShrink: 0 }} />
-                  <span style={styles.dormantTitle}>{task.title}</span>
-                  <span style={styles.dormantDate}>
-                    {task.next_occurrence ? new Date(task.next_occurrence + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : ''}
-                  </span>
-                </div>
-              ))}
+              {showDormant && dormantTasks.map(task => {
+                let prefix = '';
+                if ((task.category === 'Solicitudes' || task.category === 'Equipo') && task.assigned_to) {
+                  prefix = `[${USER_INITIALS[task.assigned_to] || '?'}] `;
+                }
+                return (
+                  <div key={task.id} style={styles.dormantItem} onClick={() => onOpenTask(task)}>
+                    <RefreshCw size={11} color="#1a73e8" style={{ flexShrink: 0 }} />
+                    <span style={styles.dormantTitle}>{prefix}{task.title}</span>
+                    <span style={styles.dormantDate}>
+                      {task.next_occurrence ? formatLocalDate(task.next_occurrence) : ''}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
       {showAssignModal && (
-        <AssignModal
-          onConfirm={handleSolicitudConfirm}
+        <AssignModal onConfirm={handleSolicitudConfirm}
           onCancel={() => setShowAssignModal(false)}
-          currentUserEmail={currentUserEmail}
-        />
+          currentUserEmail={currentUserEmail} />
       )}
     </div>
   );
 }
 
 const styles = {
-  column: {
-    background: '#fff', borderRadius: 12,
-    border: '1px solid #e8eaed',
-    minWidth: 260, width: 260, flexShrink: 0,
-    display: 'flex', flexDirection: 'column',
-    overflow: 'visible',
-    alignSelf: 'flex-start',
-    boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
-  },
-  columnHeader: {
-    display: 'flex', alignItems: 'center',
-    padding: '10px 12px', gap: 6,
-    borderBottom: '1px solid #e8eaed',
-  },
+  column: { background: '#fff', borderRadius: 12, border: '1px solid #e8eaed', minWidth: 260, width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'visible', alignSelf: 'flex-start', boxShadow: '0 1px 6px rgba(0,0,0,0.06)' },
+  columnHeader: { display: 'flex', alignItems: 'center', padding: '10px 12px', gap: 6, borderBottom: '1px solid #e8eaed' },
   collapseToggle: { background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' },
   categoryName: { fontSize: 11, fontWeight: 700, letterSpacing: 0.8, flex: 1 },
   taskCount: { fontSize: 11, color: '#9aa0a6', background: '#f1f3f4', borderRadius: 10, padding: '1px 7px' },
@@ -342,28 +332,15 @@ const styles = {
   taskWrapper: { borderBottom: '1px solid #f8f9fa' },
   taskItem: { display: 'flex', alignItems: 'center', padding: '7px 10px 7px 8px', gap: 8 },
   grip: { cursor: 'grab', color: '#dadce0', fontSize: 14, flexShrink: 0, userSelect: 'none' },
-  taskTitle: {
-    flex: 1, fontSize: 14, color: '#3c4043',
-    cursor: 'pointer', lineHeight: 1.4,
-    overflow: 'hidden', textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap', display: 'flex', alignItems: 'center',
-  },
-  overdueBadge: {
-    marginLeft: 6, fontSize: 10, color: '#ea4335',
-    background: '#fce8e6', padding: '1px 6px',
-    borderRadius: 10, fontWeight: 600, flexShrink: 0,
-  },
+  taskTitle: { flex: 1, fontSize: 14, color: '#3c4043', cursor: 'pointer', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 },
+  urgentDot: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#ea4335', color: '#fff', fontSize: 10, fontWeight: 900, flexShrink: 0, lineHeight: 1 },
+  overdueBadge: { marginLeft: 6, fontSize: 10, color: '#ea4335', background: '#fce8e6', padding: '1px 6px', borderRadius: 10, fontWeight: 600, flexShrink: 0 },
   subtaskToggle: { paddingLeft: 36 },
-  expandBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', gap: 4,
-    padding: '2px 4px',
-  },
+  expandBtn: { background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px' },
   subtaskBadge: { fontSize: 11, color: '#9aa0a6' },
   subtaskList: { paddingLeft: 36, paddingBottom: 6 },
   subtaskItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px 4px 0' },
   subtaskLabel: { fontSize: 13, color: '#5f6368', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  overdueDot: { width: 6, height: 6, borderRadius: '50%', background: '#ea4335', flexShrink: 0 },
   addForm: { padding: '8px 12px', borderTop: '1px solid #f1f3f4' },
   addInput: { width: '100%', border: '1px solid #1a73e8', borderRadius: 8, padding: '8px 10px', fontSize: 14, outline: 'none', fontFamily: 'inherit', marginBottom: 8 },
   addFormActions: { display: 'flex', gap: 8 },
@@ -371,7 +348,19 @@ const styles = {
   addCancelBtn: { padding: '6px 14px', background: 'none', color: '#5f6368', border: '1px solid #dadce0', borderRadius: 6, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
   addTaskBtn: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer' },
   addTaskLabel: { fontSize: 13, color: '#9aa0a6' },
-  // Modal
+  historySection: { borderTop: '1px solid #f1f3f4', padding: '8px 0' },
+  historySectionTitle: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px 8px', fontSize: 11, fontWeight: 600, color: '#E65100' },
+  historyItem: { display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderBottom: '1px solid #fafafa' },
+  historyPrefix: { fontSize: 11, fontWeight: 700, color: '#E65100', flexShrink: 0 },
+  historyTitle: { flex: 1, fontSize: 12, color: '#5f6368', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  historyDate: { fontSize: 11, color: '#9aa0a6', flexShrink: 0 },
+  historyEmpty: { padding: '12px 16px', fontSize: 12, color: '#9aa0a6', textAlign: 'center' },
+  dormantSection: { borderTop: '1px dashed #e8eaed', padding: '4px 0' },
+  dormantToggle: { display: 'flex', alignItems: 'center', gap: 5, width: '100%', padding: '6px 12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' },
+  dormantLabel: { fontSize: 11, color: '#9aa0a6', flex: 1, textAlign: 'left' },
+  dormantItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 24px', cursor: 'pointer', background: '#f8f9ff', borderBottom: '1px solid #f1f3f4' },
+  dormantTitle: { flex: 1, fontSize: 12, color: '#1a73e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' },
+  dormantDate: { fontSize: 11, color: '#9aa0a6', background: '#e8f0fe', borderRadius: 10, padding: '1px 7px', flexShrink: 0 },
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 },
   modal: { background: '#fff', borderRadius: 16, padding: 28, width: 360, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif" },
   modalTitle: { fontSize: 18, fontWeight: 700, color: '#202124', margin: '0 0 20px' },
@@ -385,10 +374,4 @@ const styles = {
   modalConfirm: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 },
   modalConfirmDisabled: { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' },
   modalCancel: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
-  dormantSection: { borderTop: '1px dashed #e8eaed', padding: '4px 0' },
-  dormantToggle: { display: 'flex', alignItems: 'center', gap: 5, width: '100%', padding: '6px 12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' },
-  dormantLabel: { fontSize: 11, color: '#9aa0a6', flex: 1, textAlign: 'left' },
-  dormantItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 24px', cursor: 'pointer', background: '#f8f9ff', borderBottom: '1px solid #f1f3f4' },
-  dormantTitle: { flex: 1, fontSize: 12, color: '#1a73e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' },
-  dormantDate: { fontSize: 11, color: '#9aa0a6', background: '#e8f0fe', borderRadius: 10, padding: '1px 7px', flexShrink: 0 },
 };
