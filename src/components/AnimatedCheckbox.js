@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 
-export default function AnimatedCheckbox({ onClick, size = 20, color = '#1a73e8', urgent = false }) {
+export default function AnimatedCheckbox({ onClick, size = 20, urgent = false }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const activeColor = urgent ? '#ea4335' : color;
+  // Always blue animation, regardless of urgent or category
+  const animColor = '#1a73e8';
+  const borderColor = urgent ? '#ea4335' : hovered ? animColor : '#dadce0';
 
   return (
     <button
@@ -13,10 +15,9 @@ export default function AnimatedCheckbox({ onClick, size = 20, color = '#1a73e8'
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       style={{
-        width: size, height: size,
-        borderRadius: '50%',
-        border: `2px solid ${hovered ? activeColor : urgent ? '#ea433566' : '#dadce0'}`,
-        background: pressed ? activeColor : hovered ? `${activeColor}22` : 'none',
+        width: size, height: size, borderRadius: '50%',
+        border: `2px solid ${borderColor}`,
+        background: pressed ? animColor : hovered ? `${animColor}22` : 'none',
         cursor: 'pointer', flexShrink: 0, padding: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         transition: 'all 0.15s ease',
@@ -26,14 +27,9 @@ export default function AnimatedCheckbox({ onClick, size = 20, color = '#1a73e8'
     >
       {hovered && (
         <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 12 12">
-          <polyline
-            points="1.5,6 4.5,9 10.5,3"
-            fill="none"
-            stroke={pressed ? '#fff' : activeColor}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <polyline points="1.5,6 4.5,9 10.5,3" fill="none"
+            stroke={pressed ? '#fff' : animColor}
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
     </button>
