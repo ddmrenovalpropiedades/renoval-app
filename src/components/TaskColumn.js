@@ -31,7 +31,7 @@ function SubtaskItem({ subtask, onComplete, onOpen }) {
   );
 }
 
-function TaskItem({ task, onOpen, onComplete, currentUserEmail, onSubtaskComplete }) {
+function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
   const [subtasks, setSubtasks] = useState([]);
   const [expanded, setExpanded] = useState(true);
   const [selectedSubtask, setSelectedSubtask] = useState(null);
@@ -46,7 +46,7 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, onSubtaskComplet
     setSubtasks(data || []);
   }, [task.id]);
 
-  useEffect(() => { loadSubtasks(); }, [loadSubtasks]);
+  useEffect(() => { loadSubtasks(); }, [loadSubtasks, reloadKey]);
 
   const handleCompleteSubtask = async (subtask) => {
     // If Equipo subtask, also delete mirror in Solicitudes
@@ -199,7 +199,7 @@ function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
   );
 }
 
-export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail }) {
+export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail, subtaskReloadTrigger = 0 }) {
   const colors = CATEGORY_COLORS[category];
   const [newTitle, setNewTitle] = useState('');
   const [adding, setAdding] = useState(false);
@@ -207,6 +207,8 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
   const [showDormant, setShowDormant] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [subtaskReloadKey, setSubtaskReloadKey] = useState(0);
+  useEffect(() => { setSubtaskReloadKey(k => k + 1); }, [subtaskReloadTrigger]);
   const isSolicitudes = category === 'Solicitudes';
 
   const handleAdd = async (e) => {
@@ -250,7 +252,8 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
             {tasks.map(task => (
               <TaskItem key={task.id} task={task}
                 onOpen={onOpenTask} onComplete={onCompleteTask}
-                currentUserEmail={currentUserEmail} />
+                currentUserEmail={currentUserEmail}
+                reloadKey={subtaskReloadKey} />
             ))}
           </SortableContext>
 
