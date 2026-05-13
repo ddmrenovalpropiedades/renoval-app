@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Trash2, RefreshCw, AlertCircle, Check } from 'lucide-react';
-import { supabase, USER_INITIALS } from '../supabaseClient';
+import { supabase } from '../supabaseClient';
 import AnimatedCheckbox from './AnimatedCheckbox';
 
 const RECURRENCE_OPTIONS = [
