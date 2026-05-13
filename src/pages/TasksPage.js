@@ -121,6 +121,7 @@ export default function TasksPage() {
                   onOpenTask={setSelectedTask}
                   onCompleteTask={handleCompleteTask}
                   onCreateTask={createTask}
+                  currentUserEmail={effectiveEmail}
                 />
               ))}
             </div>
