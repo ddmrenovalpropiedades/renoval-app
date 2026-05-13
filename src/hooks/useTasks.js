@@ -269,9 +269,10 @@ export function useTasks(targetEmail = null) {
 
   const tasksByCategory = CATEGORIES.reduce((acc, cat) => {
     if (cat === 'Equipo') {
+      // Equipo: tareas donde el usuario es el destinatario
       acc[cat] = tasks.filter(t =>
         t.category === 'Equipo' &&
-        t.owner_email === effectiveEmail &&
+        (t.delegated_to === effectiveEmail || t.owner_email === effectiveEmail) &&
         !t._dormant
       );
     } else {
