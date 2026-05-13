@@ -69,10 +69,14 @@ function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
   const isUrgent = task.urgent;
   const isOverdue = task.due_date && new Date(task.due_date) < new Date();
 
-  // Prefijo de siglas para Solicitudes/Equipo
-  const prefix = task.assigned_to
-    ? `[${USER_INITIALS[task.assigned_to] || '?'}] `
-    : '';
+  // Prefijo: en Solicitudes mostrar siglas del destinatario, en Equipo mostrar siglas del remitente
+  let prefix = '';
+  if (task.category === 'Solicitudes' && task.assigned_to) {
+    prefix = `[${USER_INITIALS[task.assigned_to] || '?'}] `;
+  } else if (task.category === 'Equipo' && task.assigned_to) {
+    // assigned_to en Equipo = quien delegó la tarea
+    prefix = `[${USER_INITIALS[task.assigned_to] || '?'}] `;
+  }
 
   return (
     <div ref={setNodeRef} style={{ ...styles.taskWrapper, ...style }}>
@@ -84,7 +88,15 @@ function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
           urgent={isUrgent}
         />
         <span onClick={() => onOpen(task)} style={styles.taskTitle}>
-          {isUrgent && <AlertCircle size={12} color="#ea4335" style={{ marginRight: 4, verticalAlign: 'middle', flexShrink: 0 }} />}
+          {isUrgent && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 14, height: 14, borderRadius: '50%',
+            background: '#ea4335', color: '#fff',
+            fontSize: 10, fontWeight: 900,
+            marginRight: 5, flexShrink: 0, lineHeight: 1,
+          }}>!</span>
+        )}
           {prefix}{task.title}
           {task.recurrence && task.recurrence !== 'none' && (
             <RefreshCw size={10} style={{ marginLeft: 5, color: '#9aa0a6', verticalAlign: 'middle' }} />
