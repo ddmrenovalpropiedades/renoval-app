@@ -136,9 +136,20 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
         </div>
 
         <div style={styles.scrollContent}>
+          {/* Banner tarea dormida */}
+          {task._dormant && (
+            <div style={{ background: '#e8f0fe', padding: '10px 20px', fontSize: 13, color: '#1a73e8', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🔄</span>
+              <span>Tarea recurrente dormida · próxima aparición: <strong>{task.next_occurrence ? new Date(task.next_occurrence + 'T12:00:00').toLocaleDateString('es-CL') : '—'}</strong></span>
+            </div>
+          )}
           {/* Título */}
           <div style={styles.titleRow}>
-            <AnimatedCheckbox onClick={() => { onComplete(task); onClose(); }} color={getCategoryColor(task.category)} urgent={urgent} />
+            <AnimatedCheckbox 
+              onClick={() => { if (!task._dormant) { onComplete(task); onClose(); } }}
+              color={task._dormant ? '#9aa0a6' : getCategoryColor(task.category)} 
+              urgent={urgent} 
+            />
             <textarea
               value={title}
               onChange={e => setTitle(e.target.value)}
