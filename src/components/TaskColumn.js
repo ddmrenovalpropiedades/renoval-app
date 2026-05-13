@@ -196,11 +196,12 @@ function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
 }
 
 // Columna principal
-export default function TaskColumn({ category, tasks, onOpenTask, onCompleteTask, onCreateTask, currentUserEmail }) {
+export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail }) {
   const colors = CATEGORY_COLORS[category];
   const [newTitle, setNewTitle] = useState('');
   const [adding, setAdding] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [showDormant, setShowDormant] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const isSolicitudes = category === 'Solicitudes';
 
@@ -282,6 +283,28 @@ export default function TaskColumn({ category, tasks, onOpenTask, onCompleteTask
               <span style={styles.addTaskLabel}>Nueva tarea</span>
             </button>
           )}
+
+          {/* Tareas recurrentes dormidas */}
+          {dormantTasks.length > 0 && (
+            <div style={styles.dormantSection}>
+              <button onClick={() => setShowDormant(!showDormant)} style={styles.dormantToggle}>
+                <RefreshCw size={11} color="#9aa0a6" />
+                <span style={styles.dormantLabel}>
+                  {showDormant ? 'Ocultar' : 'Mostrar'} recurrentes dormidas ({dormantTasks.length})
+                </span>
+                {showDormant ? <ChevronDown size={11} color="#9aa0a6" /> : <ChevronRight size={11} color="#9aa0a6" />}
+              </button>
+              {showDormant && dormantTasks.map(task => (
+                <div key={task.id} style={styles.dormantItem} onClick={() => onOpenTask(task)}>
+                  <RefreshCw size={11} color="#1a73e8" style={{ flexShrink: 0 }} />
+                  <span style={styles.dormantTitle}>{task.title}</span>
+                  <span style={styles.dormantDate}>
+                    {task.next_occurrence ? new Date(task.next_occurrence + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -361,4 +384,10 @@ const styles = {
   modalConfirm: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 },
   modalConfirmDisabled: { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' },
   modalCancel: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+  dormantSection: { borderTop: '1px dashed #e8eaed', padding: '4px 0' },
+  dormantToggle: { display: 'flex', alignItems: 'center', gap: 5, width: '100%', padding: '6px 12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' },
+  dormantLabel: { fontSize: 11, color: '#9aa0a6', flex: 1, textAlign: 'left' },
+  dormantItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 24px', cursor: 'pointer', background: '#f8f9ff', borderBottom: '1px solid #f1f3f4' },
+  dormantTitle: { flex: 1, fontSize: 12, color: '#1a73e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' },
+  dormantDate: { fontSize: 11, color: '#9aa0a6', background: '#e8f0fe', borderRadius: 10, padding: '1px 7px', flexShrink: 0 },
 };
