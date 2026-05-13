@@ -166,73 +166,70 @@ export default function SaldosPage() {
     const isAc = tipo === 'cuentas_ac';
     const now = new Date().toISOString();
 
+    // Load cartera once for batch matching
+    const { data: cartera } = await supabase.from('properties').select('propiedad,propietario,e1,e2');
+    const carteraMap = {};
+    (cartera || []).forEach(c => { carteraMap[c.propiedad] = c; });
+
+    const upsertBatch = [];
     for (const row of data) {
       const propiedad = (row['Propiedad'] || '').trim();
       if (!propiedad) continue;
+      const match = carteraMap[propiedad];
 
-      // Get propietario/e1/e2 from cartera
-      const { data: cartera } = await supabase.from('properties')
-        .select('propietario,e1,e2').eq('propiedad', propiedad).maybeSingle();
-
-      const update = isAc ? {
-        agua_ac: String(row['Agua'] || '').trim() || null,
-        luz_ac: String(row['Luz'] || '').trim() || null,
-        gas_ac: String(row['Gas'] || '').trim() || null,
-        gc_ac: String(row['Gastos comunes'] || '').trim() || null,
-        alerta_agua: (parseFloat(row['Deuda anterior agua']) || 0) > 0,
-        alerta_luz: (parseFloat(row['Deuda anterior luz']) || 0) > 0,
-        alerta_gas: (parseFloat(row['Deuda anterior gas']) || 0) > 0,
-        last_cuentas_ac: now,
-      } : {
-        agua_an: String(row['Agua'] || '').trim() || null,
-        luz_an: String(row['Luz'] || '').trim() || null,
-        gas_an: String(row['Gas'] || '').trim() || null,
-        gc_an: String(row['Gastos comunes'] || '').trim() || null,
-        last_cuentas_an: now,
+      const record = {
+        propiedad,
+        ...(match ? { propietario: match.propietario, e1: match.e1, e2: match.e2 } : {}),
+        ...(isAc ? {
+          agua_ac: String(row['Agua'] || '').trim() || null,
+          luz_ac: String(row['Luz'] || '').trim() || null,
+          gas_ac: String(row['Gas'] || '').trim() || null,
+          gc_ac: String(row['Gastos comunes'] || '').trim() || null,
+          alerta_agua: (parseFloat(row['Deuda anterior agua']) || 0) > 0,
+          alerta_luz: (parseFloat(row['Deuda anterior luz']) || 0) > 0,
+          alerta_gas: (parseFloat(row['Deuda anterior gas']) || 0) > 0,
+          last_cuentas_ac: now,
+        } : {
+          agua_an: String(row['Agua'] || '').trim() || null,
+          luz_an: String(row['Luz'] || '').trim() || null,
+          gas_an: String(row['Gas'] || '').trim() || null,
+          gc_an: String(row['Gastos comunes'] || '').trim() || null,
+          last_cuentas_an: now,
+        }),
       };
-
-      if (cartera) {
-        update.propietario = cartera.propietario;
-        update.e1 = cartera.e1;
-        update.e2 = cartera.e2;
-      }
-
-      await supabase.from('saldos').upsert({ propiedad, ...update }, { onConflict: 'propiedad' });
+      upsertBatch.push(record);
     }
 
-    // Remove rows not in any of the 3 latest sources
-    await reconcileRows();
+    // Batch upsert in chunks of 50
+    const CHUNK = 50;
+    for (let i = 0; i < upsertBatch.length; i += CHUNK) {
+      await supabase.from('saldos').upsert(upsertBatch.slice(i, i + CHUNK), { onConflict: 'propiedad' });
+    }
   };
 
   const processArriendos = async (data) => {
     const now = new Date().toISOString();
+    const { data: cartera } = await supabase.from('properties').select('propiedad,propietario,e1,e2');
+    const carteraMap = {};
+    (cartera || []).forEach(c => { carteraMap[c.propiedad] = c; });
+
+    const upsertBatch = [];
     for (const row of data) {
       const propiedad = (row['Propiedad'] || '').trim();
       if (!propiedad) continue;
-      const rawVal = row['Deuda al día'];
-      const n = parseArriendo(rawVal);
-      const deuda = n !== null ? String(Math.round(n)) : null;
-
-      const { data: cartera } = await supabase.from('properties')
-        .select('propietario,e1,e2').eq('propiedad', propiedad).maybeSingle();
-
-      const update = { deuda_arriendo: deuda, last_arriendos: now };
-      if (cartera) { update.propietario = cartera.propietario; update.e1 = cartera.e1; update.e2 = cartera.e2; }
-
-      await supabase.from('saldos').upsert({ propiedad, ...update }, { onConflict: 'propiedad' });
+      const n = parseArriendo(row['Deuda al día']);
+      const match = carteraMap[propiedad];
+      upsertBatch.push({
+        propiedad,
+        deuda_arriendo: n !== null ? String(Math.round(n)) : null,
+        last_arriendos: now,
+        ...(match ? { propietario: match.propietario, e1: match.e1, e2: match.e2 } : {}),
+      });
     }
-    await reconcileRows();
-  };
 
-  const reconcileRows = async () => {
-    // Get all current saldos rows
-    const { data: current } = await supabase.from('saldos').select('id,propiedad,last_cuentas_ac,last_cuentas_an,last_arriendos');
-    if (!current) return;
-    // Remove rows that have no data from any source
-    for (const row of current) {
-      if (!row.last_cuentas_ac && !row.last_cuentas_an && !row.last_arriendos) {
-        await supabase.from('saldos').delete().eq('id', row.id);
-      }
+    const CHUNK = 50;
+    for (let i = 0; i < upsertBatch.length; i += CHUNK) {
+      await supabase.from('saldos').upsert(upsertBatch.slice(i, i + CHUNK), { onConflict: 'propiedad' });
     }
   };
 
@@ -251,7 +248,8 @@ export default function SaldosPage() {
 
   // ── Filters ───────────────────────────────────────────────
   const filtered = useMemo(() => {
-    let result = rows;
+    // Only show rows that appear in at least one loaded file
+    let result = rows.filter(r => r.last_cuentas_ac || r.last_cuentas_an || r.last_arriendos);
     if (search.trim()) {
       const s = search.trim().toLowerCase();
       result = result.filter(r =>
@@ -267,15 +265,15 @@ export default function SaldosPage() {
   const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
 
   const COLS = [
-    { key: 'agua_ac', label: 'AGUA Ac', tipo: 'agua', alerta: 'alerta_agua' },
-    { key: 'agua_an', label: 'AGUA An', tipo: 'agua', alerta: null },
-    { key: 'luz_ac',  label: 'LUZ Ac',  tipo: 'luz',  alerta: 'alerta_luz' },
-    { key: 'luz_an',  label: 'LUZ An',  tipo: 'luz',  alerta: null },
-    { key: 'gas_ac',  label: 'GAS Ac',  tipo: 'gas',  alerta: 'alerta_gas' },
-    { key: 'gas_an',  label: 'GAS An',  tipo: 'gas',  alerta: null },
-    { key: 'deuda_arriendo', label: 'DEUDA ARR.', tipo: 'arriendo', alerta: null },
-    { key: 'gc_ac',   label: 'GC Ac',   tipo: 'gc',   alerta: null },
-    { key: 'gc_an',   label: 'GC An',   tipo: 'gc',   alerta: null },
+    { key: 'agua_ac', label: 'AGUA Ac', tipo: 'agua', alerta: 'alerta_agua', groupStart: true },
+    { key: 'agua_an', label: 'AGUA An', tipo: 'agua', alerta: null, groupEnd: true },
+    { key: 'luz_ac',  label: 'LUZ Ac',  tipo: 'luz',  alerta: 'alerta_luz', groupStart: true },
+    { key: 'luz_an',  label: 'LUZ An',  tipo: 'luz',  alerta: null, groupEnd: true },
+    { key: 'gas_ac',  label: 'GAS Ac',  tipo: 'gas',  alerta: 'alerta_gas', groupStart: true },
+    { key: 'gas_an',  label: 'GAS An',  tipo: 'gas',  alerta: null, groupEnd: true },
+    { key: 'deuda_arriendo', label: 'DEUDA ARR.', tipo: 'arriendo', alerta: null, groupStart: true, groupEnd: true },
+    { key: 'gc_ac',   label: 'GC Ac',   tipo: 'gc',   alerta: null, groupStart: true },
+    { key: 'gc_an',   label: 'GC An',   tipo: 'gc',   alerta: null, groupEnd: true },
   ];
 
   return (
@@ -284,7 +282,7 @@ export default function SaldosPage() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Saldos</h1>
-          <p style={styles.subtitle}>{filtered.length} de {rows.length} propiedades</p>
+          <p style={styles.subtitle}>{filtered.length} propiedades con datos · {rows.length} en cartera</p>
         </div>
         <div style={styles.headerActions}>
           <button onClick={fetchData} style={styles.iconBtn} title="Actualizar">
@@ -341,7 +339,7 @@ export default function SaldosPage() {
               <tr>
                 <th style={{ ...styles.th, minWidth: 280, textAlign: 'left' }}>PROPIEDAD</th>
                 <th style={{ ...styles.th, minWidth: 160, textAlign: 'left' }}>PROPIETARIO</th>
-                {COLS.map(c => <th key={c.key} style={{ ...styles.th, minWidth: 88, textAlign: 'right' }}>{c.label}</th>)}
+                {COLS.map(c => <th key={c.key} style={{ ...styles.th, minWidth: 88, textAlign: 'right', ...(c.groupStart ? { borderLeft: '2px solid #bdbdbd' } : {}), ...(c.groupEnd ? { borderRight: '2px solid #bdbdbd' } : {}) }}>{c.label}</th>)}
                 <th style={{ ...styles.th, minWidth: 40 }}></th>
                 <th style={{ ...styles.th, minWidth: 50, textAlign: 'center' }}>E1</th>
                 <th style={{ ...styles.th, minWidth: 50, textAlign: 'center' }}>E2</th>
@@ -356,9 +354,9 @@ export default function SaldosPage() {
                 return (
                   <tr key={row.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}>
                     <td style={{ ...styles.td, fontSize: 12 }}>{row.propiedad}</td>
-                    <td style={{ ...styles.td, fontSize: 12, color: '#5f6368' }}>{row.propietario || ''}</td>
+                    <td style={{ ...styles.td, fontSize: 11, color: '#5f6368', textAlign: 'left' }}>{row.propietario || ''}</td>
                     {COLS.map(c => (
-                      <td key={c.key} style={{ ...styles.td, padding: '4px 6px' }}>
+                      <td key={c.key} style={{ ...styles.td, padding: '4px 6px', ...(c.groupStart ? { borderLeft: '2px solid #bdbdbd' } : {}), ...(c.groupEnd ? { borderRight: '2px solid #bdbdbd' } : {}) }}>
                         <EditableCell
                           value={merged[c.key] || ''}
                           tipo={c.tipo}
@@ -415,8 +413,8 @@ const styles = {
   clearFilter: { padding: '4px 10px', borderRadius: 20, border: 'none', background: 'none', fontSize: 12, cursor: 'pointer', color: '#ea4335', fontFamily: 'inherit' },
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  td: { padding: '6px 10px', fontSize: 13, color: '#202124', borderBottom: '1px solid #f1f3f4', verticalAlign: 'middle' },
+  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
+  td: { padding: '6px 10px', fontSize: 13, color: '#202124', borderBottom: '1px solid #e8eaed', borderRight: '1px solid #e8eaed', verticalAlign: 'middle' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   saveRowBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'inline-flex', alignItems: 'center' },
