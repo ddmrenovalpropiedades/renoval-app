@@ -67,9 +67,19 @@ export function useTasks(targetEmail = null) {
     const minPosition = categoryTasks.length > 0
       ? Math.min(...categoryTasks.map(t => t.position)) - 1 : 0;
 
+    // Para Solicitudes: título con prefijo de siglas
+    const senderInitials = taskData.senderInitials || '';
+    const recipientInitials = taskData.recipientInitials || '';
+    const solicitudTitle = taskData.category === 'Solicitudes' && recipientInitials
+      ? `[${recipientInitials}] ${taskData.title}`
+      : taskData.title;
+    const equipoTitle = taskData.category === 'Solicitudes' && senderInitials
+      ? `[${senderInitials}] ${taskData.title}`
+      : taskData.title;
+
     const newTask = {
       owner_email: email,
-      title: taskData.title,
+      title: solicitudTitle,
       category: taskData.category,
       notes: taskData.notes || null,
       assigned_to: taskData.assigned_to || null,
@@ -86,7 +96,7 @@ export function useTasks(targetEmail = null) {
       if (taskData.category === 'Solicitudes' && taskData.assigned_to) {
         await supabase.from('tasks').insert({
           owner_email: taskData.assigned_to,
-          title: taskData.title,
+          title: equipoTitle,
           category: 'Equipo',
           notes: taskData.notes || null,
           assigned_to: email,
