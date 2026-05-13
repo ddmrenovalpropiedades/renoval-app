@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Search, X, Upload, Save, AlertCircle, RefreshCw } from 'lucide-react';
@@ -110,7 +111,7 @@ const ENCARGADOS = ['DD', 'FD', 'EA', 'FG', 'AM'];
 const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100', AM: '#37474F' };
 
 export default function SaldosPage() {
-  const { } = useAuth();
+  useAuth();
   const [rows, setRows] = useState([]);
   const [edits, setEdits] = useState({});
   const [loading, setLoading] = useState(true);
@@ -140,7 +141,6 @@ export default function SaldosPage() {
   const handleUpload = async (tipo, file) => {
     setUploading(tipo);
     try {
-      const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
