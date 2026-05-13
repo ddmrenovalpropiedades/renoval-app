@@ -325,7 +325,7 @@ const styles = {
     border: '1px solid #e8eaed',
     minWidth: 260, width: 260, flexShrink: 0,
     display: 'flex', flexDirection: 'column',
-    overflow: 'hidden',
+    overflow: 'visible',
     boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
   },
   columnHeader: {
@@ -337,7 +337,7 @@ const styles = {
   categoryName: { fontSize: 11, fontWeight: 700, letterSpacing: 0.8, flex: 1 },
   taskCount: { fontSize: 11, color: '#9aa0a6', background: '#f1f3f4', borderRadius: 10, padding: '1px 7px' },
   addBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center' },
-  taskList: { padding: '6px 0', flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 200px)' },
+  taskList: { padding: '6px 0' },
   taskWrapper: { borderBottom: '1px solid #f8f9fa' },
   taskItem: { display: 'flex', alignItems: 'center', padding: '7px 10px 7px 8px', gap: 8 },
   grip: { cursor: 'grab', color: '#dadce0', fontSize: 14, flexShrink: 0, userSelect: 'none' },
