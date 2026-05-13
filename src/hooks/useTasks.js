@@ -156,13 +156,16 @@ export function useTasks(targetEmail = null) {
       await supabase.from('tasks').delete().eq('id', task.id);
       setTasks(prev => prev.filter(t => t.id !== task.id));
 
-      // Sincronizar espejo
-      if (task.category === 'Equipo' && task.assigned_to) {
-        const { data: mirror } = await supabase
-          .from('tasks').select('*')
-          .eq('category', 'Solicitudes')
-          .eq('id', task.solicitud_id || '')
-          .maybeSingle();
+      // Sincronizar espejo Solicitudes ↔ Equipo
+      if (task.category === 'Equipo') {
+        // Buscar solicitud original por solicitud_id o por título+delegante
+        let mirrorQuery = supabase.from('tasks').select('*').eq('category', 'Solicitudes');
+        if (task.solicitud_id) {
+          mirrorQuery = mirrorQuery.eq('id', task.solicitud_id);
+        } else {
+          mirrorQuery = mirrorQuery.eq('title', task.title).eq('assigned_to', task.assigned_to);
+        }
+        const { data: mirror } = await mirrorQuery.maybeSingle();
         if (mirror) {
           await supabase.from('tasks_history').insert({
             owner_email: mirror.owner_email,
@@ -174,9 +177,26 @@ export function useTasks(targetEmail = null) {
         }
       }
       if (task.category === 'Solicitudes') {
-        await supabase.from('tasks').delete()
-          .eq('solicitud_id', task.id)
-          .eq('category', 'Equipo');
+        // Borrar tarea de Equipo del destinatario
+        let equipoQuery = supabase.from('tasks').select('id').eq('category', 'Equipo');
+        if (task.id) {
+          equipoQuery = equipoQuery.eq('solicitud_id', task.id);
+        }
+        const { data: equipoRows } = await equipoQuery;
+        if (equipoRows && equipoRows.length > 0) {
+          for (const row of equipoRows) {
+            await supabase.from('tasks').delete().eq('id', row.id);
+          }
+        } else {
+          // Fallback: buscar por título y owner del destinatario
+          if (task.assigned_to) {
+            await supabase.from('tasks')
+              .delete()
+              .eq('category', 'Equipo')
+              .eq('owner_email', task.assigned_to)
+              .eq('title', task.title);
+          }
+        }
       }
     }
   };
