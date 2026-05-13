@@ -52,7 +52,7 @@ export default function TasksPage() {
   const handleCompleteTask = async (task) => {
     await completeTask(task);
     if (selectedTask?.id === task.id) setSelectedTask(null);
-    fetchTasks();
+    await fetchTasks();
   };
 
   const totalTasks = Object.values(tasksByCategory).flat().length;
