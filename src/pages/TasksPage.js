@@ -5,21 +5,23 @@ import { useTasks } from '../hooks/useTasks';
 import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
-import { RefreshCw, ChevronDown } from 'lucide-react';
+import { RefreshCw, ChevronDown, History } from 'lucide-react';
+import HistoryPanel from '../components/HistoryPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
 
 export default function TasksPage() {
   const { profile } = useAuth();
-  const [viewingEmail, setViewingEmail] = useState(null); // null = propia vista
+  const [viewingEmail, setViewingEmail] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const effectiveEmail = viewingEmail || profile?.email;
   const effectiveInitials = USER_INITIALS[effectiveEmail] || profile?.initials;
   const isViewingOther = viewingEmail && viewingEmail !== profile?.email;
 
   const {
-    tasksByCategory, loading, fetchTasks,
+    tasksByCategory, dormantByCategory, loading, fetchTasks,
     createTask, createSubtask, updateTask,
     completeTask, deleteTask, reorderTasks,
     getSubtasks, CATEGORIES,
@@ -92,9 +94,14 @@ export default function TasksPage() {
             </span>
           </div>
         </div>
-        <button onClick={fetchTasks} style={styles.refreshBtn} title="Actualizar">
-          <RefreshCw size={16} color="#5f6368" />
-        </button>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={fetchTasks} style={styles.refreshBtn} title="Actualizar">
+            <RefreshCw size={16} color="#5f6368" />
+          </button>
+          <button onClick={() => setShowHistory(true)} style={styles.refreshBtn} title="Historial">
+            <History size={16} color="#5f6368" />
+          </button>
+        </div>
       </div>
 
       {/* Banner vista de otro usuario */}
@@ -122,6 +129,7 @@ export default function TasksPage() {
                   onCompleteTask={handleCompleteTask}
                   onCreateTask={createTask}
                   currentUserEmail={effectiveEmail}
+                  dormantTasks={dormantByCategory[category] || []}
                 />
               ))}
             </div>
@@ -129,6 +137,12 @@ export default function TasksPage() {
         </DndContext>
       )}
 
+      {showHistory && (
+        <HistoryPanel
+          onClose={() => setShowHistory(false)}
+          ownerEmail={effectiveEmail}
+        />
+      )}
       {selectedTask && (
         <TaskPanel
           task={selectedTask}
