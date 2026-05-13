@@ -16,33 +16,33 @@ export function useTasks(targetEmail = null) {
     if (!effectiveEmail) return;
     setLoading(true);
 
-    const { data, error } = await supabase
+    // Tareas propias (Entrada, Salida, Misceláneo, Solicitudes)
+    const { data: ownTasks } = await supabase
       .from('tasks')
       .select('*')
       .eq('completed', false)
       .is('parent_id', null)
-      .or(`owner_email.eq.${effectiveEmail},assigned_to.eq.${effectiveEmail}`)
-      .lte('next_occurrence', new Date().toISOString().split('T')[0])
+      .eq('owner_email', effectiveEmail)
+      .or('next_occurrence.is.null,next_occurrence.lte.' + new Date().toISOString().split('T')[0])
       .order('position', { ascending: true })
       .order('created_at', { ascending: false });
 
-    // También traer tareas sin next_occurrence (no recurrentes)
-    const { data: noDate } = await supabase
+    // Tareas de Equipo: asignadas al usuario por otros (assigned_to = effectiveEmail, owner != effectiveEmail)
+    const { data: equipoTasks } = await supabase
       .from('tasks')
       .select('*')
       .eq('completed', false)
       .is('parent_id', null)
-      .is('next_occurrence', null)
-      .or(`owner_email.eq.${effectiveEmail},assigned_to.eq.${effectiveEmail}`)
+      .eq('category', 'Equipo')
+      .eq('assigned_to', effectiveEmail)
+      .neq('owner_email', effectiveEmail)
+      .or('next_occurrence.is.null,next_occurrence.lte.' + new Date().toISOString().split('T')[0])
       .order('position', { ascending: true })
       .order('created_at', { ascending: false });
 
-    if (!error) {
-      const all = [...(data || []), ...(noDate || [])];
-      // Deduplicar por id
-      const unique = Array.from(new Map(all.map(t => [t.id, t])).values());
-      setTasks(unique);
-    }
+    const all = [...(ownTasks || []), ...(equipoTasks || [])];
+    const unique = Array.from(new Map(all.map(t => [t.id, t])).values());
+    setTasks(unique);
     setLoading(false);
   }, [effectiveEmail]);
 
@@ -67,19 +67,10 @@ export function useTasks(targetEmail = null) {
     const minPosition = categoryTasks.length > 0
       ? Math.min(...categoryTasks.map(t => t.position)) - 1 : 0;
 
-    // Para Solicitudes: título con prefijo de siglas
-    const senderInitials = taskData.senderInitials || '';
-    const recipientInitials = taskData.recipientInitials || '';
-    const solicitudTitle = taskData.category === 'Solicitudes' && recipientInitials
-      ? `[${recipientInitials}] ${taskData.title}`
-      : taskData.title;
-    const equipoTitle = taskData.category === 'Solicitudes' && senderInitials
-      ? `[${senderInitials}] ${taskData.title}`
-      : taskData.title;
-
+    // Guardar título limpio (sin prefijo) — el prefijo se genera en display
     const newTask = {
       owner_email: email,
-      title: solicitudTitle,
+      title: taskData.title,
       category: taskData.category,
       notes: taskData.notes || null,
       assigned_to: taskData.assigned_to || null,
@@ -96,7 +87,7 @@ export function useTasks(targetEmail = null) {
       if (taskData.category === 'Solicitudes' && taskData.assigned_to) {
         await supabase.from('tasks').insert({
           owner_email: taskData.assigned_to,
-          title: equipoTitle,
+          title: taskData.title,
           category: 'Equipo',
           notes: taskData.notes || null,
           assigned_to: email,
@@ -244,10 +235,20 @@ export function useTasks(targetEmail = null) {
   };
 
   const tasksByCategory = CATEGORIES.reduce((acc, cat) => {
-    acc[cat] = tasks.filter(t =>
-      t.category === cat &&
-      (t.owner_email === effectiveEmail || t.assigned_to === effectiveEmail)
-    );
+    if (cat === 'Equipo') {
+      // Equipo: solo tareas asignadas AL usuario por otros
+      acc[cat] = tasks.filter(t =>
+        t.category === 'Equipo' &&
+        t.assigned_to === effectiveEmail &&
+        t.owner_email !== effectiveEmail
+      );
+    } else {
+      // Resto: tareas propias del usuario
+      acc[cat] = tasks.filter(t =>
+        t.category === cat &&
+        t.owner_email === effectiveEmail
+      );
+    }
     return acc;
   }, {});
 
