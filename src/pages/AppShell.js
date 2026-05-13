@@ -7,8 +7,10 @@ import {
 } from 'lucide-react';
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
+import PropertiesPage from './PropertiesPage';
 
 const NAV_ITEMS = [
+  { id: 'cartera',    label: 'Cartera',               icon: Building2,    ownerOnly: false },
   { id: 'pizarra',    label: 'Pizarra',              icon: LayoutGrid,   ownerOnly: false },
   { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,   ownerOnly: false },
   { id: 'tareas',     label: 'Tareas Pendientes',     icon: CheckSquare,  ownerOnly: false },
@@ -93,6 +95,8 @@ export default function AppShell() {
 
 function ModuleRenderer({ module, profile }) {
   switch (module) {
+    case 'cartera':
+      return <PropertiesPage />;
     case 'tareas':
       return <TasksPage />;
     case 'usuarios':
