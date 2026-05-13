@@ -65,9 +65,6 @@ function TaskItem({ task, onOpen, onComplete, categoryColor, ownerInitials }) {
     if (remaining.length === 0) onComplete(task);
   };
 
-  // Nuevo subtask añadido desde panel → refrescar lista
-  const handleSubtaskAdded = () => { loadSubtasks(); };
-
   const hasSubtasks = subtasks.length > 0;
   const isUrgent = task.urgent;
   const isOverdue = task.due_date && new Date(task.due_date) < new Date();
