@@ -25,31 +25,38 @@ const isPagada = (val) => {
   return val.toLowerCase() === 'pagada';
 };
 
-const getCellStyle = (val, tipo) => {
+const getCellStyle = (val, tipo, attr, emptyWhite = false) => {
   const base = { padding: 0, fontSize: 12, textAlign: 'center', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 };
-  if (!val || val === '') return { ...base, background: '#FAF3E0' };
+  if (!val || val === '') return { ...base, background: emptyWhite ? '#fff' : '#FAF3E0' };
 
   if (isPagada(val)) return { ...base, background: '#fff', color: '#bdbdbd' };
-  // Non-pagada text values (errors, etc) → black text
   const n = parseAmount(val);
   if (n === null) return { ...base, background: '#fff', color: '#202124' };
 
-  if (tipo === 'agua') {
-    if (n < 40000) return { ...base, background: '#fff', color: '#bdbdbd' };
-    if (n < 60000) return { ...base, background: '#FFCDD2', color: '#202124' };
-    return { ...base, background: '#EF9A9A', color: '#202124' };
-  }
-  if (tipo === 'luz') {
-    if (n < 55000) return { ...base, background: '#fff', color: '#bdbdbd' };
-    if (n < 80000) return { ...base, background: '#FFCDD2', color: '#202124' };
-    return { ...base, background: '#EF9A9A', color: '#202124' };
-  }
-  if (tipo === 'gas') {
-    if (n < 45000) return { ...base, background: '#fff', color: '#bdbdbd' };
-    if (n < 60000) return { ...base, background: '#FFCDD2', color: '#202124' };
+  // Default thresholds
+  const defaults = {
+    agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000]
+  };
+
+  if (tipo === 'agua' || tipo === 'luz' || tipo === 'gas') {
+    let t1, t2;
+    if (attr?.[`umbral1_${tipo}`] && attr?.[`umbral2_${tipo}`]) {
+      t1 = attr[`umbral1_${tipo}`];
+      t2 = attr[`umbral2_${tipo}`];
+    } else {
+      [t1, t2] = defaults[tipo] || [40000, 60000];
+    }
+    if (n < t1) return { ...base, background: '#fff', color: '#bdbdbd' };
+    if (n < t2) return { ...base, background: '#FFCDD2', color: '#202124' };
     return { ...base, background: '#EF9A9A', color: '#202124' };
   }
   if (tipo === 'gc') {
+    const gcProm = attr?.gc_promedio;
+    if (gcProm) {
+      if (n < gcProm * 1.9) return { ...base, background: '#fff', color: '#bdbdbd' };
+      if (n < gcProm * 2.8) return { ...base, background: '#FFCDD2', color: '#202124' };
+      return { ...base, background: '#EF9A9A', color: '#202124' };
+    }
     if (n < 70000) return { ...base, background: '#fff', color: '#bdbdbd' };
     if (n < 180000) return { ...base, background: '#fff', color: '#202124' };
     return { ...base, background: '#EF9A9A', color: '#202124' };
@@ -62,10 +69,10 @@ const getCellStyle = (val, tipo) => {
 };
 
 // ── Editable cell ─────────────────────────────────────────────
-function EditableCell({ value, tipo, alerta, onChange }) {
+function EditableCell({ value, tipo, alerta, onChange, attr, emptyWhite }) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value || '');
-  const cellStyle = getCellStyle(value, tipo);
+  const cellStyle = getCellStyle(value, tipo, attr, emptyWhite);
 
   const handleBlur = () => {
     setEditing(false);
@@ -75,7 +82,7 @@ function EditableCell({ value, tipo, alerta, onChange }) {
   if (editing) {
     return (
       <input value={local} onChange={e => setLocal(e.target.value)} onBlur={handleBlur}
-        autoFocus style={{ ...cellStyle, border: '1px solid #1a73e8', outline: 'none', width: '100%', textAlign: 'center', padding: '4px 6px' }} />
+        autoFocus style={{ ...getCellStyle('', tipo, attr, true), border: '1px solid #1a73e8', outline: 'none', width: '100%', textAlign: 'center', padding: '4px 6px' }} />
     );
   }
 
@@ -119,6 +126,7 @@ const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E6
 export default function SaldosPage() {
   useAuth();
   const [rows, setRows] = useState([]);
+  const [attrsMap, setAttrsMap] = useState({});
   const [edits, setEdits] = useState({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState('');
@@ -129,11 +137,16 @@ export default function SaldosPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [{ data: saldos }, { data: uploads }] = await Promise.all([
+    const [{ data: saldos }, { data: uploads }, { data: attrData }] = await Promise.all([
       supabase.from('saldos').select('*').order('propiedad', { ascending: true }),
       supabase.from('saldos_uploads').select('*').order('uploaded_at', { ascending: false }),
+      supabase.from('property_attributes').select('*'),
     ]);
     setRows(saldos || []);
+    // Build attributes map by propiedad
+    const aMap = {};
+    (attrData || []).forEach(a => { aMap[a.propiedad] = a; });
+    setAttrsMap(aMap);
     // Keep only latest per tipo
     const latest = {};
     (uploads || []).forEach(u => { if (!latest[u.tipo]) latest[u.tipo] = u; });
@@ -361,16 +374,26 @@ export default function SaldosPage() {
                   <tr key={row.id} style={{ background: '#fff' }}>
                     <td style={{ ...styles.tdFixed, fontSize: 12 }}>{row.propiedad}</td>
                     <td style={{ ...styles.tdFixed, fontSize: 11, color: '#5f6368', textAlign: 'center' }}>{row.propietario || ''}</td>
-                    {COLS.map(c => (
-                      <td key={c.key} style={{ ...styles.td, padding: '4px 6px', ...(c.groupStart ? { borderLeft: '2px solid #bdbdbd' } : {}), ...(c.groupEnd ? { borderRight: '2px solid #bdbdbd' } : {}) }}>
-                        <EditableCell
-                          value={merged[c.key] || ''}
-                          tipo={c.tipo}
-                          alerta={c.alerta ? merged[c.alerta] : false}
-                          onChange={val => handleCellChange(row.id, c.key, val)}
-                        />
-                      </td>
-                    ))}
+                    {COLS.map(c => {
+                      const rowAttr = attrsMap[row.propiedad];
+                      // Determine if empty cell should be white (arriendo always, or service not present)
+                      const emptyWhite = c.tipo === 'arriendo' ||
+                        (c.tipo === 'agua' && rowAttr?.tiene_agua === false) ||
+                        (c.tipo === 'luz'  && rowAttr?.tiene_luz  === false) ||
+                        (c.tipo === 'gas'  && rowAttr?.tiene_gas  === false);
+                      return (
+                        <td key={c.key} style={{ ...styles.td, padding: '4px 6px', ...(c.groupStart ? { borderLeft: '2px solid #bdbdbd' } : {}), ...(c.groupEnd ? { borderRight: '2px solid #bdbdbd' } : {}) }}>
+                          <EditableCell
+                            value={merged[c.key] || ''}
+                            tipo={c.tipo}
+                            alerta={c.alerta ? merged[c.alerta] : false}
+                            onChange={val => handleCellChange(row.id, c.key, val)}
+                            attr={rowAttr}
+                            emptyWhite={emptyWhite}
+                          />
+                        </td>
+                      );
+                    })}
                     <td style={{ ...styles.tdFixed, textAlign: 'center' }}>
                       {hasEdits && (
                         <button onClick={() => handleSaveRow(row.id)} style={styles.saveRowBtn} title="Guardar cambios">
