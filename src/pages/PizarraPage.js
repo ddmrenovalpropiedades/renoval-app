@@ -1,13 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { Plus, Edit2, Check, X, Home, Trash2 } from 'lucide-react';
 
-// ── Helpers ──────────────────────────────────────────────────
+// ── UF value ──────────────────────────────────────────────────
+const useUFValue = () => {
+  const [uf, setUf] = useState(null);
+  useEffect(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    fetch(`https://mindicador.cl/api/uf/${d}-${m}-${y}`)
+      .then(r => r.json())
+      .then(data => {
+        const val = data?.serie?.[0]?.valor;
+        if (val) setUf(val);
+      })
+      .catch(() => {});
+  }, []);
+  return uf;
+};
+
+// ── Helpers ───────────────────────────────────────────────────
 const daysDiff = (dateStr) => {
   if (!dateStr) return null;
-  const d = new Date(dateStr);
-  const now = new Date();
-  return Math.floor((now - d) / (1000 * 60 * 60 * 24));
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return Math.floor((new Date() - date) / (1000 * 60 * 60 * 24));
 };
 
 const formatDate = (dateStr) => {
@@ -16,68 +35,99 @@ const formatDate = (dateStr) => {
   return `${d}/${m}/${y}`;
 };
 
-const EMPTY_FORM = {
-  propiedad: '', precio: '', promo: '', status: '',
-  destaque: '', e1: '', e2: '', db: '', eb: '',
-  comuna: '', aviso: '', fecha_salida: '', tipo: '', admin: '',
+const formatCLP = (n) => {
+  if (!n && n !== 0) return '';
+  return '$' + Math.round(n).toLocaleString('es-CL');
 };
 
-// ── Cell styles ───────────────────────────────────────────────
+// Parse price: handles "$390.000", "390000", "30 UF", "UF 30"
+const parsePrice = (val) => {
+  if (!val) return { amount: null, isUF: false };
+  const str = String(val).trim();
+  const ufMatch = str.match(/(\d+[\.,]?\d*)\s*UF|UF\s*(\d+[\.,]?\d*)/i);
+  if (ufMatch) {
+    const n = parseFloat((ufMatch[1] || ufMatch[2]).replace(',', '.'));
+    return { amount: n, isUF: true };
+  }
+  const n = parseFloat(str.replace(/[$.]/g, '').replace(',', '.'));
+  return { amount: isNaN(n) ? null : n, isUF: false };
+};
+
+const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
+const UrgentDot = () => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#ea4335', color: '#fff', fontSize: 10, fontWeight: 900, flexShrink: 0, marginRight: 4 }}>!</span>
+);
+const BadgeE = ({ val }) => val ? (
+  <span style={{ background: `${ENCARGADO_COLORS[val]}22`, color: ENCARGADO_COLORS[val], border: `1px solid ${ENCARGADO_COLORS[val]}44`, borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>{val}</span>
+) : null;
+
 const statusStyle = (val) => {
   if (!val) return {};
-  const v = val.toUpperCase();
-  if (v === 'PUBLICAR') return { background: '#FDD835', color: '#202124', fontWeight: 700, borderRadius: 4, padding: '2px 8px' };
+  if (val.toUpperCase() === 'PUBLICAR') return { background: '#FDD835', color: '#202124', fontWeight: 700, borderRadius: 4, padding: '2px 8px' };
   return {};
 };
-
 const avisoStyle = (val) => {
-  if (val === 'Aún no') return { background: '#ea4335', color: '#fff', fontWeight: 600, borderRadius: 4, padding: '2px 8px', fontSize: 11 };
+  if (val === 'Aún no') return { background: '#ea4335', color: '#fff', fontWeight: 600, borderRadius: 4, padding: '2px 6px', fontSize: 11 };
   if (val === 'Listo') return { color: '#34a853', fontWeight: 600, fontSize: 11 };
   return { fontSize: 11 };
 };
+const destaqueStyle = (val) => val === 'OP'
+  ? { background: '#FF8C00', color: '#fff', fontWeight: 700, borderRadius: 4, padding: '2px 8px', fontSize: 11 }
+  : {};
 
-const fechaSalidaStyle = (dateStr) => {
-  const days = daysDiff(dateStr);
-  if (days !== null && days >= 60) return { background: '#ea4335', color: '#fff', borderRadius: 4, padding: '2px 8px', fontSize: 11 };
-  return { fontSize: 11 };
+const EMPTY_FORM = {
+  propiedad: '', precio: '', promo: '', status: '', destaque: '',
+  e1: '', e2: '', db: '', eb: '', comuna: '',
+  fecha_salida: '', aviso: '', respaldo: '', tipo: '', admin: '',
 };
 
-const destaqueStyle = (val) => {
-  if (val === 'OP') return { background: '#FF8C00', color: '#fff', fontWeight: 700, borderRadius: 4, padding: '2px 8px', fontSize: 11 };
-  return {};
-};
-
-const encargadoColors = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
-const BadgeE = ({ val }) => val ? (
-  <span style={{ background: `${encargadoColors[val]}22`, color: encargadoColors[val], border: `1px solid ${encargadoColors[val]}44`, borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>{val}</span>
-) : null;
-
-// ── Inline Select ─────────────────────────────────────────────
-const InlineSelect = ({ value, options, onChange, placeholder = '—' }) => (
+const InlineSelect = ({ value, options, onChange }) => (
   <select value={value || ''} onChange={e => onChange(e.target.value)}
     style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', minWidth: 60 }}>
-    <option value="">{placeholder}</option>
+    <option value="">—</option>
     {options.map(o => <option key={o} value={o}>{o}</option>)}
   </select>
 );
-
 const InlineInput = ({ value, onChange, placeholder = '', style = {} }) => (
-  <input value={value || ''} onChange={e => onChange(e.target.value)}
-    placeholder={placeholder}
+  <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
     style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', ...style }} />
 );
 
+// ── Price cell display ────────────────────────────────────────
+function PriceCell({ val, uf }) {
+  if (!val) return null;
+  const { amount, isUF } = parsePrice(val);
+  const clpVal = isUF && uf && amount ? Math.round(amount * uf) : null;
+  return (
+    <div>
+      <div style={{ fontWeight: 500 }}>
+        {isUF ? `${amount} UF` : (amount ? formatCLP(amount) : val)}
+      </div>
+      {clpVal && <div style={{ fontSize: 10, color: '#9aa0a6' }}>{formatCLP(clpVal)}</div>}
+    </div>
+  );
+}
+
 // ── Property Row ──────────────────────────────────────────────
-function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew }) {
+function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf }) {
   const [editing, setEditing] = useState(isNew);
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [errors, setErrors] = useState({});
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
+  const validate = () => {
+    const e = {};
+    if (!form.propiedad.trim()) e.propiedad = true;
+    if (!form.fecha_salida) e.fecha_salida = true;
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
   const handleSave = async () => {
-    if (!form.propiedad.trim()) return;
+    if (!validate()) return;
     setSaving(true);
     await onSave(form);
     setSaving(false);
@@ -90,42 +140,55 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     await onDelete(row.id);
   };
 
+  const days = daysDiff(row.fecha_salida);
+  const isOverdue = days !== null && days >= 60;
+  const needsAviso = row.aviso !== 'Listo';
+  const showAlert = isOverdue || needsAviso;
+
   if (editing) {
     return (
-      <tr style={styles.editRow}>
-        <td style={styles.td}><InlineInput value={form.propiedad} onChange={v => set('propiedad', v)} placeholder="Dirección" /></td>
-        <td style={styles.td}><InlineInput value={form.precio} onChange={v => set('precio', v)} placeholder="Precio" style={{ width: 90 }} /></td>
-        <td style={styles.td}><InlineInput value={form.promo} onChange={v => set('promo', v)} placeholder="Promo" style={{ width: 80 }} /></td>
+      <tr style={{ background: '#f0f7ff' }}>
+        <td style={styles.td}>
+          <InlineInput value={form.propiedad} onChange={v => set('propiedad', v)} placeholder="Dirección *"
+            style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0' }} />
+        </td>
+        <td style={styles.td}><InlineInput value={form.precio} onChange={v => set('precio', v)} placeholder="$" style={{ width: 90 }} /></td>
+        <td style={styles.td}><InlineInput value={form.promo} onChange={v => set('promo', v)} placeholder="$" style={{ width: 80 }} /></td>
         <td style={styles.td}><InlineInput value={form.status} onChange={v => set('status', v)} placeholder="Status" style={{ width: 80 }} /></td>
         <td style={styles.tdCenter}><InlineSelect value={form.destaque} options={['OP']} onChange={v => set('destaque', v)} /></td>
         <td style={styles.tdCenter}><InlineSelect value={form.e1} options={['DD', 'FD']} onChange={v => set('e1', v)} /></td>
         <td style={styles.tdCenter}><InlineSelect value={form.e2} options={['EA', 'FG']} onChange={v => set('e2', v)} /></td>
-        <td style={styles.tdCenter}><InlineInput value={form.db} onChange={v => set('db', v)} style={{ width: 55 }} /></td>
-        <td style={styles.tdCenter}><InlineInput value={form.eb} onChange={v => set('eb', v)} style={{ width: 55 }} /></td>
-        <td style={styles.td}><InlineInput value={form.comuna} onChange={v => set('comuna', v)} placeholder="Comuna" style={{ width: 100 }} /></td>
+        <td style={styles.tdCenter}><InlineInput value={form.db} onChange={v => set('db', v)} style={{ width: 50 }} /></td>
+        <td style={styles.tdCenter}><InlineInput value={form.eb} onChange={v => set('eb', v)} style={{ width: 50 }} /></td>
+        <td style={styles.td}><InlineInput value={form.comuna} onChange={v => set('comuna', v)} placeholder="Comuna" style={{ width: 90 }} /></td>
+        <td style={styles.tdCenter}>
+          <input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
+            style={{ border: errors.fecha_salida ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} />
+        </td>
         <td style={styles.tdCenter}><InlineSelect value={form.aviso} options={['Aún no', 'Listo']} onChange={v => set('aviso', v)} /></td>
-        <td style={styles.tdCenter}><input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} /></td>
+        <td style={styles.tdCenter}><InlineSelect value={form.respaldo} options={['Aún no', 'Listo']} onChange={v => set('respaldo', v)} /></td>
         <td style={styles.tdCenter}><InlineSelect value={form.tipo} options={['Nuevo', 'Renovación']} onChange={v => set('tipo', v)} /></td>
         <td style={styles.tdCenter}><InlineSelect value={form.admin} options={['Sí', 'No']} onChange={v => set('admin', v)} /></td>
         <td style={styles.tdActions}>
-          <button onClick={handleSave} disabled={saving || !form.propiedad.trim()} style={styles.actionBtnGreen} title="Guardar">
-            <Check size={14} />
-          </button>
-          <button onClick={() => { setEditing(false); if (isNew && onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar">
-            <X size={14} />
-          </button>
+          <button onClick={handleSave} disabled={saving} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
+          <button onClick={() => { setEditing(false); if (isNew && onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
         </td>
       </tr>
     );
   }
 
   return (
-    <tr style={styles.row}
-      onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
+    <tr style={{ background: '#fff' }}
+      onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
       onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-      <td style={styles.td}>{row.propiedad}</td>
-      <td style={styles.td}>{row.precio}</td>
-      <td style={styles.td}>{row.promo}</td>
+      <td style={{ ...styles.td, maxWidth: 220 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+          {showAlert && <UrgentDot />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.propiedad}</span>
+        </div>
+      </td>
+      <td style={styles.td}><PriceCell val={row.precio} uf={uf} /></td>
+      <td style={styles.td}><PriceCell val={row.promo} uf={uf} /></td>
       <td style={styles.td}><span style={statusStyle(row.status)}>{row.status}</span></td>
       <td style={styles.tdCenter}><span style={destaqueStyle(row.destaque)}>{row.destaque}</span></td>
       <td style={styles.tdCenter}><BadgeE val={row.e1} /></td>
@@ -133,8 +196,13 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.tdCenter}>{row.db}</td>
       <td style={styles.tdCenter}>{row.eb}</td>
       <td style={styles.td}>{row.comuna}</td>
+      <td style={styles.tdCenter}>
+        <span style={{ ...(!isOverdue ? {} : { color: '#ea4335', fontWeight: 600 }), fontSize: 11 }}>
+          {formatDate(row.fecha_salida)}
+        </span>
+      </td>
       <td style={styles.tdCenter}><span style={avisoStyle(row.aviso)}>{row.aviso}</span></td>
-      <td style={styles.tdCenter}><span style={fechaSalidaStyle(row.fecha_salida)}>{formatDate(row.fecha_salida)}</span></td>
+      <td style={styles.tdCenter}><span style={avisoStyle(row.respaldo)}>{row.respaldo}</span></td>
       <td style={styles.tdCenter}>{row.tipo}</td>
       <td style={styles.tdCenter}>{row.admin}</td>
       <td style={styles.tdActions}>
@@ -142,7 +210,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <button onClick={() => onRented(row)} style={styles.actionBtnBlue} title="Arrendar"><Home size={13} /></button>
         {confirmDelete ? (
           <>
-            <button onClick={handleDelete} style={styles.actionBtnRed} title="Confirmar eliminar"><Trash2 size={13} /></button>
+            <button onClick={handleDelete} style={styles.actionBtnRed} title="Confirmar"><Trash2 size={13} /></button>
             <button onClick={() => setConfirmDelete(false)} style={styles.actionBtnGray} title="Cancelar"><X size={12} /></button>
           </>
         ) : (
@@ -154,42 +222,61 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
 }
 
 // ── Main page ─────────────────────────────────────────────────
+const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
+
 export default function PizarraPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addingNew, setAddingNew] = useState(false);
+  const [filterE, setFilterE] = useState([]);
+  const uf = useUFValue();
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('pizarra').select('*').order('position', { ascending: true }).order('created_at', { ascending: false });
+    const { data } = await supabase.from('pizarra').select('*')
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: false });
     setRows(data || []);
     setLoading(false);
   }, []);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
+  const filtered = useMemo(() => {
+    if (!filterE.length) return rows;
+    return rows.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
+  }, [rows, filterE]);
+
+  const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
+
+  // Totals
+  const totals = useMemo(() => {
+    let totalCLP = 0;
+    let opCount = 0;
+    filtered.forEach(r => {
+      if (r.destaque === 'OP') opCount++;
+      const { amount, isUF } = parsePrice(r.precio);
+      if (amount) {
+        totalCLP += isUF && uf ? amount * uf : isUF ? 0 : amount;
+      }
+    });
+    return { totalCLP, opCount };
+  }, [filtered, uf]);
+
   const handleSave = async (form) => {
     const payload = {
       propiedad: form.propiedad.trim(),
-      precio: form.precio || null,
-      promo: form.promo || null,
-      status: form.status || null,
-      destaque: form.destaque || null,
-      e1: form.e1 || null,
-      e2: form.e2 || null,
-      db: form.db || null,
-      eb: form.eb || null,
-      comuna: form.comuna || null,
-      aviso: form.aviso || null,
-      fecha_salida: form.fecha_salida || null,
-      tipo: form.tipo || null,
-      admin: form.admin || null,
+      precio: form.precio || null, promo: form.promo || null,
+      status: form.status || null, destaque: form.destaque || null,
+      e1: form.e1 || null, e2: form.e2 || null,
+      db: form.db || null, eb: form.eb || null, comuna: form.comuna || null,
+      fecha_salida: form.fecha_salida || null, aviso: form.aviso || null,
+      respaldo: form.respaldo || null, tipo: form.tipo || null, admin: form.admin || null,
     };
     if (form.id) {
       await supabase.from('pizarra').update(payload).eq('id', form.id);
       setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...payload } : r));
     } else {
-      // New row — insert at top with lowest position
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
       if (data) setRows(prev => [data, ...prev]);
@@ -203,25 +290,41 @@ export default function PizarraPage() {
   };
 
   const handleRented = async (row) => {
-    // For now: remove from pizarra. Later: trigger tasks + arrendadas module
     await supabase.from('pizarra').delete().eq('id', row.id);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
 
-  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','DESTAQUE','E1','E2','D/B','E/B','COMUNA','AVISO','FECHA SALIDA','TIPO','ADMIN',''];
+  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','DESTAQUE','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN',''];
 
   return (
     <div style={styles.container}>
+      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Pizarra</h1>
-          <p style={styles.subtitle}>{rows.length} propiedades disponibles</p>
+          <div style={styles.subtitleRow}>
+            <p style={styles.subtitle}>{filtered.length} propiedades</p>
+            {uf && <span style={styles.ufBadge}>UF hoy: {formatCLP(uf)}</span>}
+          </div>
         </div>
-        <button onClick={() => setAddingNew(true)} style={styles.addBtn} disabled={addingNew}>
-          <Plus size={16} style={{ marginRight: 6 }} /> Nueva propiedad
-        </button>
+        <div style={styles.headerRight}>
+          {/* Encargado filters */}
+          <div style={styles.filters}>
+            {ENCARGADOS_ALL.map(e => (
+              <button key={e} onClick={() => toggleFilter(e)} style={{
+                ...styles.filterBtn,
+                ...(filterE.includes(e) ? { background: `${ENCARGADO_COLORS[e]}22`, color: ENCARGADO_COLORS[e], borderColor: ENCARGADO_COLORS[e], fontWeight: 700 } : {})
+              }}>{e}</button>
+            ))}
+            {filterE.length > 0 && <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>}
+          </div>
+          <button onClick={() => setAddingNew(true)} style={styles.addBtn} disabled={addingNew}>
+            <Plus size={15} style={{ marginRight: 5 }} /> Nueva propiedad
+          </button>
+        </div>
       </div>
 
+      {/* Table */}
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loading}>Cargando pizarra...</div>
@@ -230,37 +333,41 @@ export default function PizarraPage() {
             <thead>
               <tr>
                 {HEADERS.map((h, i) => (
-                  <th key={i} style={{ ...styles.th, textAlign: ['PROPIEDAD','PRECIO','PROMO','STATUS','COMUNA'].includes(h) ? 'left' : 'center' }}>{h}</th>
+                  <th key={i} style={{
+                    ...styles.th,
+                    textAlign: ['PROPIEDAD','PRECIO','PROMO','STATUS','COMUNA'].includes(h) ? 'left' : 'center'
+                  }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {addingNew && (
-                <PropertyRow
-                  row={EMPTY_FORM}
-                  onSave={handleSave}
-                  onDelete={() => {}}
-                  onRented={() => {}}
-                  isNew={true}
-                  onCancelNew={() => setAddingNew(false)}
-                />
+                <PropertyRow row={EMPTY_FORM} onSave={handleSave} onDelete={() => {}} onRented={() => {}}
+                  isNew={true} onCancelNew={() => setAddingNew(false)} uf={uf} />
               )}
-              {rows.length === 0 && !addingNew ? (
-                <tr><td colSpan={15} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
+              {filtered.length === 0 && !addingNew ? (
+                <tr><td colSpan={16} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
               ) : (
-                rows.map(row => (
-                  <PropertyRow
-                    key={row.id}
-                    row={row}
-                    onSave={handleSave}
-                    onDelete={handleDelete}
-                    onRented={handleRented}
-                  />
+                filtered.map(row => (
+                  <PropertyRow key={row.id} row={row} onSave={handleSave}
+                    onDelete={handleDelete} onRented={handleRented} uf={uf} />
                 ))
               )}
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* Totals row */}
+      <div style={styles.totalsRow}>
+        <span style={styles.totalsLabel}>TOTAL</span>
+        <span style={styles.totalsItem}>
+          Precio: <strong>{formatCLP(totals.totalCLP)}</strong>
+          {!uf && totals.totalCLP === 0 && <span style={styles.ufNote}> (valores en UF excluidos — cargando UF...)</span>}
+        </span>
+        <span style={styles.totalsItem}>
+          OP: <strong style={{ color: '#FF8C00' }}>{totals.opCount}</strong>
+        </span>
       </div>
     </div>
   );
@@ -268,22 +375,30 @@ export default function PizarraPage() {
 
 const styles = {
   container: { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Google Sans', 'Segoe UI', sans-serif" },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexShrink: 0 },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexShrink: 0 },
   title: { fontSize: 24, fontWeight: 700, color: '#202124', margin: '0 0 4px' },
+  subtitleRow: { display: 'flex', alignItems: 'center', gap: 12 },
   subtitle: { fontSize: 14, color: '#5f6368', margin: 0 },
-  addBtn: { display: 'flex', alignItems: 'center', padding: '9px 16px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
+  ufBadge: { fontSize: 12, background: '#e8f0fe', color: '#1a73e8', borderRadius: 20, padding: '2px 10px', fontWeight: 600 },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  filters: { display: 'flex', gap: 6, alignItems: 'center' },
+  filterBtn: { padding: '5px 12px', borderRadius: 20, border: '1px solid #dadce0', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#5f6368', fontFamily: 'inherit' },
+  clearFilter: { padding: '5px 10px', borderRadius: 20, border: 'none', background: 'none', fontSize: 12, cursor: 'pointer', color: '#ea4335', fontFamily: 'inherit' },
+  addBtn: { display: 'flex', alignItems: 'center', padding: '9px 16px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: { padding: '10px 12px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  row: { background: '#fff', transition: 'background 0.1s' },
-  editRow: { background: '#f0f7ff' },
-  td: { padding: '8px 12px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', verticalAlign: 'middle' },
+  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
+  td: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', verticalAlign: 'middle' },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle' },
-  tdActions: { padding: '4px 8px', borderBottom: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' },
-  actionBtnGray: { background: 'none', border: 'none', cursor: 'pointer', padding: '4px 5px', borderRadius: 6, display: 'inline-flex', color: '#5f6368' },
-  actionBtnGreen: { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '4px 5px', borderRadius: 6, display: 'inline-flex', color: '#34a853' },
-  actionBtnBlue: { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '4px 5px', borderRadius: 6, display: 'inline-flex', color: '#1a73e8' },
-  actionBtnRed: { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '4px 5px', borderRadius: 6, display: 'inline-flex', color: '#ea4335' },
+  tdActions: { padding: '4px 6px', borderBottom: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' },
+  actionBtnGray:  { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
+  actionBtnGreen: { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#34a853' },
+  actionBtnBlue:  { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#1a73e8' },
+  actionBtnRed:   { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  totalsRow: { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
+  totalsLabel: { fontSize: 11, fontWeight: 700, color: '#5f6368', letterSpacing: 0.8 },
+  totalsItem: { fontSize: 13, color: '#3c4043' },
+  ufNote: { fontSize: 11, color: '#9aa0a6', fontStyle: 'italic' },
 };
