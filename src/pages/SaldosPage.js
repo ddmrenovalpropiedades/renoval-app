@@ -25,6 +25,37 @@ const isPagada = (val) => {
   return val.toLowerCase() === 'pagada';
 };
 
+// Check if a saldo row exceeds threshold level (1 or 2) in any service column
+const rowExceedsUmbral = (row, attrsMap, level) => {
+  const attr = attrsMap?.[row.propiedad];
+  const defaults = { agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000] };
+  const gcDefaults = [70000, 180000];
+
+  const checkField = (val, tipo) => {
+    const n = parseAmount(val);
+    if (!n || isPagada(val)) return false;
+    if (tipo === 'agua' || tipo === 'luz' || tipo === 'gas') {
+      const t1 = attr?.[`umbral1_${tipo}`] || defaults[tipo][0];
+      const t2 = attr?.[`umbral2_${tipo}`] || defaults[tipo][1];
+      return level === 1 ? n >= t1 : n >= t2;
+    }
+    if (tipo === 'gc') {
+      const gcProm = attr?.gc_promedio;
+      const t1 = gcProm ? gcProm * 1.9 : gcDefaults[0];
+      const t2 = gcProm ? gcProm * 2.8 : gcDefaults[1];
+      return level === 1 ? n >= t1 : n >= t2;
+    }
+    return false;
+  };
+
+  return (
+    checkField(row.agua_ac, 'agua') || checkField(row.agua_an, 'agua') ||
+    checkField(row.luz_ac,  'luz')  || checkField(row.luz_an,  'luz')  ||
+    checkField(row.gas_ac,  'gas')  || checkField(row.gas_an,  'gas')  ||
+    checkField(row.gc_ac,   'gc')   || checkField(row.gc_an,   'gc')
+  );
+};
+
 const getCellStyle = (val, tipo, attr, emptyWhite = false) => {
   const base = { padding: 0, fontSize: 12, textAlign: 'center', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 };
   if (!val || val === '') return { ...base, background: emptyWhite ? '#fff' : '#FAF3E0' };
@@ -133,6 +164,7 @@ export default function SaldosPage() {
   const [lastUploads, setLastUploads] = useState({});
   const [search, setSearch] = useState('');
   const [filterE, setFilterE] = useState([]);
+  const [filterUmbral, setFilterUmbral] = useState(0); // 0=none, 1=umbral1, 2=umbral2
   const [showUpload, setShowUpload] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -278,8 +310,11 @@ export default function SaldosPage() {
     if (filterE.length > 0) {
       result = result.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
     }
+    if (filterUmbral > 0) {
+      result = result.filter(r => rowExceedsUmbral(r, attrsMap, filterUmbral));
+    }
     return result;
-  }, [rows, search, filterE]);
+  }, [rows, search, filterE, filterUmbral, attrsMap]);
 
   const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
 
@@ -343,6 +378,17 @@ export default function SaldosPage() {
             }}>{e}</button>
           ))}
           {filterE.length > 0 && <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>}
+          <div style={{ width: 1, background: '#dadce0', height: 20, margin: '0 4px' }} />
+          <button onClick={() => setFilterUmbral(filterUmbral === 1 ? 0 : 1)}
+            style={{ ...styles.filterBtn, ...(filterUmbral === 1 ? { background: '#fff3e0', color: '#e65100', borderColor: '#e65100', fontWeight: 700 } : {}) }}
+            title="Mostrar filas con al menos un valor ≥ Umbral 1">
+            ≥ U1
+          </button>
+          <button onClick={() => setFilterUmbral(filterUmbral === 2 ? 0 : 2)}
+            style={{ ...styles.filterBtn, ...(filterUmbral === 2 ? { background: '#fce8e6', color: '#c5221f', borderColor: '#c5221f', fontWeight: 700 } : {}) }}
+            title="Mostrar filas con al menos un valor ≥ Umbral 2">
+            ≥ U2
+          </button>
         </div>
       </div>
 
