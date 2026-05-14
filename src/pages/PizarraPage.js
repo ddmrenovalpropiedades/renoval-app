@@ -362,11 +362,14 @@ export default function PizarraPage() {
       <div style={styles.totalsRow}>
         <span style={styles.totalsLabel}>TOTAL</span>
         <span style={styles.totalsItem}>
-          Precio: <strong>{formatCLP(totals.totalCLP)}</strong>
+          Total por colocar: <strong>{formatCLP(totals.totalCLP)}</strong>
           {!uf && totals.totalCLP === 0 && <span style={styles.ufNote}> (valores en UF excluidos — cargando UF...)</span>}
         </span>
         <span style={styles.totalsItem}>
           OP: <strong style={{ color: '#FF8C00' }}>{totals.opCount}</strong>
+        </span>
+        <span style={styles.totalsItem}>
+          Propiedades: <strong>{filtered.length}</strong>
         </span>
       </div>
     </div>
@@ -399,7 +402,7 @@ const styles = {
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   totalsRow: { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
-  totalsLabel: { fontSize: 11, fontWeight: 700, color: '#5f6368', letterSpacing: 0.8 },
-  totalsItem: { fontSize: 13, color: '#3c4043' },
+  totalsLabel: { fontSize: 14, fontWeight: 700, color: '#5f6368', letterSpacing: 0.8 },
+  totalsItem: { fontSize: 17, color: '#3c4043' },
   ufNote: { fontSize: 11, color: '#9aa0a6', fontStyle: 'italic' },
 };
