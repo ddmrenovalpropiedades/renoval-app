@@ -122,6 +122,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     const e = {};
     if (!form.propiedad.trim()) e.propiedad = true;
     if (!form.fecha_salida) e.fecha_salida = true;
+    if (!form.e1) e.e1 = true;
+    if (!form.e2) e.e2 = true;
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -156,8 +158,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <td style={styles.td}><InlineInput value={form.promo} onChange={v => set('promo', v)} placeholder="$" style={{ width: 80 }} /></td>
         <td style={styles.td}><InlineInput value={form.status} onChange={v => set('status', v)} placeholder="Status" style={{ width: 80 }} /></td>
         <td style={styles.tdCenter}><InlineSelect value={form.destaque} options={['OP']} onChange={v => set('destaque', v)} /></td>
-        <td style={styles.tdCenter}><InlineSelect value={form.e1} options={['DD', 'FD']} onChange={v => set('e1', v)} /></td>
-        <td style={styles.tdCenter}><InlineSelect value={form.e2} options={['EA', 'FG']} onChange={v => set('e2', v)} /></td>
+        <td style={{ ...styles.tdCenter, ...(errors.e1 ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.e1} options={['DD', 'FD']} onChange={v => set('e1', v)} /></td>
+        <td style={{ ...styles.tdCenter, ...(errors.e2 ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.e2} options={['EA', 'FG']} onChange={v => set('e2', v)} /></td>
         <td style={styles.tdCenter}><InlineInput value={form.db} onChange={v => set('db', v)} style={{ width: 50 }} /></td>
         <td style={styles.tdCenter}><InlineInput value={form.eb} onChange={v => set('eb', v)} style={{ width: 50 }} /></td>
         <td style={styles.td}><InlineInput value={form.comuna} onChange={v => set('comuna', v)} placeholder="Comuna" style={{ width: 90 }} /></td>
