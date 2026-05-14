@@ -44,7 +44,7 @@ const formatCLP = (n) => {
 const parsePrice = (val) => {
   if (!val) return { amount: null, isUF: false };
   const str = String(val).trim();
-  const ufMatch = str.match(/(\d+[\.,]?\d*)\s*UF|UF\s*(\d+[\.,]?\d*)/i);
+  const ufMatch = str.match(/(\d+[.,]?\d*)\s*UF|UF\s*(\d+[.,]?\d*)/i);
   if (ufMatch) {
     const n = parseFloat((ufMatch[1] || ufMatch[2]).replace(',', '.'));
     return { amount: n, isUF: true };
