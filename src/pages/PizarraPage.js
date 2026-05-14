@@ -181,21 +181,21 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     <tr style={{ background: '#fff' }}
       onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
       onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-      <td style={{ ...styles.td, maxWidth: 220 }}>
+      <td style={{ ...styles.tdProp }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
           {showAlert && <UrgentDot />}
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.propiedad}</span>
         </div>
       </td>
-      <td style={styles.td}><PriceCell val={row.precio} uf={uf} /></td>
-      <td style={styles.td}><PriceCell val={row.promo} uf={uf} /></td>
-      <td style={styles.td}><span style={statusStyle(row.status)}>{row.status}</span></td>
+      <td style={styles.tdCenter}><PriceCell val={row.precio} uf={uf} /></td>
+      <td style={styles.tdCenter}><PriceCell val={row.promo} uf={uf} /></td>
+      <td style={styles.tdCenter}><span style={statusStyle(row.status)}>{row.status}</span></td>
       <td style={styles.tdCenter}><span style={destaqueStyle(row.destaque)}>{row.destaque}</span></td>
       <td style={styles.tdCenter}><BadgeE val={row.e1} /></td>
       <td style={styles.tdCenter}><BadgeE val={row.e2} /></td>
       <td style={styles.tdCenter}>{row.db}</td>
       <td style={styles.tdCenter}>{row.eb}</td>
-      <td style={styles.td}>{row.comuna}</td>
+      <td style={styles.tdCenter}>{row.comuna}</td>
       <td style={styles.tdCenter}>
         <span style={{ ...(!isOverdue ? {} : { color: '#ea4335', fontWeight: 600 }), fontSize: 11 }}>
           {formatDate(row.fecha_salida)}
@@ -335,7 +335,7 @@ export default function PizarraPage() {
                 {HEADERS.map((h, i) => (
                   <th key={i} style={{
                     ...styles.th,
-                    textAlign: ['PROPIEDAD','PRECIO','PROMO','STATUS','COMUNA'].includes(h) ? 'left' : 'center'
+                    textAlign: h === 'PROPIEDAD' ? 'left' : 'center'
                   }}>{h}</th>
                 ))}
               </tr>
@@ -389,6 +389,7 @@ const styles = {
   table: { width: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
   td: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', verticalAlign: 'middle' },
+  tdProp: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', verticalAlign: 'middle', maxWidth: 220 },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle' },
   tdActions: { padding: '4px 6px', borderBottom: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' },
   actionBtnGray:  { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
