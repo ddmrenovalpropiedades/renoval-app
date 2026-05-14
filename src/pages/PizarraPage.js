@@ -108,6 +108,63 @@ function PriceCell({ val, uf }) {
   );
 }
 
+
+// ── Rent Modal ────────────────────────────────────────────────
+function RentModal({ row, onConfirm, onCancel }) {
+  const [comision, setComision] = useState('');
+  const [entrega, setEntrega] = useState('');
+  const [meses, setMeses] = useState('');
+  const hasPromo = !!(row.promo && String(row.promo).trim());
+
+  return (
+    <div style={rentStyles.overlay} onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div style={rentStyles.modal}>
+        <h3 style={rentStyles.title}>Registrar arriendo</h3>
+        <p style={rentStyles.prop}>{row.propiedad}</p>
+        <div style={rentStyles.field}>
+          <label style={rentStyles.label}>Comisión *</label>
+          <input value={comision} onChange={e => setComision(e.target.value)}
+            placeholder="$" autoFocus style={rentStyles.input} />
+        </div>
+        <div style={rentStyles.field}>
+          <label style={rentStyles.label}>Fecha de entrega *</label>
+          <input type="date" value={entrega} onChange={e => setEntrega(e.target.value)}
+            style={rentStyles.input} />
+        </div>
+        {hasPromo && (
+          <div style={rentStyles.field}>
+            <label style={rentStyles.label}>Meses de promoción (PROMO: {row.promo})</label>
+            <input value={meses} onChange={e => setMeses(e.target.value)}
+              placeholder="Ej: 2" style={rentStyles.input} type="number" min="0" />
+          </div>
+        )}
+        <div style={rentStyles.actions}>
+          <button
+            onClick={() => comision && entrega && onConfirm({ comision, entrega, meses: hasPromo ? meses : '' })}
+            disabled={!comision || !entrega}
+            style={{ ...rentStyles.confirmBtn, ...(!comision || !entrega ? { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' } : {}) }}>
+            Confirmar arriendo
+          </button>
+          <button onClick={onCancel} style={rentStyles.cancelBtn}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const rentStyles = {
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 },
+  modal: { background: '#fff', borderRadius: 16, padding: 28, width: 400, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif" },
+  title: { fontSize: 18, fontWeight: 700, color: '#202124', margin: '0 0 6px' },
+  prop: { fontSize: 13, color: '#5f6368', margin: '0 0 20px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8 },
+  field: { marginBottom: 14 },
+  label: { fontSize: 12, fontWeight: 600, color: '#5f6368', display: 'block', marginBottom: 6 },
+  input: { width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit' },
+  actions: { display: 'flex', gap: 8, marginTop: 20 },
+  confirmBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+};
+
 // ── Property Row ──────────────────────────────────────────────
 function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf }) {
   const [editing, setEditing] = useState(isNew);
@@ -230,6 +287,7 @@ export default function PizarraPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addingNew, setAddingNew] = useState(false);
+  const [rentingRow, setRentingRow] = useState(null);
   const [filterE, setFilterE] = useState([]);
   const uf = useUFValue();
 
@@ -291,10 +349,51 @@ export default function PizarraPage() {
     setRows(prev => prev.filter(r => r.id !== id));
   };
 
-  const handleRented = async (row) => {
+  const handleRentedConfirm = async ({ comision, entrega, meses }) => {
+    const row = rentingRow;
+    setRentingRow(null);
+
+    // Calculate fecha_gar = fecha_salida + 60 days
+    let fechaGar = null;
+    if (row.fecha_salida) {
+      const d = new Date(row.fecha_salida + 'T12:00:00');
+      d.setDate(d.getDate() + 60);
+      fechaGar = d.toISOString().split('T')[0];
+    }
+
+    // Get current month
+    const now = new Date();
+    const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // Ensure month exists
+    await supabase.from('arrendadas_meses').upsert({ mes }, { onConflict: 'mes' });
+
+    // Insert into arrendadas
+    await supabase.from('arrendadas').insert({
+      mes,
+      propiedad: row.propiedad,
+      arriendo: row.precio,
+      comision,
+      tipo: row.tipo,
+      admin: row.admin,
+      e1: row.e1,
+      e2: row.e2,
+      entrega: entrega || null,
+      contrato: 'Pendiente',
+      liquidacion: 'Pendiente',
+      fecha_gar: fechaGar,
+      dev_gar: 'Pendiente',
+      cuentas: 'Pendiente',
+      promocion: row.promo || null,
+      meses: meses || null,
+    });
+
+    // Remove from pizarra
     await supabase.from('pizarra').delete().eq('id', row.id);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
+
+  const handleRented = (row) => { setRentingRow(row); };
 
   const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','DESTAQUE','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN',''];
 
@@ -374,6 +473,14 @@ export default function PizarraPage() {
           Propiedades: <strong>{filtered.length}</strong>
         </span>
       </div>
+
+      {rentingRow && (
+        <RentModal
+          row={rentingRow}
+          onConfirm={handleRentedConfirm}
+          onCancel={() => setRentingRow(null)}
+        />
+      )}
     </div>
   );
 }
