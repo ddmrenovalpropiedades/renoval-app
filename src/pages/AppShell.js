@@ -8,6 +8,7 @@ import {
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
 import PropertiesPage from './PropertiesPage';
+import PizarraPage from './PizarraPage';
 import SaldosPage from './SaldosPage';
 
 const NAV_ITEMS = [
@@ -96,6 +97,8 @@ export default function AppShell() {
 
 function ModuleRenderer({ module, profile }) {
   switch (module) {
+    case 'pizarra':
+      return <PizarraPage />;
     case 'cartera':
       return <PropertiesPage />;
     case 'servicios':
