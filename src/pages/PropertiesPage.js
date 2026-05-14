@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Search, Edit2, X, Check, Users } from 'lucide-react';
+import PropertyAttributesTab from '../components/PropertyAttributesTab';
 
 const ENCARGADOS = ['DD', 'FD', 'EA', 'FG', 'AM'];
 const ENCARGADO_COLORS = {
@@ -99,6 +100,7 @@ export default function PropertiesPage() {
   const [editingProp, setEditingProp] = useState(null);
   const [showCounters, setShowCounters] = useState(false);
   const isOwner = profile?.isOwner;
+  const [activeTab, setActiveTab] = useState('cartera');
 
   useEffect(() => { fetchProperties(); }, []);
 
@@ -156,6 +158,21 @@ export default function PropertiesPage() {
 
   return (
     <div style={styles.container}>
+      {/* Tabs */}
+      <div style={styles.tabs}>
+        <button onClick={() => setActiveTab('cartera')}
+          style={{ ...styles.tab, ...(activeTab === 'cartera' ? styles.tabActive : {}) }}>
+          Cartera
+        </button>
+        <button onClick={() => setActiveTab('atributos')}
+          style={{ ...styles.tab, ...(activeTab === 'atributos' ? styles.tabActive : {}) }}>
+          Atributos
+        </button>
+      </div>
+
+      {activeTab === 'atributos' && <PropertyAttributesTab />}
+      {activeTab === 'cartera' && <>
+
       {/* Header */}
       <div style={styles.header}>
         <div>
@@ -270,6 +287,8 @@ export default function PropertiesPage() {
         )}
       </div>
 
+      </>}
+
       {showModal && (
         <PropertyModal
           property={editingProp}
@@ -328,4 +347,7 @@ const styles = {
   saveBtn: { display: 'flex', alignItems: 'center', padding: '9px 20px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
   saveBtnDisabled: { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' },
   cancelBtn: { padding: '9px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+  tabs: { display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e8eaed', flexShrink: 0 },
+  tab: { padding: '10px 20px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, color: '#5f6368', fontFamily: 'inherit', borderBottom: '2px solid transparent', marginBottom: -2 },
+  tabActive: { color: '#1a73e8', borderBottom: '2px solid #1a73e8' },
 };
