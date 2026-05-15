@@ -108,8 +108,11 @@ function RentModal({ row, onConfirm, onCancel }) {
         <p style={rentStyles.prop}>{row.propiedad}</p>
         <div style={rentStyles.field}>
           <label style={rentStyles.label}>Comisión *</label>
-          <input value={comision} onChange={e => setComision(e.target.value)}
-            placeholder="$" autoFocus style={rentStyles.input} />
+          <div style={{ ...rentStyles.input, display: 'flex', alignItems: 'center', padding: '9px 12px' }}>
+            <span style={{ color: '#9aa0a6', marginRight: 4, flexShrink: 0 }}>$</span>
+            <input value={comision} onChange={e => setComision(e.target.value.replace(/[^0-9.]/g, ''))}
+              autoFocus style={{ border: 'none', outline: 'none', flex: 1, fontSize: 14, fontFamily: 'inherit' }} />
+          </div>
         </div>
         <div style={rentStyles.field}>
           <label style={rentStyles.label}>Fecha de entrega *</label>
@@ -118,7 +121,7 @@ function RentModal({ row, onConfirm, onCancel }) {
         </div>
         {hasPromo && (
           <div style={rentStyles.field}>
-            <label style={rentStyles.label}>Meses con promoción (PROMO: {row.promo})</label>
+            <label style={rentStyles.label}>Meses con promoción</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
               {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m => {
                 const selected = meses.split(',').map(s=>s.trim()).filter(Boolean).includes(m);
@@ -190,10 +193,10 @@ function InlineEditCell({ value, onChange, placeholder = '' }) {
 }
 
 // Inline select cell
-function InlineSelectCell({ value, options, onChange, renderValue }) {
+function InlineSelectCell({ value, options, onChange }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}
-      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%' }}>
+      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textAlign: 'center' }}>
       <option value="">—</option>
       {options.map(o => <option key={o} value={o} style={{ color: '#202124' }}>{o}</option>)}
     </select>
@@ -317,7 +320,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
       <td style={styles.tdCenter}>
         <input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
-          style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}) }} />
+          style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}), WebkitAppearance: 'none', MozAppearance: 'none', colorScheme: 'light' }}
+          onClick={e => e.target.showPicker && e.target.showPicker()} />
       </td>
       <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
