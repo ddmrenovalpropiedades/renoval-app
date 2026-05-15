@@ -273,17 +273,17 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} /></td>
         <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} /></td>
         <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
-        <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>DD</option><option>FD</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>EA</option><option>FG</option></select></td>
+        <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>DD</option><option>FD</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>EA</option><option>FG</option></select></td>
         <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
-        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none'}} /></td>
+        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none',appearance:'none',WebkitAppearance:'none',colorScheme:'light'}} onClick={e=>e.target.showPicker&&e.target.showPicker()} /></td>
         <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
         <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
-        <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.admin?{background:'#fce8e6'}:{})}}><select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>Sí</option><option>No</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.admin?{background:'#fce8e6'}:{})}}><select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Sí</option><option>No</option></select></td>
         <td style={styles.tdActions}>
           <button onClick={handleNewSave} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
           <button onClick={() => { if(onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
@@ -304,7 +304,9 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       </td>
       <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} /></td>
       <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} /></td>
-      <td style={styles.td}><InlineEditCell value={form.status} onChange={v => set('status', v)} /></td>
+      <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
+        <InlineEditCell value={form.status} onChange={v => set('status', v)} />
+      </td>
       <td style={styles.tdCenter}>
         <InlineSelectCell value={form.destaque} options={['OP']} onChange={v => set('destaque', v)}
           renderValue={v => v ? <span style={destaqueStyle(v)}>{v}</span> : null} />
