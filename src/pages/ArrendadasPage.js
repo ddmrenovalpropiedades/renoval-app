@@ -30,19 +30,55 @@ const BadgeE = ({ val }) => val ? (
 ) : null;
 
 const EstadoCell = ({ value, onChange }) => (
-  <select value={value || 'Pendiente'} onChange={e => onChange(e.target.value)}
-    style={{
-      border: 'none', outline: 'none', fontFamily: 'inherit',
-      fontSize: 11, fontWeight: 600, cursor: 'pointer',
-      background: 'transparent',
-      color: value === 'Listo' ? '#34a853' : '#ea4335',
-    }}>
-    {ESTADO_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-  </select>
+  <div style={{ position: 'relative' }}>
+    <select value={value || 'Pendiente'} onChange={e => onChange(e.target.value)}
+      style={{
+        border: 'none', outline: 'none', fontFamily: 'inherit',
+        fontSize: 11, fontWeight: 600, cursor: 'pointer',
+        background: 'transparent',
+        color: value === 'Listo' ? '#34a853' : '#ea4335',
+        WebkitAppearance: 'menulist',
+      }}>
+      {ESTADO_OPTIONS.map(o => <option key={o} value={o} style={{ color: '#202124', fontWeight: 400 }}>{o}</option>)}
+    </select>
+  </div>
 );
 
 const E1_OPTS = ['DD','FD'];
 const E2_OPTS = ['EA','FG'];
+
+// Money input: shows $ prefix, cursor after $
+function MoneyInput({ value, onChange, readOnly = false }) {
+  const [editing, setEditing] = useState(false);
+  const [raw, setRaw] = useState('');
+
+  const displayVal = value ? formatCLP(value) : '';
+
+  if (readOnly) return <span style={{ fontSize: 12 }}>{displayVal}</span>;
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 4px', background: '#fff' }}>
+        <span style={{ fontSize: 12, color: '#5f6368', marginRight: 1 }}>$</span>
+        <input
+          autoFocus
+          value={raw}
+          onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
+          onBlur={() => { setEditing(false); if (raw) onChange(raw); }}
+          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+          style={{ border: 'none', outline: 'none', width: 70, fontSize: 12, fontFamily: 'inherit' }}
+        />
+      </div>
+    );
+  }
+  return (
+    <div onClick={() => { setRaw(value ? String(value).replace(/[^0-9.]/g, '') : ''); setEditing(true); }}
+      style={{ cursor: 'text', fontSize: 12, minWidth: 60, padding: '2px 4px', borderRadius: 6, ':hover': { background: '#f1f3f4' } }}>
+      {displayVal || <span style={{ color: '#dadce0' }}>$</span>}
+    </div>
+  );
+}
+
 const TIPO_OPTS = ['Nuevo','Renovación'];
 const ADMIN_OPTS = ['Sí','No'];
 
@@ -120,10 +156,12 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
       onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
       onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
       <td style={styles.td}>{row.propiedad}</td>
-      <td style={styles.tdCenter}>{formatCLP(row.arriendo)}</td>
+      <td style={styles.tdCenter}><MoneyInput value={row.arriendo || ''} onChange={v => {}} readOnly /></td>
       <td style={styles.tdCenter}>
-        <input value={edits.comision ?? (row.comision || '')} onChange={e => set('comision', e.target.value)}
-          style={styles.inlineInput} placeholder="$" />
+        <MoneyInput
+          value={edits.comision !== undefined ? edits.comision : (row.comision || '')}
+          onChange={v => set('comision', v)}
+        />
       </td>
       <td style={styles.tdCenter}>{row.tipo}</td>
       <td style={styles.tdCenter}>{row.admin}</td>
@@ -200,6 +238,7 @@ export default function ArrendadasPage() {
   }, 0);
 
   const HEADERS = ['PROPIEDAD','ARRIENDO','COMISION','TIPO','ADMIN','E1','E2','ENTREGA','CONTRATO','LIQUIDACION','FECHA GAR','DEV GAR','CUENTAS','PROMOCION','MESES',''];
+  const WIDE_HEADERS = ['CONTRATO','LIQUIDACION','DEV GAR','CUENTAS'];
 
   return (
     <div style={styles.container}>
@@ -230,7 +269,7 @@ export default function ArrendadasPage() {
             <thead>
               <tr>
                 {HEADERS.map((h, i) => (
-                  <th key={i} style={{ ...styles.th, textAlign: h === 'PROPIEDAD' ? 'left' : 'center' }}>{h}</th>
+                  <th key={i} style={{ ...(WIDE_HEADERS.includes(h) ? styles.thWide : styles.th), textAlign: h === 'PROPIEDAD' ? 'left' : 'center' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -266,9 +305,10 @@ const styles = {
   navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', color: '#5f6368', borderRadius: 6, ':disabled': { opacity: 0.3 } },
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  td: { padding: '8px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', verticalAlign: 'middle' },
-  tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle' },
+  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #d0d5dd', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
+  thWide: { padding: '10px 16px', minWidth: 75, background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #d0d5dd', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap', textAlign: 'center' },
+  td: { padding: '8px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle' },
+  tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle' },
   tdActions: { padding: '4px 6px', borderBottom: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle' },
   inlineInput: { border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: 80, textAlign: 'center' },
   saveBtn: { background: '#e8f0fe', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: '#1a73e8', display: 'inline-flex', alignItems: 'center' },
