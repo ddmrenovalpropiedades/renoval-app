@@ -238,7 +238,7 @@ export default function ArrendadasPage() {
   }, 0);
 
   const HEADERS = ['PROPIEDAD','ARRIENDO','COMISION','TIPO','ADMIN','E1','E2','ENTREGA','CONTRATO','LIQUIDACION','FECHA GAR','DEV GAR','CUENTAS','PROMOCION','MESES',''];
-  const WIDE_HEADERS = ['CONTRATO','LIQUIDACION','DEV GAR','CUENTAS'];
+  const WIDE_HEADERS = ['CONTRATO','LIQUIDACION','DEV GAR','CUENTAS','ENTREGA','FECHA GAR'];
 
   return (
     <div style={styles.container}>
