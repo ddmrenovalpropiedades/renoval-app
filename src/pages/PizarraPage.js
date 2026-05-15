@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, Edit2, Check, X, Home, Trash2 } from 'lucide-react';
+import { Plus, Check, X, Home, Trash2 } from 'lucide-react';
 
 // ── UF value ──────────────────────────────────────────────────
 const useUFValue = () => {
@@ -29,11 +29,6 @@ const daysDiff = (dateStr) => {
   return Math.floor((new Date() - date) / (1000 * 60 * 60 * 24));
 };
 
-const formatDate = (dateStr) => {
-  if (!dateStr) return '';
-  const [y, m, d] = dateStr.split('-');
-  return `${d}/${m}/${y}`;
-};
 
 const formatCLP = (n) => {
   if (!n && n !== 0) return '';
@@ -57,20 +52,7 @@ const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E6
 const UrgentDot = () => (
   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#ea4335', color: '#fff', fontSize: 10, fontWeight: 900, flexShrink: 0, marginRight: 4 }}>!</span>
 );
-const BadgeE = ({ val }) => val ? (
-  <span style={{ background: `${ENCARGADO_COLORS[val]}22`, color: ENCARGADO_COLORS[val], border: `1px solid ${ENCARGADO_COLORS[val]}44`, borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>{val}</span>
-) : null;
 
-const statusStyle = (val) => {
-  if (!val) return {};
-  if (val.toUpperCase() === 'PUBLICAR') return { background: '#FDD835', color: '#202124', fontWeight: 700, borderRadius: 4, padding: '2px 8px' };
-  return {};
-};
-const avisoStyle = (val) => {
-  if (val === 'Aún no') return { background: '#ea4335', color: '#fff', fontWeight: 600, borderRadius: 4, padding: '2px 6px', fontSize: 11 };
-  if (val === 'Listo') return { color: '#34a853', fontWeight: 600, fontSize: 11 };
-  return { fontSize: 11 };
-};
 const destaqueStyle = (val) => val === 'OP'
   ? { background: '#FF8C00', color: '#fff', fontWeight: 700, borderRadius: 4, padding: '2px 8px', fontSize: 11 }
   : {};
@@ -81,29 +63,32 @@ const EMPTY_FORM = {
   fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
 };
 
-const InlineSelect = ({ value, options, onChange }) => (
-  <select value={value || ''} onChange={e => onChange(e.target.value)}
-    style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', minWidth: 60 }}>
-    <option value="">—</option>
-    {options.map(o => <option key={o} value={o}>{o}</option>)}
-  </select>
-);
-const InlineInput = ({ value, onChange, placeholder = '', style = {} }) => (
-  <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-    style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', ...style }} />
-);
 
-// ── Price cell display ────────────────────────────────────────
-function PriceCell({ val, uf }) {
-  if (!val) return null;
-  const { amount, isUF } = parsePrice(val);
-  const clpVal = isUF && uf && amount ? Math.round(amount * uf) : null;
-  return (
-    <div>
-      <div style={{ fontWeight: 500 }}>
-        {isUF ? `${amount} UF` : (amount ? formatCLP(amount) : val)}
+
+
+// Money input with cursor after $
+function MoneyInput({ value, onChange, placeholder = '' }) {
+  const [editing, setEditing] = useState(false);
+  const [raw, setRaw] = useState('');
+  const { amount, isUF } = parsePrice(value || '');
+  const displayVal = value ? (isUF ? `${amount} UF` : (amount ? formatCLP(amount) : value)) : '';
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', minWidth: 80 }}>
+        <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2, flexShrink: 0 }}>$</span>
+        <input autoFocus value={raw}
+          onChange={e => setRaw(e.target.value)}
+          onBlur={() => { setEditing(false); onChange(raw || ''); }}
+          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+          style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }} />
       </div>
-      {clpVal && <div style={{ fontSize: 10, color: '#9aa0a6' }}>{formatCLP(clpVal)}</div>}
+    );
+  }
+  return (
+    <div onClick={() => { setRaw(value || ''); setEditing(true); }}
+      style={{ cursor: 'text', fontSize: 12, minWidth: 70, padding: '3px 4px', borderRadius: 4 }}>
+      {displayVal || <span style={{ color: '#dadce0' }}>—</span>}
     </div>
   );
 }
@@ -182,15 +167,55 @@ const rentStyles = {
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
+
+// Inline editable text cell
+function InlineEditCell({ value, onChange, placeholder = '' }) {
+  const [editing, setEditing] = useState(false);
+  const [raw, setRaw] = useState(value || '');
+  if (editing) {
+    return (
+      <input autoFocus value={raw}
+        onChange={e => setRaw(e.target.value)}
+        onBlur={() => { setEditing(false); if (raw !== value) onChange(raw); }}
+        onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+        style={{ border: '1px solid #1a73e8', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+    );
+  }
+  return (
+    <div onClick={() => { setRaw(value || ''); setEditing(true); }}
+      style={{ cursor: 'text', fontSize: 12, minHeight: 22, padding: '1px 2px', borderRadius: 4 }}>
+      {value || <span style={{ color: '#dadce0' }}>{placeholder || '—'}</span>}
+    </div>
+  );
+}
+
+// Inline select cell
+function InlineSelectCell({ value, options, onChange, renderValue }) {
+  return (
+    <select value={value || ''} onChange={e => onChange(e.target.value)}
+      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%' }}>
+      <option value="">—</option>
+      {options.map(o => <option key={o} value={o} style={{ color: '#202124' }}>{o}</option>)}
+    </select>
+  );
+}
+
 // ── Property Row ──────────────────────────────────────────────
 function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf }) {
-  const [editing, setEditing] = useState(isNew);
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
-  const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [errors, setErrors] = useState({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+  const set = (k, v) => {
+    const updated = { ...form, [k]: v };
+    setForm(updated);
+    if (!isNew) saveField(k, v);
+  };
+
+  const saveField = async (k, v) => {
+    await supabase.from('pizarra').update({ [k]: v || null }).eq('id', row.id);
+    onSave({ ...row, [k]: v });
+  };
 
   const validate = () => {
     const e = {};
@@ -204,13 +229,10 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     return Object.keys(e).length === 0;
   };
 
-  const handleSave = async () => {
+  const handleNewSave = async () => {
     if (!validate()) return;
-    setSaving(true);
     await onSave(form);
-    setSaving(false);
-    setEditing(false);
-    if (isNew && onCancelNew) onCancelNew();
+    if (onCancelNew) onCancelNew();
   };
 
   const handleDelete = async () => {
@@ -218,38 +240,50 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     await onDelete(row.id);
   };
 
-  const days = daysDiff(row.fecha_salida);
+  const days = daysDiff(form.fecha_salida);
   const isOverdue = days !== null && days >= 60;
-  const needsAviso = row.aviso !== 'Listo';
+  const needsAviso = form.aviso !== 'Listo';
   const showAlert = isOverdue || needsAviso;
 
-  if (editing) {
+  const AvisoCell = ({ field }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <select value={form[field] || ''} onChange={e => set(field, e.target.value)}
+        style={{
+          border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11,
+          fontWeight: 600, cursor: 'pointer', background: 'transparent',
+          color: form[field] === 'Listo' ? '#34a853' : form[field] === 'Aún no' ? '#fff' : '#202124',
+          ...(form[field] === 'Aún no' ? { background: '#ea4335', borderRadius: 4, padding: '2px 4px' } : {}),
+        }}>
+        <option value="" style={{ color: '#202124', background: '#fff' }}>—</option>
+        {['Aún no', 'Listo'].map(o => <option key={o} value={o} style={{ color: '#202124', background: '#fff', fontWeight: 400 }}>{o}</option>)}
+      </select>
+    </div>
+  );
+
+  if (isNew) {
     return (
-      <tr style={{ background: '#f0f7ff' }}>
+      <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
         <td style={styles.td}>
-          <InlineInput value={form.propiedad} onChange={v => set('propiedad', v)} placeholder="Dirección *"
-            style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0' }} />
+          <input value={form.propiedad} onChange={e => setForm(p => ({...p, propiedad: e.target.value}))}
+            placeholder="Dirección *" style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
         </td>
-        <td style={styles.td}><InlineInput value={form.precio} onChange={v => set('precio', v)} placeholder="$" style={{ width: 90 }} /></td>
-        <td style={styles.td}><InlineInput value={form.promo} onChange={v => set('promo', v)} placeholder="$" style={{ width: 80 }} /></td>
-        <td style={styles.td}><InlineInput value={form.status} onChange={v => set('status', v)} placeholder="Status" style={{ width: 80 }} /></td>
-        <td style={styles.tdCenter}><InlineSelect value={form.destaque} options={['OP']} onChange={v => set('destaque', v)} /></td>
-        <td style={{ ...styles.tdCenter, ...(errors.e1 ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.e1} options={['DD', 'FD']} onChange={v => set('e1', v)} /></td>
-        <td style={{ ...styles.tdCenter, ...(errors.e2 ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.e2} options={['EA', 'FG']} onChange={v => set('e2', v)} /></td>
-        <td style={styles.tdCenter}><InlineInput value={form.db} onChange={v => set('db', v)} style={{ width: 50 }} /></td>
-        <td style={styles.tdCenter}><InlineInput value={form.eb} onChange={v => set('eb', v)} style={{ width: 50 }} /></td>
-        <td style={styles.td}><InlineInput value={form.comuna} onChange={v => set('comuna', v)} placeholder="Comuna" style={{ width: 90 }} /></td>
-        <td style={styles.tdCenter}>
-          <input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
-            style={{ border: errors.fecha_salida ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} />
-        </td>
-        <td style={styles.tdCenter}><InlineSelect value={form.aviso} options={['Aún no', 'Listo']} onChange={v => set('aviso', v)} /></td>
-        <td style={styles.tdCenter}><InlineSelect value={form.respaldo} options={['Aún no', 'Listo']} onChange={v => set('respaldo', v)} /></td>
-        <td style={{ ...styles.tdCenter, ...(errors.tipo ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.tipo} options={['Nuevo', 'Renovación']} onChange={v => set('tipo', v)} /></td>
-        <td style={{ ...styles.tdCenter, ...(errors.admin ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.admin} options={['Sí', 'No']} onChange={v => set('admin', v)} /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} /></td>
+        <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
+        <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>DD</option><option>FD</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>EA</option><option>FG</option></select></td>
+        <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
+        <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
+        <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
+        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none'}} /></td>
+        <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
+        <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
+        <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.admin?{background:'#fce8e6'}:{})}}><select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none'}}><option value="">—</option><option>Sí</option><option>No</option></select></td>
         <td style={styles.tdActions}>
-          <button onClick={handleSave} disabled={saving} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
-          <button onClick={() => { setEditing(false); if (isNew && onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
+          <button onClick={handleNewSave} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
+          <button onClick={() => { if(onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
         </td>
       </tr>
     );
@@ -262,29 +296,38 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={{ ...styles.tdProp }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
           {showAlert && <UrgentDot />}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.propiedad}</span>
+          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} />
         </div>
       </td>
-      <td style={styles.tdCenter}><PriceCell val={row.precio} uf={uf} /></td>
-      <td style={styles.tdCenter}><PriceCell val={row.promo} uf={uf} /></td>
-      <td style={styles.tdCenter}><span style={statusStyle(row.status)}>{row.status}</span></td>
-      <td style={styles.tdCenter}><span style={destaqueStyle(row.destaque)}>{row.destaque}</span></td>
-      <td style={styles.tdCenter}><BadgeE val={row.e1} /></td>
-      <td style={styles.tdCenter}><BadgeE val={row.e2} /></td>
-      <td style={styles.tdCenter}>{row.db}</td>
-      <td style={styles.tdCenter}>{row.eb}</td>
-      <td style={styles.tdCenter}>{row.comuna}</td>
+      <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} /></td>
+      <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} /></td>
+      <td style={styles.td}><InlineEditCell value={form.status} onChange={v => set('status', v)} /></td>
       <td style={styles.tdCenter}>
-        <span style={{ ...(!isOverdue ? {} : { color: '#ea4335', fontWeight: 600 }), fontSize: 11 }}>
-          {formatDate(row.fecha_salida)}
-        </span>
+        <InlineSelectCell value={form.destaque} options={['OP']} onChange={v => set('destaque', v)}
+          renderValue={v => v ? <span style={destaqueStyle(v)}>{v}</span> : null} />
       </td>
-      <td style={styles.tdCenter}><span style={avisoStyle(row.aviso)}>{row.aviso}</span></td>
-      <td style={styles.tdCenter}><span style={avisoStyle(row.respaldo)}>{row.respaldo}</span></td>
-      <td style={styles.tdCenter}>{row.tipo}</td>
-      <td style={styles.tdCenter}>{row.admin}</td>
+      <td style={styles.tdCenter}>
+        <InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} />
+      </td>
+      <td style={styles.tdCenter}>
+        <InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} />
+      </td>
+      <td style={styles.tdCenter}><InlineEditCell value={form.db} onChange={v => set('db', v)} /></td>
+      <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
+      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
+      <td style={styles.tdCenter}>
+        <input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
+          style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}) }} />
+      </td>
+      <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
+      <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
+      <td style={styles.tdCenter}>
+        <InlineSelectCell value={form.tipo} options={['Nuevo','Renovación']} onChange={v => set('tipo', v)} />
+      </td>
+      <td style={styles.tdCenter}>
+        <InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => set('admin', v)} />
+      </td>
       <td style={styles.tdActions}>
-        <button onClick={() => setEditing(true)} style={styles.actionBtnGray} title="Editar"><Edit2 size={13} /></button>
         <button onClick={() => onRented(row)} style={styles.actionBtnBlue} title="Arrendar"><Home size={13} /></button>
         {confirmDelete ? (
           <>
@@ -298,6 +341,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     </tr>
   );
 }
+
 
 // ── Main page ─────────────────────────────────────────────────
 const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
@@ -343,19 +387,20 @@ export default function PizarraPage() {
   }, [filtered, uf]);
 
   const handleSave = async (form) => {
-    const payload = {
-      propiedad: form.propiedad.trim(),
-      precio: form.precio || null, promo: form.promo || null,
-      status: form.status || null, destaque: form.destaque || null,
-      e1: form.e1 || null, e2: form.e2 || null,
-      db: form.db || null, eb: form.eb || null, comuna: form.comuna || null,
-      fecha_salida: form.fecha_salida || null, aviso: form.aviso || null,
-      respaldo: form.respaldo || null, tipo: form.tipo || null, admin: form.admin || null,
-    };
+    // For inline edits: update local state only (field already saved to DB)
     if (form.id) {
-      await supabase.from('pizarra').update(payload).eq('id', form.id);
-      setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...payload } : r));
+      setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...form } : r));
     } else {
+      // New row insert
+      const payload = {
+        propiedad: form.propiedad.trim(),
+        precio: form.precio || null, promo: form.promo || null,
+        status: form.status || null, destaque: form.destaque || null,
+        e1: form.e1 || null, e2: form.e2 || null,
+        db: form.db || null, eb: form.eb || null, comuna: form.comuna || null,
+        fecha_salida: form.fecha_salida || null, aviso: form.aviso || null,
+        respaldo: form.respaldo || null, tipo: form.tipo || null, admin: form.admin || null,
+      };
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
       if (data) setRows(prev => [data, ...prev]);
@@ -414,7 +459,7 @@ export default function PizarraPage() {
 
   const handleRented = (row) => { setRentingRow(row); };
 
-  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','DESTAQUE','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN',''];
+  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','OROS','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN',''];
 
   return (
     <div style={styles.container}>
