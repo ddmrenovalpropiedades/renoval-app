@@ -78,7 +78,7 @@ const destaqueStyle = (val) => val === 'OP'
 const EMPTY_FORM = {
   propiedad: '', precio: '', promo: '', status: '', destaque: '',
   e1: '', e2: '', db: '', eb: '', comuna: '',
-  fecha_salida: '', aviso: '', respaldo: '', tipo: '', admin: '',
+  fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
 };
 
 const InlineSelect = ({ value, options, onChange }) => (
@@ -133,9 +133,26 @@ function RentModal({ row, onConfirm, onCancel }) {
         </div>
         {hasPromo && (
           <div style={rentStyles.field}>
-            <label style={rentStyles.label}>Meses de promoción (PROMO: {row.promo})</label>
-            <input value={meses} onChange={e => setMeses(e.target.value)}
-              placeholder="Ej: 2" style={rentStyles.input} type="number" min="0" />
+            <label style={rentStyles.label}>Meses con promoción (PROMO: {row.promo})</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+              {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m => {
+                const selected = meses.split(',').map(s=>s.trim()).filter(Boolean).includes(m);
+                return (
+                  <button key={m} type="button" onClick={() => {
+                    const list = meses.split(',').map(s=>s.trim()).filter(Boolean);
+                    const updated = selected ? list.filter(x=>x!==m) : [...list, m];
+                    setMeses(updated.join(', '));
+                  }} style={{
+                    padding: '4px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                    border: selected ? '1px solid #1a73e8' : '1px solid #dadce0',
+                    background: selected ? '#e8f0fe' : '#fff',
+                    color: selected ? '#1a73e8' : '#5f6368',
+                    fontWeight: selected ? 700 : 400,
+                  }}>{m}</button>
+                );
+              })}
+            </div>
+            {meses && <div style={{ fontSize: 11, color: '#5f6368', marginTop: 6 }}>Seleccionados: {meses}</div>}
           </div>
         )}
         <div style={rentStyles.actions}>
@@ -181,6 +198,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     if (!form.fecha_salida) e.fecha_salida = true;
     if (!form.e1) e.e1 = true;
     if (!form.e2) e.e2 = true;
+    if (!form.tipo) e.tipo = true;
+    if (!form.admin) e.admin = true;
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -226,8 +245,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         </td>
         <td style={styles.tdCenter}><InlineSelect value={form.aviso} options={['Aún no', 'Listo']} onChange={v => set('aviso', v)} /></td>
         <td style={styles.tdCenter}><InlineSelect value={form.respaldo} options={['Aún no', 'Listo']} onChange={v => set('respaldo', v)} /></td>
-        <td style={styles.tdCenter}><InlineSelect value={form.tipo} options={['Nuevo', 'Renovación']} onChange={v => set('tipo', v)} /></td>
-        <td style={styles.tdCenter}><InlineSelect value={form.admin} options={['Sí', 'No']} onChange={v => set('admin', v)} /></td>
+        <td style={{ ...styles.tdCenter, ...(errors.tipo ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.tipo} options={['Nuevo', 'Renovación']} onChange={v => set('tipo', v)} /></td>
+        <td style={{ ...styles.tdCenter, ...(errors.admin ? { background: '#fce8e6' } : {}) }}><InlineSelect value={form.admin} options={['Sí', 'No']} onChange={v => set('admin', v)} /></td>
         <td style={styles.tdActions}>
           <button onClick={handleSave} disabled={saving} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
           <button onClick={() => { setEditing(false); if (isNew && onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
@@ -500,6 +519,7 @@ const styles = {
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
+  thAviso: { padding: '10px 14px', minWidth: 80, background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap', textAlign: 'center' },
   td: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', verticalAlign: 'middle' },
   tdProp: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', verticalAlign: 'middle', maxWidth: 220 },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #f1f3f4', borderRight: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle' },
