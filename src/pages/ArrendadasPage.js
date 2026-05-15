@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { ChevronLeft, ChevronRight, Save } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Edit2, Trash2, Check, X } from 'lucide-react';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -41,9 +41,16 @@ const EstadoCell = ({ value, onChange }) => (
   </select>
 );
 
-function ArrendadaRow({ row, onUpdate }) {
+const E1_OPTS = ['DD','FD'];
+const E2_OPTS = ['EA','FG'];
+const TIPO_OPTS = ['Nuevo','Renovación'];
+const ADMIN_OPTS = ['Sí','No'];
+
+function ArrendadaRow({ row, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ ...row });
   const [edits, setEdits] = useState({});
-  const hasEdits = Object.keys(edits).length > 0;
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const merged = { ...row, ...edits };
 
   const set = (k, v) => setEdits(prev => ({ ...prev, [k]: v }));
@@ -54,12 +61,59 @@ function ArrendadaRow({ row, onUpdate }) {
     setEdits({});
   };
 
+  const handleEditSave = async () => {
+    await supabase.from('arrendadas').update(form).eq('id', row.id);
+    onUpdate(row.id, form);
+    setEditing(false);
+  };
+
   const handleEstado = async (k, v) => {
-    set(k, v);
     await supabase.from('arrendadas').update({ [k]: v }).eq('id', row.id);
     onUpdate(row.id, { [k]: v });
-    setEdits(prev => { const n = { ...prev }; delete n[k]; return n; });
   };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    await onDelete(row.id);
+  };
+
+  const InlineInput = ({ field, style = {} }) => (
+    <input value={form[field] || ''} onChange={e => setForm(p => ({...p, [field]: e.target.value}))}
+      style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', ...style }} />
+  );
+  const InlineSel = ({ field, opts }) => (
+    <select value={form[field] || ''} onChange={e => setForm(p => ({...p, [field]: e.target.value}))}
+      style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', width: '100%' }}>
+      <option value="">—</option>
+      {opts.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+
+  if (editing) {
+    return (
+      <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
+        <td style={styles.td}><InlineInput field="propiedad" /></td>
+        <td style={styles.tdCenter}><InlineInput field="arriendo" style={{ width: 80 }} /></td>
+        <td style={styles.tdCenter}><InlineInput field="comision" style={{ width: 80 }} /></td>
+        <td style={styles.tdCenter}><InlineSel field="tipo" opts={TIPO_OPTS} /></td>
+        <td style={styles.tdCenter}><InlineSel field="admin" opts={ADMIN_OPTS} /></td>
+        <td style={styles.tdCenter}><InlineSel field="e1" opts={E1_OPTS} /></td>
+        <td style={styles.tdCenter}><InlineSel field="e2" opts={E2_OPTS} /></td>
+        <td style={styles.tdCenter}><input type="date" value={form.entrega || ''} onChange={e => setForm(p => ({...p, entrega: e.target.value}))} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.contrato} onChange={v => setForm(p => ({...p, contrato: v}))} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.liquidacion} onChange={v => setForm(p => ({...p, liquidacion: v}))} /></td>
+        <td style={styles.tdCenter}><input type="date" value={form.fecha_gar || ''} onChange={e => setForm(p => ({...p, fecha_gar: e.target.value}))} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.dev_gar} onChange={v => setForm(p => ({...p, dev_gar: v}))} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.cuentas} onChange={v => setForm(p => ({...p, cuentas: v}))} /></td>
+        <td style={styles.tdCenter}><InlineInput field="promocion" style={{ width: 70 }} /></td>
+        <td style={styles.tdCenter}><InlineInput field="meses" /></td>
+        <td style={styles.tdActions}>
+          <button onClick={handleEditSave} style={styles.actionBtnGreen} title="Guardar"><Check size={13} /></button>
+          <button onClick={() => setEditing(false)} style={styles.actionBtnGray} title="Cancelar"><X size={13} /></button>
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <tr style={{ background: '#fff', borderBottom: '1px solid #f1f3f4' }}
@@ -68,31 +122,33 @@ function ArrendadaRow({ row, onUpdate }) {
       <td style={styles.td}>{row.propiedad}</td>
       <td style={styles.tdCenter}>{formatCLP(row.arriendo)}</td>
       <td style={styles.tdCenter}>
-        <input value={edits.comision ?? (row.comision || '')}
-          onChange={e => set('comision', e.target.value)}
+        <input value={edits.comision ?? (row.comision || '')} onChange={e => set('comision', e.target.value)}
           style={styles.inlineInput} placeholder="$" />
       </td>
       <td style={styles.tdCenter}>{row.tipo}</td>
       <td style={styles.tdCenter}>{row.admin}</td>
       <td style={styles.tdCenter}><BadgeE val={row.e1} /></td>
       <td style={styles.tdCenter}><BadgeE val={row.e2} /></td>
-      <td style={styles.tdCenter}>
-        {row.entrega ? new Date(row.entrega + 'T12:00:00').toLocaleDateString('es-CL') : ''}
-      </td>
+      <td style={styles.tdCenter}>{row.entrega ? new Date(row.entrega + 'T12:00:00').toLocaleDateString('es-CL') : ''}</td>
       <td style={styles.tdCenter}><EstadoCell value={merged.contrato} onChange={v => handleEstado('contrato', v)} /></td>
       <td style={styles.tdCenter}><EstadoCell value={merged.liquidacion} onChange={v => handleEstado('liquidacion', v)} /></td>
-      <td style={styles.tdCenter}>
-        {row.fecha_gar ? new Date(row.fecha_gar + 'T12:00:00').toLocaleDateString('es-CL') : ''}
-      </td>
+      <td style={styles.tdCenter}>{row.fecha_gar ? new Date(row.fecha_gar + 'T12:00:00').toLocaleDateString('es-CL') : ''}</td>
       <td style={styles.tdCenter}><EstadoCell value={merged.dev_gar} onChange={v => handleEstado('dev_gar', v)} /></td>
       <td style={styles.tdCenter}><EstadoCell value={merged.cuentas} onChange={v => handleEstado('cuentas', v)} /></td>
       <td style={styles.tdCenter}>{row.promocion ? formatCLP(row.promocion) : ''}</td>
       <td style={styles.tdCenter}>{row.meses}</td>
       <td style={styles.tdActions}>
-        {hasEdits && (
-          <button onClick={handleSave} style={styles.saveBtn} title="Guardar">
-            <Save size={13} />
-          </button>
+        {Object.keys(edits).length > 0 && (
+          <button onClick={handleSave} style={styles.saveBtn} title="Guardar comisión"><Save size={13} /></button>
+        )}
+        <button onClick={() => { setForm({...row}); setEditing(true); }} style={styles.actionBtnGray} title="Editar"><Edit2 size={13} /></button>
+        {confirmDelete ? (
+          <>
+            <button onClick={handleDelete} style={styles.actionBtnRed} title="Confirmar"><Trash2 size={13} /></button>
+            <button onClick={() => setConfirmDelete(false)} style={styles.actionBtnGray} title="Cancelar"><X size={12} /></button>
+          </>
+        ) : (
+          <button onClick={() => setConfirmDelete(true)} style={styles.actionBtnGray} title="Eliminar"><Trash2 size={13} /></button>
         )}
       </td>
     </tr>
@@ -126,6 +182,11 @@ export default function ArrendadasPage() {
 
   const handleUpdate = (id, updates) => {
     setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  };
+
+  const handleDelete = async (id) => {
+    await supabase.from('arrendadas').delete().eq('id', id);
+    setRows(prev => prev.filter(r => r.id !== id));
   };
 
   const mesIdx = meses.indexOf(currentMes);
@@ -178,7 +239,7 @@ export default function ArrendadasPage() {
                 <tr><td colSpan={16} style={styles.empty}>No hay propiedades arrendadas en {formatMes(currentMes || '2026-05')}.</td></tr>
               ) : (
                 rows.map(row => (
-                  <ArrendadaRow key={row.id} row={row} onUpdate={handleUpdate} />
+                  <ArrendadaRow key={row.id} row={row} onUpdate={handleUpdate} onDelete={handleDelete} />
                 ))
               )}
             </tbody>
@@ -211,6 +272,9 @@ const styles = {
   tdActions: { padding: '4px 6px', borderBottom: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle' },
   inlineInput: { border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: 80, textAlign: 'center' },
   saveBtn: { background: '#e8f0fe', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: '#1a73e8', display: 'inline-flex', alignItems: 'center' },
+  actionBtnGray:  { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
+  actionBtnGreen: { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#34a853' },
+  actionBtnRed:   { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   totalsRow: { display: 'flex', alignItems: 'center', gap: 16, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
