@@ -10,6 +10,7 @@ import TasksPage from './TasksPage';
 import PropertiesPage from './PropertiesPage';
 import PizarraPage from './PizarraPage';
 import ArrendadasPage from './ArrendadasPage';
+import ContratosPage from './ContratosPage';
 import SaldosPage from './SaldosPage';
 
 const NAV_ITEMS = [
@@ -102,6 +103,8 @@ function ModuleRenderer({ module, profile }) {
       return <PizarraPage />;
     case 'arrendadas':
       return <ArrendadasPage />;
+    case 'contratos':
+      return <ContratosPage />;
     case 'cartera':
       return <PropertiesPage />;
     case 'servicios':
