@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
-  LayoutGrid, CheckSquare, DollarSign,
+  LayoutGrid, CheckSquare, DollarSign, FileText,
   Zap, Users, LogOut, ChevronLeft, ChevronRight,
   Building2
 } from 'lucide-react';
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { id: 'tareas',     label: 'Tareas Pendientes',     icon: CheckSquare,  ownerOnly: false },
   { id: 'cuentas',    label: 'Cuentas por Cobrar',    icon: DollarSign,   ownerOnly: true  },
   { id: 'servicios',  label: 'Saldos',                icon: Zap,          ownerOnly: false },
+  { id: 'contratos',  label: 'Contratos',             icon: FileText,     ownerOnly: false },
   { id: 'usuarios',   label: 'Usuarios',              icon: Users,        ownerOnly: true  },
 ];
 
