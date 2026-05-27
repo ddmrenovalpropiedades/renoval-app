@@ -78,8 +78,6 @@ function MoneyInput({ value, onChange, placeholder = '' }) {
     setRaw(digits);
   };
 
-  const liveDisplay = raw ? '$' + parseInt(raw).toLocaleString('es-CL') : '';
-
   if (editing) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', minWidth: 80 }}>
