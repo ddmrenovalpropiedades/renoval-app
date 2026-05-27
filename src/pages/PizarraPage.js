@@ -66,27 +66,34 @@ const EMPTY_FORM = {
 
 
 
-// Money input with cursor after $
+// Money input with cursor after $ and live thousands formatting
 function MoneyInput({ value, onChange, placeholder = '' }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
   const { amount, isUF } = parsePrice(value || '');
   const displayVal = value ? (isUF ? `${amount} UF` : (amount ? formatCLP(amount) : value)) : '';
 
+  const handleChange = (e) => {
+    const digits = e.target.value.replace(/[^0-9]/g, '');
+    setRaw(digits);
+  };
+
+  const liveDisplay = raw ? '$' + parseInt(raw).toLocaleString('es-CL') : '';
+
   if (editing) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', minWidth: 80 }}>
         <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2, flexShrink: 0 }}>$</span>
-        <input autoFocus value={raw}
-          onChange={e => setRaw(e.target.value)}
+        <input autoFocus value={raw ? parseInt(raw).toLocaleString('es-CL') : ''}
+          onChange={handleChange}
           onBlur={() => { setEditing(false); onChange(raw || ''); }}
           onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-          style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }} />
+          style={{ border: 'none', outline: 'none', width: 90, fontSize: 12, fontFamily: 'inherit' }} />
       </div>
     );
   }
   return (
-    <div onClick={() => { setRaw(value || ''); setEditing(true); }}
+    <div onClick={() => { setRaw(amount ? String(Math.round(amount)) : ''); setEditing(true); }}
       style={{ cursor: 'text', fontSize: 12, minWidth: 70, padding: '3px 4px', borderRadius: 4 }}>
       {displayVal || <span style={{ color: '#dadce0' }}>—</span>}
     </div>
@@ -423,12 +430,13 @@ export default function PizarraPage() {
     const row = rentingRow;
     setRentingRow(null);
 
-    // Calculate fecha_gar = fecha_salida + 60 days
+    // Calculate fecha_gar = fecha_salida + 60 days (parse safely to avoid timezone shifts)
     let fechaGar = null;
     if (row.fecha_salida) {
-      const d = new Date(row.fecha_salida + 'T12:00:00');
+      const parts = String(row.fecha_salida).split('T')[0].split('-');
+      const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]), 12, 0, 0);
       d.setDate(d.getDate() + 60);
-      fechaGar = d.toISOString().split('T')[0];
+      fechaGar = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
 
     // Get current month
