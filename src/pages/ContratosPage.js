@@ -225,8 +225,15 @@ function buildDoc(data) {
   const { propietarios, arrendatarios, fiadores, propiedad } = data;
   const fecha = formatFecha(propiedad.fechaInicio);
   const fechaFin = addMonths(propiedad.fechaInicio, 12);
-  const renta = formatMoney(propiedad.arriendo);
-  const garantia = formatMoney(propiedad.garantia||propiedad.arriendo);
+  const isUF = propiedad.monedaArriendo === 'UF';
+  const rentaVal = propiedad.arriendo || 'XXXXXXXXXX';
+  const garantiaVal = propiedad.garantia || propiedad.arriendo || 'XXXXXXXXXX';
+  const renta = isUF
+    ? { num: `${rentaVal} UF`, words: `${numToWords(parseInt(rentaVal)||0)} Unidades de Fomento` }
+    : formatMoney(propiedad.arriendo);
+  const garantia = isUF
+    ? { num: `${garantiaVal} UF`, words: `${numToWords(parseInt(garantiaVal)||0)} Unidades de Fomento` }
+    : formatMoney(propiedad.garantia||propiedad.arriendo);
   const hasFiador = fiadores.length > 0;
   // 14pt line spacing = 280 twips (1pt = 20 twips)
   const bold = (t) => new TextRun({ text:t, bold:true, font:'Arial', size:22 });
@@ -300,9 +307,8 @@ function buildDoc(data) {
     : `Las partes dejan constancia que el inmueble se arrienda sin muebles, salvo aquellos que se entienden formar parte del mismo, los cuales se identifican en inventario que debidamente suscrito por los contratantes, se entiende formar parte de este contrato para todos los efectos a que haya lugar.`;
 
   const reajusteTexts = {
-    'IPC': 'El reajuste se realizará cada seis meses una vez comenzado el contrato de arrendamiento según las variaciones del Índice de Precios al Consumidor (IPC), considerándose para el cálculo el último valor publicado del IPC previo a la aplicación del reajuste.',
-    'UF': 'El reajuste se realizará cada seis meses una vez comenzado el contrato de arrendamiento según las variaciones de la Unidad de Fomento (UF), considerándose para el cálculo el valor de la UF vigente al momento de aplicar el reajuste.',
-    'Sin reajuste': 'La renta de arrendamiento no estará sujeta a reajuste durante la vigencia del presente contrato.',
+    'IPC (cada 6 meses)': 'El reajuste se realizará cada seis meses una vez comenzado el contrato de arrendamiento según las variaciones del Índice de Precios al Consumidor (IPC), considerándose para el cálculo el último valor publicado del IPC previo a la aplicación del reajuste.',
+    'IPC (cada 12 meses)': 'El reajuste se realizará cada doce meses una vez comenzado el contrato de arrendamiento según las variaciones del Índice de Precios al Consumidor (IPC), considerándose para el cálculo el último valor publicado del IPC previo a la aplicación del reajuste.',
   };
 
   // Title block
@@ -360,8 +366,8 @@ function buildDoc(data) {
     clausulaTitle('DÉCIMO CUARTO: ACCIONES JUDICIALES'),
     justified([run(`En la eventualidad que La parte Arrendataria, no hiciere el pago correspondiente a un mes de la renta de arrendamiento; dará derecho a la parte Arrendadora a iniciar de inmediato las acciones judiciales tendientes a pedir la restitución del inmueble, rentas impagas, consumos, deterioros del inmueble, y los gastos que se ocasionen con motivo del juicio. (Judiciales y honorarios de abogados).`)]),
     clausulaTitle('DÉCIMO QUINTO: VARIOS'),
-    justified([bold('A). - REAJUSTABILIDAD: '), run(reajusteTexts[propiedad.reajuste]||reajusteTexts['IPC'])]),
-    justified([bold('B). - REUNIONES COMUNIDAD: '), run('Será obligación de la parte arrendataria participar en las juntas de residentes y co-propietarios, para evitar el cobro de multas por no asistencia, en caso contrario serán de cargo de la parte arrendataria.')]),
+    ...(isUF ? [] : [justified([bold('A). - REAJUSTABILIDAD: '), run(reajusteTexts[propiedad.reajuste]||reajusteTexts['IPC (cada 6 meses)'])])]),
+    justified([bold(`${isUF ? 'A' : 'B'}). - REUNIONES COMUNIDAD: `), run('Será obligación de la parte arrendataria participar en las juntas de residentes y co-propietarios, para evitar el cobro de multas por no asistencia, en caso contrario serán de cargo de la parte arrendataria.')]),
   ];
 
   if (hasFiador) {
@@ -424,7 +430,10 @@ function PreviewPage({ data, onBack }) {
   const [generating, setGenerating] = useState(false);
   const { propietarios, arrendatarios, fiadores, propiedad } = data;
   const fecha = formatFecha(propiedad.fechaInicio);
-  const renta = formatMoney(propiedad.arriendo);
+  const isUF = propiedad.monedaArriendo === 'UF';
+  const renta = isUF
+    ? { num:`${propiedad.arriendo||'XX'} UF`, words:`${numToWords(parseInt(propiedad.arriendo)||0)} Unidades de Fomento` }
+    : formatMoney(propiedad.arriendo);
   const hasFiador = fiadores.length > 0;
 
   const handleDownload = async () => {
@@ -476,7 +485,7 @@ function PreviewPage({ data, onBack }) {
         <Cl title="TERCERO: DEL PLAZO"><P>Inicio: <strong>{fecha.dia} de {fecha.mes} del año {fecha.año}</strong>. Vigencia: 1 año (hasta {addMonths(propiedad.fechaInicio,12)}). Renovación automática por períodos de 6 meses.</P></Cl>
         <Cl title="CUARTO: DE LA RENTA"><P>Renta mensual: <strong>{renta.num} ({renta.words})</strong>.{propiedad.promo&&` Valor promocional: ${formatMoney(propiedad.promo).num} durante ${propiedad.mesesPromo}.`}</P></Cl>
         <Cl title="OCTAVO: DE LA GARANTÍA"><P>Garantía: <strong>{formatMoney(propiedad.garantia||propiedad.arriendo).num}</strong>. Devolución dentro de los 60 días desde la restitución.</P></Cl>
-        <Cl title="DÉCIMO QUINTO A: REAJUSTABILIDAD"><P>{propiedad.reajuste}</P></Cl>
+        {!isUF && <Cl title="DÉCIMO QUINTO A: REAJUSTABILIDAD"><P>{propiedad.reajuste}</P></Cl>}
         {hasFiador&&<Cl title="DÉCIMO SEXTO: FIADOR Y CODEUDOR SOLIDARIO"><P>{fiadores.map(f=>f.nombre).join(' y ')}.</P></Cl>}
 
         <div style={{ marginTop:40 }}>
@@ -499,8 +508,8 @@ export default function ContratosPage() {
   const [propiedad, setPropiedad] = useState({
     calle:'', regionProp:'Región Metropolitana', comunaProp:'',
     bodega:'', estacionamiento:'', amoblado:false,
-    arriendo:'', garantia:'', promo:'', mesesPromo:'',
-    fechaInicio:'', reajuste:'IPC',
+    monedaArriendo:'CLP', arriendo:'', garantia:'', promo:'', mesesPromo:'',
+    fechaInicio:'', reajuste:'IPC (cada 6 meses)',
   });
   const [propietarios, setPropietarios] = useState([emptyProp()]);
   const [arrendatarios, setArrendatarios] = useState([]);
@@ -562,18 +571,31 @@ export default function ContratosPage() {
             <Field label="Fecha de inicio" required>
               <Input value={propiedad.fechaInicio} onChange={v=>setProp('fechaInicio',v)} type="date" />
             </Field>
-            <Field label="Reajuste">
-              <Sel value={propiedad.reajuste} onChange={v=>setProp('reajuste',v)}
-                options={[['IPC','IPC (cada 6 meses)'],['UF','UF (cada 6 meses)'],['Sin reajuste','Sin reajuste']]} />
+
+            <Field label="Moneda del arriendo" required>
+              <Sel value={propiedad.monedaArriendo} onChange={v=>setProp('monedaArriendo',v)}
+                options={[['CLP','Pesos ($)'],['UF','UF']]} />
             </Field>
-            <Field label="Monto arriendo ($)" required>
-              <MoneyInput value={propiedad.arriendo} onChange={v=>setProp('arriendo',v)} />
+            <Field label={propiedad.monedaArriendo==='UF'?'Monto arriendo (UF)':'Monto arriendo ($)'} required>
+              {propiedad.monedaArriendo==='UF'
+                ? <Input value={propiedad.arriendo} onChange={v=>setProp('arriendo',v.replace(/[^0-9.]/g,''))} placeholder="Ej: 25.5" />
+                : <MoneyInput value={propiedad.arriendo} onChange={v=>setProp('arriendo',v)} />}
             </Field>
-            <Field label="Monto garantía ($)">
-              <MoneyInput value={propiedad.garantia} onChange={v=>setProp('garantia',v)} placeholder="Vacío = igual al arriendo" />
+            {propiedad.monedaArriendo==='CLP' && (
+              <Field label="Reajuste">
+                <Sel value={propiedad.reajuste} onChange={v=>setProp('reajuste',v)}
+                  options={[['IPC (cada 6 meses)','IPC (cada 6 meses)'],['IPC (cada 12 meses)','IPC (cada 12 meses)']]} />
+              </Field>
+            )}
+            <Field label={propiedad.monedaArriendo==='UF'?'Garantía (UF, vacío = 1 arriendo)':'Garantía ($, vacío = 1 arriendo)'}>
+              {propiedad.monedaArriendo==='UF'
+                ? <Input value={propiedad.garantia} onChange={v=>setProp('garantia',v.replace(/[^0-9.]/g,''))} placeholder="Vacío = igual al arriendo" />
+                : <MoneyInput value={propiedad.garantia} onChange={v=>setProp('garantia',v)} placeholder="Vacío = igual al arriendo" />}
             </Field>
-            <Field label="Monto promocional ($, opcional)">
-              <MoneyInput value={propiedad.promo} onChange={v=>setProp('promo',v)} />
+            <Field label={propiedad.monedaArriendo==='UF'?'Promoción (UF, opcional)':'Promoción ($, opcional)'}>
+              {propiedad.monedaArriendo==='UF'
+                ? <Input value={propiedad.promo} onChange={v=>setProp('promo',v.replace(/[^0-9.]/g,''))} placeholder="Ej: 20" />
+                : <MoneyInput value={propiedad.promo} onChange={v=>setProp('promo',v)} />}
             </Field>
             {propiedad.promo && (
               <Field label="Meses de promoción">
