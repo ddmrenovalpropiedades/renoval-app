@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { LOGO_BASE64 } from '../logoBase64';
 import { Plus, Trash2, Download, Eye, ChevronLeft } from 'lucide-react';
-import { Document, Packer, Paragraph, TextRun, AlignmentType } from 'docx';
+import { Document, Packer, Paragraph, TextRun, AlignmentType, ImageRun, Header } from 'docx';
 import { saveAs } from 'file-saver';
 
 // ── Chile regions & comunas ───────────────────────────────────
@@ -381,10 +382,35 @@ function buildContractDoc(data) {
     clausulas.push(br());
   });
 
+  // Logo as ImageRun for header
+  const logoBuffer = Uint8Array.from(atob(LOGO_BASE64), c => c.charCodeAt(0));
+  const logoHeader = new Header({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          new ImageRun({
+            data: logoBuffer,
+            transformation: { width: 200, height: 60 },
+            type: 'jpg',
+          }),
+        ],
+        spacing: { after: 120 },
+      }),
+    ],
+  });
+
   return new Document({
     styles: { default: { document: { run: { font:'Arial', size:22 } } } },
     sections: [{
-      properties: { page: { size:{ width:11906, height:16838 }, margin:{ top:1134, right:1134, bottom:1134, left:1134 } } },
+      properties: {
+        page: { size:{ width:11906, height:16838 }, margin:{ top:1417, right:1134, bottom:1134, left:1134 } },
+        titlePage: true,
+      },
+      headers: {
+        first: logoHeader,
+        default: new Header({ children: [new Paragraph('')] }),
+      },
       children: [...titleParas, ...clausulas]
     }]
   });
