@@ -47,33 +47,34 @@ const EstadoCell = ({ value, onChange }) => (
 const E1_OPTS = ['DD','FD'];
 const E2_OPTS = ['EA','FG'];
 
-// Money input: shows $ prefix, cursor after $
+// Money input: shows $ prefix, cursor after $, live thousands
 function MoneyInput({ value, onChange, readOnly = false }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
-
   const displayVal = value ? formatCLP(value) : '';
-
   if (readOnly) return <span style={{ fontSize: 12 }}>{displayVal}</span>;
+
+  const handleChange = (e) => {
+    const digits = e.target.value.replace(/[^0-9]/g, '');
+    setRaw(digits);
+  };
 
   if (editing) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 4px', background: '#fff' }}>
         <span style={{ fontSize: 12, color: '#5f6368', marginRight: 1 }}>$</span>
-        <input
-          autoFocus
-          value={raw}
-          onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
+        <input autoFocus
+          value={raw ? parseInt(raw).toLocaleString('es-CL') : ''}
+          onChange={handleChange}
           onBlur={() => { setEditing(false); if (raw) onChange(raw); }}
           onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-          style={{ border: 'none', outline: 'none', width: 70, fontSize: 12, fontFamily: 'inherit' }}
-        />
+          style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }} />
       </div>
     );
   }
   return (
-    <div onClick={() => { setRaw(value ? String(value).replace(/[^0-9.]/g, '') : ''); setEditing(true); }}
-      style={{ cursor: 'text', fontSize: 12, minWidth: 60, padding: '2px 4px', borderRadius: 6, ':hover': { background: '#f1f3f4' } }}>
+    <div onClick={() => { setRaw(value ? String(value).replace(/[^0-9]/g,'') : ''); setEditing(true); }}
+      style={{ cursor: 'text', fontSize: 12, minWidth: 60, padding: '2px 4px', borderRadius: 6 }}>
       {displayVal || <span style={{ color: '#dadce0' }}>$</span>}
     </div>
   );
