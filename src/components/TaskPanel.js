@@ -364,7 +364,7 @@ const styles = {
   sectionTitle: { fontSize: 12, fontWeight: 600, color: '#5f6368', marginBottom: 10, display: 'flex', alignItems: 'center' },
   urgentBtn: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, border: '1px solid #ea4335', background: '#fff', color: '#ea4335', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 },
   urgentBtnActive: { background: '#ea4335', color: '#fff' },
-  proximaBtn: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, border: '1px solid #f57c00', background: '#fff', color: '#f57c00', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 },
+  proximaBtn: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, border: '1px solid #f57c00', background: '#fff', color: '#f57c00', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, marginTop: 8 },
   proximaBtnActive: { background: '#f57c00', color: '#fff' },
   dateInput: { padding: '8px 12px', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, outline: 'none', fontFamily: 'inherit', width: '100%' },
   clearDate: { marginTop: 6, background: 'none', border: 'none', color: '#5f6368', fontSize: 12, cursor: 'pointer', textDecoration: 'underline', padding: 0 },
