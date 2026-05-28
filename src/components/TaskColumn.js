@@ -70,6 +70,7 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
   };
 
   const isUrgent = task.urgent;
+  const isProxima = task.proxima_vencer && !task.urgent;
   const isOverdue = task.due_date && new Date(task.due_date) < new Date();
   const hasSubtasks = subtasks.length > 0;
 
@@ -83,9 +84,10 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
     <div ref={setNodeRef} style={{ ...styles.taskWrapper, ...style }}>
       <div style={styles.taskItem}>
         <span {...listeners} {...attributes} style={styles.grip}>⠿</span>
-        <AnimatedCheckbox onClick={() => !hasSubtasks && onComplete(task)} urgent={isUrgent} />
+        <AnimatedCheckbox onClick={() => !hasSubtasks && onComplete(task)} urgent={isUrgent} proxima={task.proxima_vencer} />
         <span onClick={() => onOpen(task)} style={styles.taskTitle}>
           {isUrgent && <span style={styles.urgentDot} title="Urgente">!</span>}
+          {isProxima && <span style={{ ...styles.urgentDot, background: '#f57c00' }} title="Próxima a vencer">!</span>}
           {prefix}{task.title}
           {task.recurrence && task.recurrence !== 'none' && (
             <RefreshCw size={10} style={{ marginLeft: 5, color: '#9aa0a6', verticalAlign: 'middle' }} />
