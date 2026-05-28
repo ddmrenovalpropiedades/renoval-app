@@ -58,6 +58,13 @@ export function useTasks(targetEmail = null) {
     ];
     const all = [...allActive, ...allDormant];
     const unique = Array.from(new Map(all.map(t => [t.id, t])).values());
+    // Auto-upgrade proxima_vencer to urgent if due_date passed
+    const today2 = new Date().toISOString().split('T')[0];
+    const toUpgrade = unique.filter(t => t.proxima_vencer && !t.urgent && t.due_date && t.due_date <= today2);
+    for (const t of toUpgrade) {
+      await supabase.from('tasks').update({ urgent: true, proxima_vencer: false }).eq('id', t.id);
+      t.urgent = true; t.proxima_vencer = false;
+    }
     setTasks(unique);
     setLoading(false);
   }, [effectiveEmail, today]);
