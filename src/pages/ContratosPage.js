@@ -639,7 +639,6 @@ function TestContratosPage({ onBack }) {
   });
   const [showPreview, setShowPreview] = useState(false);
   const [contractData, setContractData] = useState(null);
-  const [generating, setGenerating] = useState(false);
 
   const setC = (k, v) => setConfig(p => ({ ...p, [k]: v }));
 
