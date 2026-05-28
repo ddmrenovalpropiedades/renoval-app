@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { Plus, Trash2, Download, ChevronLeft } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, ImageRun, Header } from 'docx';
 import { saveAs } from 'file-saver';
@@ -577,8 +578,217 @@ function PreviewPage({ data, onBack }) {
   );
 }
 
+
+// ── Test data generator ────────────────────────────────────────
+const NAMES_M = ['CARLOS ANDRÉS MUÑOZ REYES','PEDRO IGNACIO SOTO CAMPOS','DIEGO ALEJANDRO VARGAS LUNA','JORGE ANTONIO HERRERA PINTO','MARCELO FRANCISCO CASTRO DÍAZ'];
+const NAMES_F = ['MARÍA ELENA TORRES SILVA','ANA PAULA FUENTES MORA','CAROLINA BEATRIZ LAGOS ROJAS','VALENTINA ANDREA PÉREZ VEGA','SOFÍA CONSTANZA ARAYA NAVARRO'];
+const RUTS_M = ['12.345.678-9','15.234.567-K','18.901.234-5','11.222.333-4','16.789.012-3'];
+const RUTS_F = ['13.456.789-0','14.567.890-1','17.890.123-6','10.123.456-7','19.012.345-8'];
+const TELEFONOS = ['98765432','87654321','91234567','96543210','92345678'];
+const EMAILS_M = ['cmuñoz@gmail.com','psoto@hotmail.com','dvargas@gmail.com','jherrera@yahoo.com','mcastro@gmail.com'];
+const EMAILS_F = ['mtorres@gmail.com','afuentes@hotmail.com','clagos@gmail.com','vperez@yahoo.com','saraya@gmail.com'];
+const CALLES_PROP = [
+  'Av. Providencia 1234, Departamento 501',
+  'Calle Las Condes 567, Casa 12',
+  'Av. Ñuñoa 890, Departamento 302',
+  'Calle Macul 234, Departamento 104',
+  'Av. San Miguel 789, Departamento 805',
+];
+const CALLES_PERSONA = [
+  "Av. Bernardo O'Higgins 1100",
+  'Calle Moneda 890',
+  'Av. Irarrázaval 2345',
+  'Calle Portugal 456',
+  'Av. Italia 789',
+];
+
+const pickRandom = (arr, i) => arr[i % arr.length];
+
+function generatePerson(genero, index, type) {
+  const isMale = genero === 'M';
+  const names = isMale ? NAMES_M : NAMES_F;
+  const ruts = isMale ? RUTS_M : RUTS_F;
+  const emails = isMale ? EMAILS_M : EMAILS_F;
+  const i = (index + type.length) % 5;
+  return {
+    nombre: pickRandom(names, i),
+    rut: pickRandom(ruts, i),
+    genero,
+    nacionalidad: 'chilena',
+    calle: pickRandom(CALLES_PERSONA, i + type.length),
+    region: 'Región Metropolitana',
+    comuna: ['Santiago','Providencia','Las Condes','Ñuñoa','La Florida'][i],
+    telefono: TELEFONOS[i],
+    email: emails[i],
+  };
+}
+
+function TestContratosPage({ onBack }) {
+  const [config, setConfig] = useState({
+    nProp: 1, gProp: ['M'],
+    nArr: 1, gArr: ['M'],
+    nFia: 0, gFia: [],
+    tipoProp: 'departamento',
+    numeroProp: '502',
+    bodega: false,
+    estacionamiento: false,
+    amoblado: false,
+    monedaArriendo: 'CLP',
+    tienePromo: false,
+    generado: false,
+  });
+  const [showPreview, setShowPreview] = useState(false);
+  const [contractData, setContractData] = useState(null);
+  const [generating, setGenerating] = useState(false);
+
+  const setC = (k, v) => setConfig(p => ({ ...p, [k]: v }));
+
+  const updateCount = (field, gField, n) => {
+    const prev = config[gField];
+    const newG = Array.from({ length: n }, (_, i) => prev[i] || 'M');
+    setC(field, n);
+    setC(gField, newG);
+  };
+
+  const GenderRow = ({ list, onChange }) => (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+      {list.map((g, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 12, color: '#5f6368' }}>#{i+1}:</span>
+          <select value={g} onChange={e => { const n=[...list]; n[i]=e.target.value; onChange(n); }}
+            style={{ ...fs.select, padding: '4px 8px', fontSize: 12 }}>
+            <option value="M">Hombre</option>
+            <option value="F">Mujer</option>
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+
+  const handleGenerate = () => {
+    const propietarios = config.gProp.map((g, i) => generatePerson(g, i, 'prop'));
+    const arrendatarios = config.gArr.map((g, i) => generatePerson(g, i, 'arr'));
+    const fiadores = config.gFia.map((g, i) => generatePerson(g, i, 'fia'));
+
+    const data = {
+      propietarios,
+      arrendatarios,
+      fiadores,
+      propiedad: {
+        calle: pickRandom(CALLES_PROP, config.nProp + config.nArr),
+        tipoProp: config.tipoProp,
+        numeroProp: config.tipoProp === 'departamento' ? config.numeroProp : config.numeroProp,
+        regionProp: 'Región Metropolitana',
+        comunaProp: 'Providencia',
+        bodega: config.bodega ? 'B-23' : '',
+        estacionamiento: config.estacionamiento ? 'E-14' : '',
+        amoblado: config.amoblado,
+        monedaArriendo: config.monedaArriendo,
+        arriendo: config.monedaArriendo === 'UF' ? '28' : '450000',
+        garantia: '',
+        promo: config.tienePromo ? (config.monedaArriendo === 'UF' ? '22' : '350000') : '',
+        mesesPromo: config.tienePromo ? 'enero y febrero de 2026' : '',
+        fechaInicio: '2026-06-01',
+        reajuste: 'IPC (cada 6 meses)',
+      },
+    };
+    setContractData(data);
+    setShowPreview(true);
+  };
+
+  if (showPreview && contractData) {
+    return <PreviewPage data={contractData} onBack={() => setShowPreview(false)} />;
+  }
+
+  return (
+    <div style={fs.container}>
+      <div style={fs.header}>
+        <div>
+          <h1 style={{ ...fs.title, color: '#f57c00' }}>🧪 Generador de Contratos de Prueba</h1>
+          <p style={fs.subtitle}>Solo visible para administradores — los datos son inventados</p>
+        </div>
+        <button onClick={onBack} style={fs.backBtn}><ChevronLeft size={16} style={{marginRight:4}}/>Volver</button>
+      </div>
+
+      <div style={{ flex:1, overflow:'auto', display:'flex', flexDirection:'column', gap:16 }}>
+        <div style={fs.section}>
+          <div style={fs.sectionHeader}><span style={fs.sectionTitle}>Firmantes</span></div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16 }}>
+            {[
+              { label:'Propietarios', countKey:'nProp', gKey:'gProp' },
+              { label:'Arrendatarios', countKey:'nArr', gKey:'gArr' },
+              { label:'Fiadores', countKey:'nFia', gKey:'gFia' },
+            ].map(({ label, countKey, gKey }) => (
+              <div key={countKey}>
+                <label style={fs.label}>{label}</label>
+                <select value={config[countKey]} onChange={e => updateCount(countKey, gKey, parseInt(e.target.value))}
+                  style={{ ...fs.select, marginTop:4 }}>
+                  {[0,1,2,3].map(n => (countKey === 'nProp' || countKey === 'nArr') && n === 0 ? null :
+                    <option key={n} value={n}>{n}</option>
+                  )}
+                </select>
+                {config[countKey] > 0 && (
+                  <GenderRow list={config[gKey]} onChange={v => setC(gKey, v)} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={fs.section}>
+          <div style={fs.sectionHeader}><span style={fs.sectionTitle}>Propiedad</span></div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16 }}>
+            <div>
+              <label style={fs.label}>Tipo</label>
+              <select value={config.tipoProp} onChange={e => setC('tipoProp', e.target.value)} style={{ ...fs.select, marginTop:4 }}>
+                <option value="departamento">Departamento</option>
+                <option value="casa">Casa</option>
+              </select>
+            </div>
+            <div>
+              <label style={fs.label}>Número</label>
+              <input value={config.numeroProp} onChange={e => setC('numeroProp', e.target.value)}
+                style={{ ...fs.input, marginTop:4 }} placeholder="502" />
+            </div>
+            <div>
+              <label style={fs.label}>Moneda arriendo</label>
+              <select value={config.monedaArriendo} onChange={e => setC('monedaArriendo', e.target.value)} style={{ ...fs.select, marginTop:4 }}>
+                <option value="CLP">Pesos ($)</option>
+                <option value="UF">UF</option>
+              </select>
+            </div>
+            {[
+              { key:'bodega', label:'¿Bodega?' },
+              { key:'estacionamiento', label:'¿Estacionamiento?' },
+              { key:'amoblado', label:'¿Amoblado?' },
+              { key:'tienePromo', label:'¿Valor promocional?' },
+            ].map(({ key, label }) => (
+              <div key={key} style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                <label style={fs.label}>{label}</label>
+                <select value={config[key] ? 'si' : 'no'} onChange={e => setC(key, e.target.value === 'si')}
+                  style={{ ...fs.select, marginTop:4 }}>
+                  <option value="no">No</option>
+                  <option value="si">Sí</option>
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={handleGenerate}
+          style={{ padding:'12px 24px', background:'#f57c00', color:'#fff', border:'none', borderRadius:8, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', alignSelf:'flex-start' }}>
+          🧪 Generar contrato de prueba
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main form ─────────────────────────────────────────────────
 export default function ContratosPage() {
+  const { profile } = useAuth();
+  const isOwner = profile?.isOwner;
+  const [activeTab, setActiveTab] = useState('form'); // 'form' | 'test'
   const [propiedad, setPropiedad] = useState({
     calle:'', tipoProp:'departamento', numeroProp:'', regionProp:'Región Metropolitana', comunaProp:'',
     bodega:'', estacionamiento:'', amoblado:false,
@@ -607,6 +817,8 @@ export default function ContratosPage() {
 
   if (showPreview) return <PreviewPage data={contractData} onBack={()=>setShowPreview(false)} />;
 
+  if (activeTab === 'test') return <TestContratosPage onBack={() => setActiveTab('form')} />;
+
   return (
     <div style={fs.container}>
       <div style={fs.header}>
@@ -614,7 +826,15 @@ export default function ContratosPage() {
           <h1 style={fs.title}>Generador de Contratos</h1>
           <p style={fs.subtitle}>Completa los datos para generar el contrato de arriendo</p>
         </div>
-        <button onClick={()=>setShowPreview(true)} style={fs.previewBtn}>Vista previa y descarga</button>
+        <div style={{ display:'flex', gap:8 }}>
+          {isOwner && (
+            <button onClick={()=>setActiveTab('test')} style={{ ...fs.backBtn, color:'#f57c00', borderColor:'#f57c00' }}
+              title="Generador de prueba (solo administradores)">
+              🧪 Prueba rápida
+            </button>
+          )}
+          <button onClick={()=>setShowPreview(true)} style={fs.previewBtn}>Vista previa y descarga</button>
+        </div>
       </div>
 
       <div style={fs.body}>
