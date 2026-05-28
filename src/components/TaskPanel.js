@@ -63,6 +63,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
   const [subtasks, setSubtasks] = useState([]);
   const [newSubtask, setNewSubtask] = useState('');
   const [urgent, setUrgent] = useState(task.urgent || false);
+  const [proxima, setProxima] = useState(task.proxima_vencer || false);
   const [dueDate, setDueDate] = useState(task.due_date || '');
   const [savedMsg, setSavedMsg] = useState('');
   const subtaskInputRef = useRef();
@@ -88,6 +89,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
       recurrence,
       recurrence_config: recurrenceConfig,
       urgent,
+      proxima_vencer: proxima,
       due_date: dueDate || null,
       ...extra,
     });
@@ -132,6 +134,14 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
   const handleSaveRecurrence = async () => {
     await onUpdate(task.id, { recurrence, recurrence_config: recurrenceConfig });
     showSaved('✓ Recurrencia guardada');
+  };
+
+  const toggleProxima = async () => {
+    const newVal = !proxima;
+    setProxima(newVal);
+    if (newVal && urgent) { setUrgent(false); await onUpdate(task.id, { proxima_vencer: true, urgent: false }); }
+    else { await onUpdate(task.id, { proxima_vencer: newVal }); }
+    showSaved(newVal ? '🟠 Próxima a vencer' : '✓ Prioridad quitada');
   };
 
   const toggleUrgent = async () => {
@@ -179,7 +189,8 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
             <AnimatedCheckbox 
               onClick={() => { if (!task._dormant) { onComplete(task); onClose(); } }}
               color={task._dormant ? '#9aa0a6' : getCategoryColor(task.category)} 
-              urgent={urgent} 
+              urgent={urgent}
+              proxima={proxima}
             />
             <textarea
               value={title}
@@ -197,6 +208,10 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
             <button onClick={toggleUrgent} style={{ ...styles.urgentBtn, ...(urgent ? styles.urgentBtnActive : {}) }}>
               <AlertCircle size={14} color={urgent ? '#fff' : '#ea4335'} />
               {urgent ? 'Urgente — click para quitar' : 'Marcar como urgente'}
+            </button>
+            <button onClick={toggleProxima} style={{ ...styles.proximaBtn, ...(proxima ? styles.proximaBtnActive : {}) }}>
+              <AlertCircle size={14} color={proxima ? '#fff' : '#f57c00'} />
+              {proxima ? 'Próxima a vencer — click para quitar' : 'Marcar como próxima a vencer'}
             </button>
           </div>
 
@@ -349,6 +364,8 @@ const styles = {
   sectionTitle: { fontSize: 12, fontWeight: 600, color: '#5f6368', marginBottom: 10, display: 'flex', alignItems: 'center' },
   urgentBtn: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, border: '1px solid #ea4335', background: '#fff', color: '#ea4335', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 },
   urgentBtnActive: { background: '#ea4335', color: '#fff' },
+  proximaBtn: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, border: '1px solid #f57c00', background: '#fff', color: '#f57c00', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 },
+  proximaBtnActive: { background: '#f57c00', color: '#fff' },
   dateInput: { padding: '8px 12px', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, outline: 'none', fontFamily: 'inherit', width: '100%' },
   clearDate: { marginTop: 6, background: 'none', border: 'none', color: '#5f6368', fontSize: 12, cursor: 'pointer', textDecoration: 'underline', padding: 0 },
   subtaskCount: { marginLeft: 6, background: '#e8eaed', color: '#5f6368', fontSize: 11, padding: '1px 7px', borderRadius: 10 },
