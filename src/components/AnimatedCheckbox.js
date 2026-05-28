@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 
-export default function AnimatedCheckbox({ onClick, size = 20, urgent = false }) {
+export default function AnimatedCheckbox({ onClick, size = 20, urgent = false, proxima = false }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
-  // Always blue animation, regardless of urgent or category
   const animColor = '#1a73e8';
-  const borderColor = urgent ? '#ea4335' : hovered ? animColor : '#dadce0';
+  const borderColor = urgent ? '#ea4335' : proxima ? '#f57c00' : hovered ? animColor : '#dadce0';
 
   return (
     <button
