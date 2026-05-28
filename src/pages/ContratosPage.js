@@ -88,14 +88,6 @@ const buildDomicilio = (p) => {
   return parts.join(', ')||'XXXXXXXXXX';
 };
 
-const buildDomicilioProp = (prop) => {
-  const parts=[];
-  if(prop.calle) parts.push(prop.calle);
-  if(prop.comunaProp) parts.push(`comuna de ${prop.comunaProp}`);
-  if(prop.regionProp) parts.push(prop.regionProp);
-  return parts.join(', ')||'XXXXXXXXXX';
-};
-
 // ── Empty templates ───────────────────────────────────────────
 const emptyProp  = () => ({ nombre:'', rut:'', calle:'', region:'Región Metropolitana', comuna:'', genero:'M', nacionalidad:'chilena' });
 const emptyArr   = (defaultCalle='', defaultRegion='Región Metropolitana', defaultComuna='') =>
@@ -220,20 +212,69 @@ function PersonCard({ title, person, onChange, onRemove, canRemove, type='full' 
   );
 }
 
+
+// ── Build PRIMERO clause runs ─────────────────────────────────
+function buildPrimeroRuns(propiedad, bold, run) {
+  const tipo = propiedad.tipoProp || 'departamento';
+  const esCasa = tipo === 'casa';
+  const numero = propiedad.numeroProp;
+  const bodega = propiedad.bodega;
+  const estacionamiento = propiedad.estacionamiento;
+  const hasExtras = bodega || estacionamiento;
+  const articuloMasc = tipo === 'departamento';
+  const tieneNumero = !!numero;
+
+  const runs = [run('La parte Arrendadora, declara ser dueña ')];
+
+  if (!tieneNumero && !hasExtras) {
+    // Case 7: no number, no extras
+    runs.push(run('del inmueble ubicado en '));
+    runs.push(bold(propiedad.calle || 'XXXXXXXXXX'));
+  } else if (tieneNumero && !hasExtras) {
+    // Case 6: has number, no extras
+    runs.push(run(articuloMasc ? 'del ' : 'de la '));
+    runs.push(bold(tipo));
+    runs.push(run(' '));
+    runs.push(bold(numero));
+    runs.push(run(', ubicado' + (esCasa ? 'a' : '') + ' en '));
+    runs.push(bold(propiedad.calle || 'XXXXXXXXXX'));
+  } else {
+    // Case 8: has extras (bodega/estacionamiento)
+    runs.push(run(articuloMasc ? 'del ' : 'de la '));
+    runs.push(bold(tipo));
+    if (numero) { runs.push(run(' ')); runs.push(bold(numero)); }
+    if (bodega) { runs.push(run(', bodega ')); runs.push(bold(bodega)); }
+    if (estacionamiento) { runs.push(run(', estacionamiento ')); runs.push(bold(estacionamiento)); }
+    runs.push(run(', todos ubicados en '));
+    runs.push(bold(propiedad.calle || 'XXXXXXXXXX'));
+  }
+
+  runs.push(run(', comuna de '));
+  runs.push(bold(propiedad.comunaProp || 'XXXXXXXXXX'));
+  runs.push(run(', '));
+  runs.push(bold(propiedad.regionProp || 'XXXXXXXXXX'));
+
+  if (hasExtras) {
+    runs.push(run(', en adelante denominados como "el Inmueble".'));
+  } else {
+    runs.push(run(', en adelante denominado como "el Inmueble".'));
+  }
+  return runs;
+}
+
 // ── Build document ─────────────────────────────────────────────
 function buildDoc(data) {
   const { propietarios, arrendatarios, fiadores, propiedad } = data;
   const fecha = formatFecha(propiedad.fechaInicio);
-  const fechaFin = addMonths(propiedad.fechaInicio, 12);
   const isUF = propiedad.monedaArriendo === 'UF';
   const rentaVal = propiedad.arriendo || 'XXXXXXXXXX';
   const garantiaVal = propiedad.garantia || propiedad.arriendo || 'XXXXXXXXXX';
   const renta = isUF
     ? { num: `${rentaVal} UF`, words: `${numToWords(parseInt(rentaVal)||0)} Unidades de Fomento` }
-    : formatMoney(propiedad.arriendo);
+    : { ...formatMoney(propiedad.arriendo), words: formatMoney(propiedad.arriendo).words + ' pesos' };
   const garantia = isUF
     ? { num: `${garantiaVal} UF`, words: `${numToWords(parseInt(garantiaVal)||0)} Unidades de Fomento` }
-    : formatMoney(propiedad.garantia||propiedad.arriendo);
+    : { ...formatMoney(propiedad.garantia||propiedad.arriendo), words: formatMoney(propiedad.garantia||propiedad.arriendo).words + ' pesos' };
   const hasFiador = fiadores.length > 0;
   // 14pt line spacing = 280 twips (1pt = 20 twips)
   const bold = (t) => new TextRun({ text:t, bold:true, font:'Arial', size:22 });
@@ -254,6 +295,16 @@ function buildDoc(data) {
     spacing:{ after:120, before:240, line:280, lineRule:'exact' }
   });
 
+
+  // Helper to build bold date string inside a run sequence
+  const boldFechaFin = (() => {
+    if (!propiedad.fechaInicio) return [run('XX de XXXXXXXX del año 20XX')];
+    const d = new Date(propiedad.fechaInicio + 'T12:00:00');
+    d.setMonth(d.getMonth() + 12);
+    const ff = formatFecha(d.toISOString().split('T')[0]);
+    return [bold(ff.dia), run(' de '), bold(ff.mes), run(' del año '), bold(ff.año)];
+  })();
+
   // Intro paragraph
   const introRuns = [
     run(`En Santiago de Chile, `), bold(fecha.dia), run(` de `), bold(fecha.mes), run(` del año `), bold(fecha.año), run(`, entre `)
@@ -267,10 +318,11 @@ function buildDoc(data) {
     if (i < propietarios.length-1) introRuns.push(run(' '));
   });
 
-  const arrendadorLabel = propietarios.length > 1
-    ? 'en adelante también denominados como la parte "Arrendadora"'
-    : 'en adelante también denominada como la parte "Arrendadora"';
-  introRuns.push(run(` ${arrendadorLabel}, por una parte y `));
+  introRuns.push(run(' '));
+  introRuns.push(bold(propietarios.length > 1 ? 'en adelante también denominados como la parte' : 'en adelante también denominada como la parte'));
+  introRuns.push(run(' '));
+  introRuns.push(bold('"Arrendadora"'));
+  introRuns.push(run(', por una parte y '));
 
   arrendatarios.forEach((a,i) => {
     const g = gender(a.genero);
@@ -279,7 +331,8 @@ function buildDoc(data) {
     introRuns.push(run(`, de nacionalidad ${a.nacionalidad||'chilena'}, cédula de identidad N°${a.rut||'XXXXXXXXXX'}, número telefónico: +569${a.telefono||'XXXXXXXX'}; correo electrónico: ${a.email||'XXXXXXXXXX'}, ${g.domiciliado} en ${buildDomicilio(a)};`));
     if (i < arrendatarios.length-1) introRuns.push(run(' '));
   });
-  introRuns.push(run(` en adelante también denominad${arrendatarios.length>1?'os':'a'} como la parte "Arrendataria"`));
+  introRuns.push(run(` en adelante también denominad${arrendatarios.length>1?'os':'a'} como la parte `));
+  introRuns.push(bold('"Arrendataria"'));
 
   if (hasFiador) {
     introRuns.push(run(', y '));
@@ -296,11 +349,10 @@ function buildDoc(data) {
   }
   introRuns.push(run(`; todos ellos mayores de edad, quienes debidamente facultados acuerdan celebrar el presente Contrato de Arrendamiento, en adelante también denominado "Contrato", que consta de las cláusulas que a continuación se detallan:`));
 
-  const promoText = propiedad.promo && propiedad.mesesPromo
-    ? ` No obstante lo anterior, durante los meses de ${propiedad.mesesPromo}, la renta será de ${formatMoney(propiedad.promo).num} (${formatMoney(propiedad.promo).words}) mensuales.`
-    : '';
-
-  const inmuebleStr = buildDomicilioProp(propiedad);
+  // promoText now returns runs array for bold formatting
+  const promoRuns = (propiedad.promo && propiedad.mesesPromo)
+    ? [run(` No obstante lo anterior, durante los meses de ${propiedad.mesesPromo}, la renta será de `), bold(`${formatMoney(propiedad.promo).num} (${formatMoney(propiedad.promo).words} pesos) mensuales`), run(`.`)]
+    : [];
 
   const amobladoText = propiedad.amoblado
     ? `Las partes dejan constancia que el inmueble se arrienda amoblado, con los muebles y enseres que se identifican en inventario que debidamente suscrito por los contratantes, se entiende formar parte de este contrato para todos los efectos a que haya lugar.`
@@ -313,8 +365,9 @@ function buildDoc(data) {
 
   // Title block
   const titleParas = [
+    br(), br(),
     centered([new TextRun({ text:'CONTRATO DE ARRENDAMIENTO', bold:true, font:'Arial', size:24 })], { spacing:{after:0,line:280,lineRule:'exact'} }),
-    br(),
+    br(), br(),
     ...propietarios.map(p => centered([bold(p.nombre||'PROPIETARIO')], { spacing:{after:0,line:280,lineRule:'exact'} })),
     centered([bold('A')], { spacing:{after:0,line:280,lineRule:'exact'} }),
     ...arrendatarios.map(a => centered([bold(a.nombre||'ARRENDATARIO')], { spacing:{after:0,line:280,lineRule:'exact'} })),
@@ -326,14 +379,14 @@ function buildDoc(data) {
     justified(introRuns),
     br(),
     clausulaTitle('PRIMERO: DE LA PROPIEDAD'),
-    justified([run(`La parte Arrendadora, declara ser dueña del inmueble ubicado en ${inmuebleStr}${propiedad.bodega?`, bodega N°${propiedad.bodega}`:''}${propiedad.estacionamiento?`, estacionamiento N°${propiedad.estacionamiento}`:''}, en adelante todos denominados como "el Inmueble".`)]),
+    justified(buildPrimeroRuns(propiedad, bold, run)),
     clausulaTitle('SEGUNDO: DEL ARRENDAMIENTO'),
     justified([run(`Por el presente instrumento, la parte Arrendadora da en arrendamiento a la parte Arrendataria, el Inmueble singularizado en la cláusula primera precedente, para ser destinado a habitación y residencia de éste.`)]),
     justified([run(amobladoText)]),
     clausulaTitle('TERCERO: DEL PLAZO'),
-    justified([run(`El presente contrato comenzará a regir el día `), bold(fecha.dia), run(` del mes de `), bold(fecha.mes), run(` del año `), bold(fecha.año), run(` y tendrá vigencia de un año, esto es, hasta el día ${fechaFin}. Vencido dicho plazo el contrato se renovará tácita, automática y sucesivamente por períodos iguales de (6) meses cada uno, a menos que alguna de las partes diere aviso a la otra de su voluntad de ponerle término, lo que deberá hacer por escrito, con a lo menos 60 días de anticipación al vencimiento del período inicial o de una cualquiera de sus prórrogas, aviso que deberá hacerse por medio de correo electrónico a la dirección fdm@renovalpropiedades.com.`)]),
+    justified([run(`El presente contrato comenzará a regir el día `), bold(fecha.dia), run(` del mes de `), bold(fecha.mes), run(` del año `), bold(fecha.año), run(` y tendrá vigencia de un año, esto es, hasta el día `), ...boldFechaFin, run(`. Vencido dicho plazo el contrato se renovará tácita, automática y sucesivamente por períodos iguales de (6) meses cada uno, a menos que alguna de las partes diere aviso a la otra de su voluntad de ponerle término, lo que deberá hacer por escrito, con a lo menos 60 días de anticipación al vencimiento del período inicial o de una cualquiera de sus prórrogas, aviso que deberá hacerse por medio de correo electrónico a la dirección fdm@renovalpropiedades.com.`)]),
     clausulaTitle('CUARTO: DE LA RENTA'),
-    justified([run(`La renta de arrendamiento será la suma de `), bold(`${renta.num} (${renta.words}) mensuales`), run(`, que la parte arrendataria pagará mediante transferencia electrónica a la cuenta corriente número 27624332 del Banco Santander a nombre de Renoval Gestión Inmobiliaria Limitada; Rut: 78.299.346-1; mail: fdm@renovalpropiedades.com los primeros cinco días de cada mes. La renta de arrendamiento de ${fecha.mes} de ${fecha.año} corresponderá al `), bold('proporcional de los días de ocupación del mes'), run('.'), run(promoText)]),
+    justified([run(`La renta de arrendamiento será la suma de `), bold(`${renta.num} (${renta.words}) mensuales`), run(`, que la parte arrendataria pagará mediante transferencia electrónica a la cuenta corriente número 27624332 del Banco Santander a nombre de Renoval Gestión Inmobiliaria Limitada; Rut: 78.299.346-1; mail: fdm@renovalpropiedades.com los primeros cinco días de cada mes. La renta de arrendamiento de ${fecha.mes} de ${fecha.año} corresponderá al `), bold('proporcional de los días de ocupación del mes'), run('.'), ...promoRuns]),
     clausulaTitle('QUINTO: DEL PAGO'),
     justified([run(`El simple retardo en el pago de toda o parte de la renta mensual de arrendamiento, constituirá en mora la parte Arrendataria, quedando este obligado a pagar a título de multa, la cantidad de 0.5 Unidades de Fomento por cada día de atraso, en su equivalente en pesos al día de pago, conjuntamente con la renta adeudada. Además, en el evento de mora indicado, y si fuere del caso, serán de cargo de la parte Arrendataria todos los costos que la cobranza de la renta pudiere acarrear a la parte Arrendadora.`)]),
     justified([run(`La parte Arrendataria autoriza a la parte Arrendadora para que, en caso de el retardo, mora o incumplimiento de cualquiera de las obligaciones contraídas en el presente contrato, los datos personales y demás derivados del presente contrato, puedan ser ingresados, procesados, tratados y comunicados al registro o banco BOLETIN ELECTRONICO DICOM (Sistema de Morosidades y Protestos).`)]),
@@ -366,19 +419,20 @@ function buildDoc(data) {
     clausulaTitle('DÉCIMO CUARTO: ACCIONES JUDICIALES'),
     justified([run(`En la eventualidad que La parte Arrendataria, no hiciere el pago correspondiente a un mes de la renta de arrendamiento; dará derecho a la parte Arrendadora a iniciar de inmediato las acciones judiciales tendientes a pedir la restitución del inmueble, rentas impagas, consumos, deterioros del inmueble, y los gastos que se ocasionen con motivo del juicio. (Judiciales y honorarios de abogados).`)]),
     clausulaTitle('DÉCIMO QUINTO: VARIOS'),
-    ...(isUF ? [] : [justified([bold('A). - REAJUSTABILIDAD: '), run(reajusteTexts[propiedad.reajuste]||reajusteTexts['IPC (cada 6 meses)'])])]),
-    justified([bold(`${isUF ? 'A' : 'B'}). - REUNIONES COMUNIDAD: `), run('Será obligación de la parte arrendataria participar en las juntas de residentes y co-propietarios, para evitar el cobro de multas por no asistencia, en caso contrario serán de cargo de la parte arrendataria.')]),
+    ...(isUF ? [] : [justified([bold('1- REAJUSTABILIDAD: '), run(reajusteTexts[propiedad.reajuste]||reajusteTexts['IPC (cada 6 meses)'])])]),
+    justified([bold(`${isUF ? '1-' : '2-'} REUNIONES COMUNIDAD: `), run('Será obligación de la parte arrendataria participar en las juntas de residentes y co-propietarios, para evitar el cobro de multas por no asistencia, en caso contrario serán de cargo de la parte arrendataria.')]),
   ];
 
   if (hasFiador) {
     clausulas.push(clausulaTitle('DÉCIMO SEXTO: FIADOR Y CODEUDOR SOLIDARIO'));
     const fLabel = fiadores.length > 1 ? 'Fiadores y Codeudores Solidarios' : 'Fiador y Codeudor Solidario';
-    const fNombres = fiadores.map((f,i) => {
+    const fNombres = [];
+    fiadores.forEach((f,i) => {
       const g = gender(f.genero);
-      const runs = [run(`Presente en este acto ${g.don} `), bold(f.nombre)];
-      if (i < fiadores.length-1) runs.push(run(' y '));
-      return runs;
-    }).flat();
+      if (i === 0) fNombres.push(run(`Presente en este acto ${g.don} `));
+      else fNombres.push(run(` y ${g.don} `));
+      fNombres.push(bold(f.nombre));
+    });
     const pluralText = fiadores.length > 1
       ? `, ya individualizados en el presente contrato, se constituyen en ${fLabel} de todas y cada una de las obligaciones contraídas por la parte Arrendataria en virtud del presente contrato y hasta su total extinción, y declaran que renuncian, en consecuencia, a los beneficios de excusión y de división que les pudieren corresponder de acuerdo a la Ley, aceptando desde luego y sin previa notificación, las modificaciones que las partes puedan introducirle, sea en cuanto al monto de la renta, plazo u otras estipulaciones.`
       : `, ya individualizado en el presente contrato, se constituye en ${fLabel} de todas y cada una de las obligaciones contraídas por la parte Arrendataria en virtud del presente contrato y hasta su total extinción, y declara que renuncia, en consecuencia, a los beneficios de excusión y de división que le pudieren corresponder de acuerdo a la Ley, aceptando desde luego y sin previa notificación, las modificaciones que las partes puedan introducirle, sea en cuanto al monto de la renta, plazo u otras estipulaciones.`;
@@ -446,13 +500,24 @@ function PreviewPage({ data, onBack }) {
     setGenerating(false);
   };
 
-  const P = ({ children }) => <p style={{ textAlign:'justify', lineHeight:1.8, marginBottom:12, fontSize:13 }}>{children}</p>;
-  const Cl = ({ title, children }) => (
-    <div style={{ marginBottom:14 }}>
-      <p style={{ fontWeight:700, marginBottom:4, fontSize:13 }}>{title}</p>
-      {children}
-    </div>
-  );
+  const garantiaPreview = isUF
+    ? { num:`${propiedad.garantia||propiedad.arriendo||'XX'} UF`, words:`${numToWords(parseInt(propiedad.garantia||propiedad.arriendo)||0)} Unidades de Fomento` }
+    : { ...formatMoney(propiedad.garantia||propiedad.arriendo), words: formatMoney(propiedad.garantia||propiedad.arriendo).words + ' pesos' };
+  const fechaFinPreview = addMonths(propiedad.fechaInicio, 12);
+  const P = ({ children, bold: isBold }) => <p style={{ textAlign:'justify', lineHeight:'19.8pt', marginBottom:8, fontSize:11, fontWeight: isBold?700:400 }}>{children}</p>;
+  const CL = ({ title }) => <p style={{ fontWeight:700, fontSize:11, marginTop:16, marginBottom:4 }}>{title}</p>;
+  const B = ({ children }) => <strong>{children}</strong>;
+
+  const buildPrimeroPreview = () => {
+    const tipo = propiedad.tipoProp||'departamento';
+    const numero = propiedad.numeroProp;
+    const bodega = propiedad.bodega;
+    const est = propiedad.estacionamiento;
+    const hasExtras = bodega||est;
+    if (!numero && !hasExtras) return <>del inmueble ubicado en <B>{propiedad.calle}</B>, comuna de <B>{propiedad.comunaProp}</B>, <B>{propiedad.regionProp}</B></>;
+    if (numero && !hasExtras) return <>del {tipo} <B>{numero}</B>, ubicado en <B>{propiedad.calle}</B>, comuna de <B>{propiedad.comunaProp}</B>, <B>{propiedad.regionProp}</B></>;
+    return <>del {tipo} <B>{numero}</B>{bodega&&<>, bodega <B>{bodega}</B></>}{est&&<>, estacionamiento <B>{est}</B></>}, todos ubicados en <B>{propiedad.calle}</B>, comuna de <B>{propiedad.comunaProp}</B>, <B>{propiedad.regionProp}</B></>;
+  };
 
   return (
     <div style={fs.container}>
@@ -464,40 +529,49 @@ function PreviewPage({ data, onBack }) {
         </button>
       </div>
       <div style={fs.previewDoc}>
-        <div style={{ textAlign:'center', marginBottom:24, lineHeight:2 }}>
-          <strong style={{fontSize:14}}>CONTRATO DE ARRENDAMIENTO</strong><br/><br/>
-          {propietarios.map(p=><div key={p.nombre}><strong>{p.nombre||'PROPIETARIO'}</strong></div>)}
-          <div><strong>A</strong></div>
-          {arrendatarios.map(a=><div key={a.nombre}><strong>{a.nombre||'ARRENDATARIO'}</strong></div>)}
-          {fiadores.map(f=><div key={f.nombre}><strong>{f.nombre||'FIADOR'}</strong></div>)}
-        </div>
+        <p style={{textAlign:'center',fontWeight:700,fontSize:12,marginBottom:0}}>&nbsp;</p>
+        <p style={{textAlign:'center',fontWeight:700,fontSize:12,marginBottom:0}}>&nbsp;</p>
+        <p style={{textAlign:'center',fontWeight:700,fontSize:12,marginBottom:0}}>CONTRATO DE ARRENDAMIENTO</p>
+        <p style={{textAlign:'center',fontSize:11,marginBottom:0}}>&nbsp;</p>
+        <p style={{textAlign:'center',fontSize:11,marginBottom:0}}>&nbsp;</p>
+        {propietarios.map(p=><p key={p.nombre} style={{textAlign:'center',fontWeight:700,fontSize:11,marginBottom:0}}>{p.nombre||'PROPIETARIO'}</p>)}
+        <p style={{textAlign:'center',fontWeight:700,fontSize:11,marginBottom:0}}>A</p>
+        {arrendatarios.map(a=><p key={a.nombre} style={{textAlign:'center',fontWeight:700,fontSize:11,marginBottom:0}}>{a.nombre||'ARRENDATARIO'}</p>)}
+        {fiadores.map(f=><p key={f.nombre} style={{textAlign:'center',fontWeight:700,fontSize:11,marginBottom:0}}>{f.nombre||'FIADOR'}</p>)}
 
-        <P>En Santiago de Chile, <strong>{fecha.dia} de {fecha.mes} del año {fecha.año}</strong>, entre{' '}
-          {propietarios.map((p,i)=><span key={i}>{gender(p.genero).don} <strong>{p.nombre}</strong>, de nacionalidad {p.nacionalidad||'chilena'}, cédula de identidad N°{p.rut}, {gender(p.genero).domiciliado} en {buildDomicilio(p)};{' '}</span>)}
-          {propietarios.length>1?'en adelante también denominados como la parte ':'en adelante también denominada como la parte '}<strong>"Arrendadora"</strong>, por una parte y{' '}
-          {arrendatarios.map((a,i)=><span key={i}>{gender(a.genero).don} <strong>{a.nombre}</strong>, de nacionalidad {a.nacionalidad||'chilena'}, cédula de identidad N°{a.rut}, número telefónico: +569{a.telefono}; correo electrónico: {a.email}, {gender(a.genero).domiciliado} en {buildDomicilio(a)};{' '}</span>)}
-          en adelante la parte <strong>"Arrendataria"</strong>
-          {hasFiador&&<>, y {fiadores.map((f,i)=><span key={i}>{i>0?' y ':''}{gender(f.genero).don} <strong>{f.nombre}</strong>, de nacionalidad {f.nacionalidad||'chilena'}, cédula de identidad N°{f.rut}, número telefónico: +569{f.telefono}; correo electrónico: {f.email}, {gender(f.genero).domiciliado} en {buildDomicilio(f)};{' '}</span>)} en su calidad de <strong>{fiadores.length>1?'Fiadores y Codeudores Solidarios':'Fiador y Codeudor Solidario'}</strong></>}.
+        <P>
+          En Santiago de Chile, <B>{fecha.dia} de {fecha.mes} del año {fecha.año}</B>, entre{' '}
+          {propietarios.map((p,i)=><span key={i}>{gender(p.genero).don} <B>{p.nombre}</B>, de nacionalidad {p.nacionalidad||'chilena'}, cédula de identidad N°{p.rut}, {gender(p.genero).domiciliado} en {buildDomicilio(p)};{' '}</span>)}
+          {propietarios.length>1?'en adelante también denominados como la parte ':'en adelante también denominada como la parte '}<B>"Arrendadora"</B>, por una parte y{' '}
+          {arrendatarios.map((a,i)=><span key={i}>{gender(a.genero).don} <B>{a.nombre}</B>, de nacionalidad {a.nacionalidad||'chilena'}, cédula de identidad N°{a.rut}, número telefónico: +569 {a.telefono?a.telefono.slice(0,4)+' '+a.telefono.slice(4):'XXXX XXXX'}, correo electrónico: {a.email}, {gender(a.genero).domiciliado} en {buildDomicilio(a)};{' '}</span>)}
+          en adelante la parte <B>"Arrendataria"</B>
+          {hasFiador&&<>, y {fiadores.map((f,i)=><span key={i}>{i>0?` y ${gender(f.genero).don} `:`${gender(f.genero).don} `}<B>{f.nombre}</B>, de nacionalidad {f.nacionalidad||'chilena'}, cédula de identidad N°{f.rut}, número telefónico: +569 {f.telefono?f.telefono.slice(0,4)+' '+f.telefono.slice(4):'XXXX XXXX'}, correo electrónico: {f.email}, {gender(f.genero).domiciliado} en {buildDomicilio(f)};{' '}</span>)} en su calidad de <B>{fiadores.length>1?'Fiadores y Codeudores Solidarios':'Fiador y Codeudor Solidario'}</B></>}; todos ellos mayores de edad, quienes debidamente facultados acuerdan celebrar el presente Contrato de Arrendamiento.
         </P>
 
-        <Cl title="PRIMERO: DE LA PROPIEDAD"><P>La parte Arrendadora declara ser dueña del inmueble ubicado en {buildDomicilioProp(propiedad)}{propiedad.bodega?`, bodega N°${propiedad.bodega}`:''}{propiedad.estacionamiento?`, estacionamiento N°${propiedad.estacionamiento}`:''}.</P></Cl>
-        <Cl title="SEGUNDO: DEL ARRENDAMIENTO"><P>Por el presente instrumento, la parte Arrendadora da en arrendamiento el Inmueble singularizado en la cláusula primera. {propiedad.amoblado?'El inmueble se arrienda amoblado.':'El inmueble se arrienda sin muebles.'}</P></Cl>
-        <Cl title="TERCERO: DEL PLAZO"><P>Inicio: <strong>{fecha.dia} de {fecha.mes} del año {fecha.año}</strong>. Vigencia: 1 año (hasta {addMonths(propiedad.fechaInicio,12)}). Renovación automática por períodos de 6 meses.</P></Cl>
-        <Cl title="CUARTO: DE LA RENTA"><P>Renta mensual: <strong>{renta.num} ({renta.words})</strong>.{propiedad.promo&&` Valor promocional: ${formatMoney(propiedad.promo).num} durante ${propiedad.mesesPromo}.`}</P></Cl>
-        <Cl title="OCTAVO: DE LA GARANTÍA"><P>Garantía: <strong>{formatMoney(propiedad.garantia||propiedad.arriendo).num}</strong>. Devolución dentro de los 60 días desde la restitución.</P></Cl>
-        {!isUF && <Cl title="DÉCIMO QUINTO A: REAJUSTABILIDAD"><P>{propiedad.reajuste}</P></Cl>}
-        {hasFiador&&<Cl title="DÉCIMO SEXTO: FIADOR Y CODEUDOR SOLIDARIO"><P>{fiadores.map(f=>f.nombre).join(' y ')}.</P></Cl>}
+        <CL title="PRIMERO: DE LA PROPIEDAD" />
+        <P>La parte Arrendadora, declara ser dueña {buildPrimeroPreview()}, en adelante denominado como "el Inmueble".</P>
+        <CL title="SEGUNDO: DEL ARRENDAMIENTO" />
+        <P>Por el presente instrumento, la parte Arrendadora da en arrendamiento el Inmueble singularizado en la cláusula primera. {propiedad.amoblado?'El inmueble se arrienda amoblado.':'El inmueble se arrienda sin muebles.'}</P>
+        <CL title="TERCERO: DEL PLAZO" />
+        <P>El presente contrato comenzará a regir el día <B>{fecha.dia}</B> del mes de <B>{fecha.mes}</B> del año <B>{fecha.año}</B> y tendrá vigencia de un año, hasta el día {fechaFinPreview}. Renovación automática por períodos de 6 meses con 60 días de aviso.</P>
+        <CL title="CUARTO: DE LA RENTA" />
+        <P>La renta de arrendamiento será la suma de <B>{renta.num} ({renta.words}) mensuales</B>.{propiedad.promo&&propiedad.mesesPromo&&<> Durante los meses de {propiedad.mesesPromo}, la renta será de <B>{formatMoney(propiedad.promo).num} ({formatMoney(propiedad.promo).words} pesos) mensuales</B>.</>}</P>
+        <CL title="QUINTO: DEL PAGO" />
+        <P>El simple retardo en el pago constituirá en mora la parte Arrendataria, con multa de 0.5 UF por día de atraso.</P>
+        <CL title="OCTAVO: DE LA GARANTÍA" />
+        <P>La parte Arrendataria entrega la suma equivalente a <B>{garantiaPreview.num} ({garantiaPreview.words})</B> a título de garantía, a devolver dentro de los 60 días siguientes a la restitución.</P>
+        {!isUF&&<><CL title="DÉCIMO QUINTO: VARIOS" /><P>1- REAJUSTABILIDAD: {propiedad.reajuste}</P></>}
+        {hasFiador&&<><CL title="DÉCIMO SEXTO: FIADOR Y CODEUDOR SOLIDARIO" /><P>Presente en este acto {fiadores.map((f,i)=><span key={i}>{i>0?` y ${gender(f.genero).don} `:`${gender(f.genero).don} `}<B>{f.nombre}</B></span>)}, se constituye{fiadores.length>1?'n':''} en Fiador{fiadores.length>1?'es':''} y Codeudor{fiadores.length>1?'es':''} Solidario{fiadores.length>1?'s':''}.</P></>}
 
         <div style={{ marginTop:40 }}>
           {[...propietarios.map(p=>({n:p.nombre,r:'ARRENDADOR'})), ...arrendatarios.map(a=>({n:a.nombre,r:'ARRENDATARIO'})), ...fiadores.map(f=>({n:f.nombre,r:'FIADOR Y CODEUDOR SOLIDARIO'}))].map((sig,i)=>(
             <div key={i} style={{ textAlign:'center', marginBottom:32 }}>
               <div style={{ borderBottom:'1px solid #202124', width:280, margin:'0 auto 8px' }}>&nbsp;</div>
-              <div style={{ fontWeight:700, fontSize:13 }}>{sig.n||'NOMBRE'}</div>
-              <div style={{ fontWeight:700, fontSize:12, color:'#5f6368' }}>{sig.r}</div>
+              <div style={{ fontWeight:700, fontSize:11 }}>{sig.n||'NOMBRE'}</div>
+              <div style={{ fontWeight:700, fontSize:11, color:'#5f6368' }}>{sig.r}</div>
             </div>
           ))}
         </div>
-        <p style={{color:'#9aa0a6',fontSize:12,textAlign:'center',marginTop:24}}>Vista previa resumida — el documento descargado contiene el contrato completo con todas las cláusulas</p>
       </div>
     </div>
   );
@@ -506,7 +580,7 @@ function PreviewPage({ data, onBack }) {
 // ── Main form ─────────────────────────────────────────────────
 export default function ContratosPage() {
   const [propiedad, setPropiedad] = useState({
-    calle:'', regionProp:'Región Metropolitana', comunaProp:'',
+    calle:'', tipoProp:'departamento', numeroProp:'', regionProp:'Región Metropolitana', comunaProp:'',
     bodega:'', estacionamiento:'', amoblado:false,
     monedaArriendo:'CLP', arriendo:'', garantia:'', promo:'', mesesPromo:'',
     fechaInicio:'', reajuste:'IPC (cada 6 meses)',
@@ -549,7 +623,14 @@ export default function ContratosPage() {
           <div style={fs.sectionHeader}><span style={fs.sectionTitle}>Datos de la Propiedad</span></div>
           <div style={fs.propGrid}>
             <Field label="Calle y número" required span2>
-              <Input value={propiedad.calle} onChange={v=>setProp('calle',v)} placeholder="Av. Ejemplo 123, Departamento 45" />
+              <Input value={propiedad.calle} onChange={v=>setProp('calle',v)} placeholder="Av. Ejemplo 123" />
+            </Field>
+            <Field label="Tipo de propiedad" required>
+              <Sel value={propiedad.tipoProp} onChange={v=>setProp('tipoProp',v)}
+                options={[['departamento','Departamento'],['casa','Casa']]} />
+            </Field>
+            <Field label="Número de departamento/casa">
+              <Input value={propiedad.numeroProp} onChange={v=>setProp('numeroProp',v)} placeholder="45, 3B, etc." />
             </Field>
             <Field label="Región" required>
               <Sel value={propiedad.regionProp} onChange={v=>{setProp('regionProp',v);setProp('comunaProp','');}}
