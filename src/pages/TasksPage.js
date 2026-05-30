@@ -12,6 +12,7 @@ import HistoryPanel from '../components/HistoryPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
+const DEFAULT_CATEGORIES = ['Entrada', 'Salida', 'Equipo', 'Solicitudes', 'Misceláneo'];
 
 
 // Wrapper that makes a column sortable by its header
@@ -67,16 +68,15 @@ export default function TasksPage() {
         setCategories(data);
       } else {
         // Fallback to default categories
-        setCategories(CATEGORIES.map((name, i) => ({ name, color: ['#1565C0','#2E7D32','#6A1B9A','#E65100','#37474F'][i], position: i, is_default: i < 4 })));
+        setCategories(DEFAULT_CATEGORIES.map((name, i) => ({ name, color: ['#1565C0','#2E7D32','#6A1B9A','#E65100','#37474F'][i], position: i, is_default: i < 4 })));
       }
     };
     loadCategories();
   }, []);
 
-  const [columnOrder, setColumnOrder] = useState([...CATEGORIES]);
+  const [columnOrder, setColumnOrder] = useState([...DEFAULT_CATEGORIES]);
 
   // Sync column order when categories load
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (!categories) return;
     const catNames = categories.map(c => c.name);
@@ -90,7 +90,7 @@ export default function TasksPage() {
       }
     } catch(e) {}
     setColumnOrder(catNames);
-  }, [categories]); // CATEGORIES is a static constant, intentionally omitted
+  }, [categories]);
   const [draggingColumn, setDraggingColumn] = useState(null);
 
   const getCategoryColor = (name) => {
