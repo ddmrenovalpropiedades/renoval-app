@@ -3,10 +3,11 @@ import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, DragO
 import { sortableKeyboardCoordinates, arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useTasks } from '../hooks/useTasks';
+import { supabase } from '../supabaseClient';
 import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
-import { RefreshCw, ChevronDown, History } from 'lucide-react';
+import { RefreshCw, ChevronDown, History, Plus, X } from 'lucide-react';
 import HistoryPanel from '../components/HistoryPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
@@ -53,18 +54,78 @@ export default function TasksPage() {
   } = useTasks(viewingEmail);
 
   const [selectedTask, setSelectedTask] = useState(null);
-  const [columnOrder, setColumnOrder] = useState(() => {
+  const [categories, setCategories] = useState(null); // null = loading
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatColor, setNewCatColor] = useState('#0891b2');
+
+  // Load categories from Supabase on mount
+  React.useEffect(() => {
+    const loadCategories = async () => {
+      const { data } = await supabase.from('task_categories').select('*').order('position', { ascending: true });
+      if (data && data.length > 0) {
+        setCategories(data);
+      } else {
+        // Fallback to default categories
+        setCategories(CATEGORIES.map((name, i) => ({ name, color: ['#1565C0','#2E7D32','#6A1B9A','#E65100','#37474F'][i], position: i, is_default: i < 4 })));
+      }
+    };
+    loadCategories();
+  }, []);
+
+  const [columnOrder, setColumnOrder] = useState([...CATEGORIES]);
+
+  // Sync column order when categories load
+  React.useEffect(() => {
+    if (!categories) return;
+    const catNames = categories.map(c => c.name);
     try {
       const saved = localStorage.getItem('tasksColumnOrder');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Validate all categories are present
-        if (CATEGORIES.every(c => parsed.includes(c))) return parsed;
+        // Merge: keep saved order for known cats, append new ones
+        const merged = [...parsed.filter(c => catNames.includes(c)), ...catNames.filter(c => !parsed.includes(c))];
+        setColumnOrder(merged);
+        return;
       }
     } catch(e) {}
-    return [...CATEGORIES];
-  });
+    setColumnOrder(catNames);
+  }, [categories]);
   const [draggingColumn, setDraggingColumn] = useState(null);
+
+  const getCategoryColor = (name) => {
+    const cat = categories?.find(c => c.name === name);
+    return cat?.color || '#37474F';
+  };
+
+  const isProtected = (name) => ['Entrada','Salida','Equipo','Solicitudes'].includes(name);
+
+  const handleAddCategory = async () => {
+    if (!newCatName.trim()) return;
+    const pos = (categories?.length || 5);
+    const { data } = await supabase.from('task_categories')
+      .insert({ name: newCatName.trim(), color: newCatColor, position: pos, is_default: false })
+      .select().single();
+    if (data) {
+      setCategories(prev => [...(prev||[]), data]);
+      setColumnOrder(prev => [...prev, data.name]);
+      localStorage.setItem('tasksColumnOrder', JSON.stringify([...columnOrder, data.name]));
+    }
+    setNewCatName('');
+    setNewCatColor('#0891b2');
+    setShowNewCategory(false);
+  };
+
+  const handleDeleteCategory = async (name) => {
+    if (isProtected(name)) return;
+    if (!window.confirm(`¿Eliminar la lista "${name}"? Las tareas en esta lista también se eliminarán.`)) return;
+    await supabase.from('tasks').delete().eq('category', name);
+    await supabase.from('task_categories').delete().eq('name', name);
+    setCategories(prev => prev.filter(c => c.name !== name));
+    const newOrder = columnOrder.filter(c => c !== name);
+    setColumnOrder(newOrder);
+    localStorage.setItem('tasksColumnOrder', JSON.stringify(newOrder));
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -159,6 +220,9 @@ export default function TasksPage() {
           <button onClick={() => setShowHistory(true)} style={styles.refreshBtn} title="Historial">
             <History size={16} color="#5f6368" />
           </button>
+          <button onClick={() => setShowNewCategory(true)} style={{ ...styles.refreshBtn, display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'#e8f0fe', border:'1px solid #1a73e8', color:'#1a73e8', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }} title="Nueva lista">
+            <Plus size={14} /> Nueva lista
+          </button>
         </div>
       </div>
 
@@ -191,6 +255,9 @@ export default function TasksPage() {
                     currentUserEmail={effectiveEmail}
                     dormantTasks={dormantByCategory[category] || []}
                     subtaskReloadTrigger={subtaskReloadTrigger}
+                    customColor={getCategoryColor(category)}
+                    canDelete={!isProtected(category)}
+                    onDelete={() => handleDeleteCategory(category)}
                   />
                 ))}
               </SortableContext>
@@ -220,6 +287,45 @@ export default function TasksPage() {
           ownerEmail={effectiveEmail}
         />
       )}
+      {/* Modal nueva categoría */}
+      {showNewCategory && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+          <div style={{ background:'#fff', borderRadius:16, padding:28, width:360, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', fontFamily:"'Google Sans','Segoe UI',sans-serif" }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+              <h3 style={{ fontSize:18, fontWeight:700, color:'#202124', margin:0 }}>Nueva lista</h3>
+              <button onClick={() => setShowNewCategory(false)} style={{ background:'none', border:'none', cursor:'pointer', padding:4 }}><X size={18} color="#5f6368" /></button>
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:12, fontWeight:600, color:'#5f6368', display:'block', marginBottom:6 }}>Nombre de la lista *</label>
+              <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                placeholder="Ej: Seguimiento" autoFocus
+                onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
+                style={{ width:'100%', border:'1px solid #dadce0', borderRadius:8, padding:'9px 12px', fontSize:14, outline:'none', fontFamily:'inherit' }} />
+            </div>
+            <div style={{ marginBottom:20 }}>
+              <label style={{ fontSize:12, fontWeight:600, color:'#5f6368', display:'block', marginBottom:6 }}>Color</label>
+              <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                {['#1565C0','#2E7D32','#6A1B9A','#E65100','#C62828','#00695C','#0891b2','#7B1FA2','#F57F17','#37474F','#AD1457','#1B5E20'].map(c => (
+                  <button key={c} onClick={() => setNewCatColor(c)} style={{ width:28, height:28, borderRadius:'50%', background:c, border: newCatColor===c ? '3px solid #202124' : '3px solid transparent', cursor:'pointer', padding:0 }} />
+                ))}
+                <input type="color" value={newCatColor} onChange={e => setNewCatColor(e.target.value)}
+                  style={{ width:28, height:28, borderRadius:'50%', border:'1px solid #dadce0', cursor:'pointer', padding:0 }} title="Color personalizado" />
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={handleAddCategory} disabled={!newCatName.trim()}
+                style={{ flex:1, padding:'10px', background: newCatName.trim() ? '#1a73e8' : '#e8eaed', color: newCatName.trim() ? '#fff' : '#9aa0a6', border:'none', borderRadius:8, fontSize:14, fontWeight:500, cursor: newCatName.trim() ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>
+                Crear lista
+              </button>
+              <button onClick={() => setShowNewCategory(false)}
+                style={{ padding:'10px 16px', background:'none', border:'1px solid #dadce0', borderRadius:8, fontSize:14, cursor:'pointer', fontFamily:'inherit', color:'#5f6368' }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedTask && (
         <TaskPanel
           task={selectedTask}
