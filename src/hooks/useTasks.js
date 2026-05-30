@@ -97,6 +97,7 @@ export function useTasks(targetEmail = null) {
     };
 
     const { data, error } = await supabase.from('tasks').insert(newTask).select().single();
+    if (error) console.error('createTask error:', error);
     if (!error && data) {
       setTasks(prev => [data, ...prev]);
       if (taskData.category === 'Solicitudes' && taskData.assigned_to) {
