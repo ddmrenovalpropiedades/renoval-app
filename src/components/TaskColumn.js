@@ -201,7 +201,7 @@ function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
   );
 }
 
-export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail, subtaskReloadTrigger = 0 }) {
+export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail, subtaskReloadTrigger = 0, columnDragHandleProps = {} }) {
   const colors = CATEGORY_COLORS[category];
   const [newTitle, setNewTitle] = useState('');
   const [adding, setAdding] = useState(false);
@@ -236,7 +236,7 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
         <button onClick={() => setCollapsed(!collapsed)} style={styles.collapseToggle}>
           {collapsed ? <ChevronRight size={14} color={colors.header} /> : <ChevronDown size={14} color={colors.header} />}
         </button>
-        <span style={{ ...styles.categoryName, color: colors.header }}>{category.toUpperCase()}</span>
+        <span {...columnDragHandleProps} style={{ ...styles.categoryName, color: colors.header, cursor: 'grab', userSelect: 'none' }} title="Arrastrar columna">{category.toUpperCase()}</span>
         <span style={styles.taskCount}>{tasks.length}</span>
         {isSolicitudes && (
           <button onClick={() => setShowHistory(!showHistory)} style={{ ...styles.addBtn, color: colors.header }} title="Historial de solicitudes">
