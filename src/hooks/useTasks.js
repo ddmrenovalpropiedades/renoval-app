@@ -320,7 +320,11 @@ export function useTasks(targetEmail = null) {
     return task.title;
   };
 
-  const tasksByCategory = CATEGORIES.reduce((acc, cat) => {
+  // Build tasksByCategory for ALL categories (default + custom)
+  // Get all unique categories from loaded tasks + default CATEGORIES
+  const allCats = [...new Set([...CATEGORIES, ...tasks.map(t => t.category).filter(Boolean)])];
+
+  const tasksByCategory = allCats.reduce((acc, cat) => {
     if (cat === 'Equipo') {
       acc[cat] = tasks.filter(t =>
         t.category === 'Equipo' &&
@@ -333,7 +337,7 @@ export function useTasks(targetEmail = null) {
     return acc;
   }, {});
 
-  const dormantByCategory = CATEGORIES.reduce((acc, cat) => {
+  const dormantByCategory = allCats.reduce((acc, cat) => {
     if (cat === 'Equipo') {
       acc[cat] = tasks.filter(t =>
         t.category === 'Equipo' &&
