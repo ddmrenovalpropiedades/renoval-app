@@ -76,6 +76,7 @@ export default function TasksPage() {
   const [columnOrder, setColumnOrder] = useState([...CATEGORIES]);
 
   // Sync column order when categories load
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (!categories) return;
     const catNames = categories.map(c => c.name);
@@ -83,14 +84,13 @@ export default function TasksPage() {
       const saved = localStorage.getItem('tasksColumnOrder');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Merge: keep saved order for known cats, append new ones
         const merged = [...parsed.filter(c => catNames.includes(c)), ...catNames.filter(c => !parsed.includes(c))];
         setColumnOrder(merged);
         return;
       }
     } catch(e) {}
     setColumnOrder(catNames);
-  }, [categories]);
+  }, [categories]); // CATEGORIES is a static constant, intentionally omitted
   const [draggingColumn, setDraggingColumn] = useState(null);
 
   const getCategoryColor = (name) => {
