@@ -441,13 +441,14 @@ function buildDoc(data) {
   }
 
   // Signatures - centered, line over name, role below
-  clausulas.push(br(), br(), br());
+  clausulas.push(br(), br(), br(), br(), br());
 
   const sigBlock = (nombre, rol) => [
+    br(), br(), br(), br(),
     centered([run('_________________________________________________')], { spacing:{after:0,line:280,lineRule:'exact'} }),
     centered([bold(nombre.toUpperCase())], { spacing:{after:0,line:280,lineRule:'exact'} }),
-    centered([bold(rol)], { spacing:{after:280,line:280,lineRule:'exact'} }),
-    br(),
+    centered([bold(rol)], { spacing:{after:0,line:280,lineRule:'exact'} }),
+    br(), br(),
   ];
 
   propietarios.forEach(p => clausulas.push(...sigBlock(p.nombre||'PROPIETARIO', 'ARRENDADOR')));
