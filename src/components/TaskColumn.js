@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, RefreshCw, ChevronDown, ChevronRight, Clock } from 'lucide-react';
+import { Plus, RefreshCw, ChevronDown, ChevronRight, Clock, Trash2 } from 'lucide-react';
 import { supabase, USER_INITIALS } from '../supabaseClient';
 import AnimatedCheckbox from './AnimatedCheckbox';
 import SubtaskPanel from './SubtaskPanel';
@@ -201,8 +201,10 @@ function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
   );
 }
 
-export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail, subtaskReloadTrigger = 0, columnDragHandleProps = {} }) {
-  const colors = CATEGORY_COLORS[category];
+export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail, subtaskReloadTrigger = 0, columnDragHandleProps = {}, customColor, canDelete = false, onDelete }) {
+  const colors = customColor
+    ? { header: customColor, light: customColor + '22' }
+    : (CATEGORY_COLORS[category] || { header: '#37474F', light: '#ECEFF1' });
   const [newTitle, setNewTitle] = useState('');
   const [adding, setAdding] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -241,6 +243,11 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
         {isSolicitudes && (
           <button onClick={() => setShowHistory(!showHistory)} style={{ ...styles.addBtn, color: colors.header }} title="Historial de solicitudes">
             <Clock size={14} />
+          </button>
+        )}
+        {canDelete && onDelete && (
+          <button onClick={onDelete} style={{ ...styles.addBtn, color: '#ea4335' }} title="Eliminar lista">
+            <Trash2 size={14} />
           </button>
         )}
         <button onClick={handleNewTask} style={{ ...styles.addBtn, color: colors.header }} title="Nueva tarea">
