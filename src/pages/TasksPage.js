@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
+import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay, pointerWithin } from '@dnd-kit/core';
+import { sortableKeyboardCoordinates, arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useTasks } from '../hooks/useTasks';
 import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
@@ -10,6 +11,29 @@ import HistoryPanel from '../components/HistoryPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
+
+
+// Wrapper that makes a column sortable by its header
+function SortableColumn({ category, isDragging, ...props }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: category,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+    cursor: 'default',
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <TaskColumn
+        {...props}
+        category={category}
+        columnDragHandleProps={{ ...attributes, ...listeners }}
+      />
+    </div>
+  );
+}
 
 export default function TasksPage() {
   const { profile } = useAuth();
@@ -29,15 +53,48 @@ export default function TasksPage() {
   } = useTasks(viewingEmail);
 
   const [selectedTask, setSelectedTask] = useState(null);
+  const [columnOrder, setColumnOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tasksColumnOrder');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Validate all categories are present
+        if (CATEGORIES.every(c => parsed.includes(c))) return parsed;
+      }
+    } catch(e) {}
+    return [...CATEGORIES];
+  });
+  const [draggingColumn, setDraggingColumn] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  const handleDragStart = (event) => {
+    if (columnOrder.includes(event.active.id)) {
+      setDraggingColumn(event.active.id);
+    }
+  };
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
+    setDraggingColumn(null);
     if (!over || active.id === over.id) return;
+
+    // Check if dragging a column
+    if (columnOrder.includes(active.id)) {
+      const oldIdx = columnOrder.indexOf(active.id);
+      const newIdx = columnOrder.indexOf(over.id);
+      if (oldIdx !== -1 && newIdx !== -1) {
+        const newOrder = arrayMove(columnOrder, oldIdx, newIdx);
+        setColumnOrder(newOrder);
+        localStorage.setItem('tasksColumnOrder', JSON.stringify(newOrder));
+      }
+      return;
+    }
+
+    // Otherwise dragging a task
     for (const category of CATEGORIES) {
       const catTasks = tasksByCategory[category];
       const oldIndex = catTasks.findIndex(t => t.id === active.id);
@@ -118,24 +175,42 @@ export default function TasksPage() {
       {loading ? (
         <div style={styles.loading}>Cargando tareas...</div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div style={styles.columnsWrapper}>
             <div style={styles.columns}>
-              {CATEGORIES.map(category => (
-                <TaskColumn
-                  key={category}
-                  category={category}
-                  tasks={tasksByCategory[category] || []}
-                  onOpenTask={setSelectedTask}
-                  onCompleteTask={handleCompleteTask}
-                  onCreateTask={createTask}
-                  currentUserEmail={effectiveEmail}
-                  dormantTasks={dormantByCategory[category] || []}
-                  subtaskReloadTrigger={subtaskReloadTrigger}
-                />
-              ))}
+              <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                {columnOrder.map(category => (
+                  <SortableColumn
+                    key={category}
+                    category={category}
+                    isDragging={draggingColumn === category}
+                    tasks={tasksByCategory[category] || []}
+                    onOpenTask={setSelectedTask}
+                    onCompleteTask={handleCompleteTask}
+                    onCreateTask={createTask}
+                    currentUserEmail={effectiveEmail}
+                    dormantTasks={dormantByCategory[category] || []}
+                    subtaskReloadTrigger={subtaskReloadTrigger}
+                  />
+                ))}
+              </SortableContext>
             </div>
           </div>
+          <DragOverlay>
+            {draggingColumn && (
+              <div style={{ opacity: 0.8, transform: 'rotate(2deg)', pointerEvents: 'none' }}>
+                <TaskColumn
+                  category={draggingColumn}
+                  tasks={tasksByCategory[draggingColumn] || []}
+                  onOpenTask={() => {}}
+                  onCompleteTask={() => {}}
+                  onCreateTask={() => {}}
+                  currentUserEmail={effectiveEmail}
+                  dormantTasks={dormantByCategory[draggingColumn] || []}
+                />
+              </div>
+            )}
+          </DragOverlay>
         </DndContext>
       )}
 
