@@ -14,14 +14,10 @@ import HistoryPanel from '../components/HistoryPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
-const DEFAULT_CATEGORIES = ['Entrada', 'Salida', 'Equipo', 'Solicitudes', 'Misceláneo'];
+const DEFAULT_CATEGORIES = ['Llegada arrendatario', 'Publicar/Arrendar', 'Equipo', 'Solicitudes', 'Misceláneo'];
 
-
-// Wrapper that makes a column sortable by its header
 function SortableColumn({ category, isDragging, ...props }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
-    id: category,
-  });
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: category });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -57,9 +53,9 @@ export default function TasksPage() {
   } = useTasks(viewingEmail);
 
   const [selectedTask, setSelectedTask] = useState(null);
-  const [categories, setCategories] = useState(null); // null = loading
+  const [categories, setCategories] = useState(null);
   const [showNewCategory, setShowNewCategory] = useState(false);
-  const [activeTab, setActiveTab] = useState('tasks'); // 'tasks' | 'planning'
+  const [activeTab, setActiveTab] = useState('tasks');
   const [showGallery, setShowGallery] = useState(false);
   const [galleryUnlockCounter, setGalleryUnlockCounter] = useState(0);
 
@@ -67,15 +63,22 @@ export default function TasksPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#0891b2');
 
-  // Load categories from Supabase on mount
   React.useEffect(() => {
     const loadCategories = async () => {
       const { data } = await supabase.from('task_categories').select('*').order('position', { ascending: true });
       if (data && data.length > 0) {
-        setCategories(data);
+        // Migrar nombres antiguos si existen
+        const migrated = data.map(c => {
+          if (c.name === 'Entrada') return { ...c, name: 'Llegada arrendatario' };
+          if (c.name === 'Salida') return { ...c, name: 'Publicar/Arrendar' };
+          return c;
+        });
+        setCategories(migrated);
       } else {
-        // Fallback to default categories
-        setCategories(DEFAULT_CATEGORIES.map((name, i) => ({ name, color: ['#1565C0','#2E7D32','#6A1B9A','#E65100','#37474F'][i], position: i, is_default: i < 4 })));
+        setCategories(DEFAULT_CATEGORIES.map((name, i) => ({
+          name, color: ['#1565C0','#2E7D32','#6A1B9A','#E65100','#37474F'][i],
+          position: i, is_default: i < 4
+        })));
       }
     };
     loadCategories();
@@ -83,7 +86,6 @@ export default function TasksPage() {
 
   const [columnOrder, setColumnOrder] = useState([...DEFAULT_CATEGORIES]);
 
-  // Sync column order when categories load
   React.useEffect(() => {
     if (!categories) return;
     const catNames = categories.map(c => c.name);
@@ -91,13 +93,20 @@ export default function TasksPage() {
       const saved = localStorage.getItem('tasksColumnOrder');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const merged = [...parsed.filter(c => catNames.includes(c)), ...catNames.filter(c => !parsed.includes(c))];
+        // Migrar nombres viejos en localStorage
+        const migrated = parsed.map(n => {
+          if (n === 'Entrada') return 'Llegada arrendatario';
+          if (n === 'Salida') return 'Publicar/Arrendar';
+          return n;
+        });
+        const merged = [...migrated.filter(c => catNames.includes(c)), ...catNames.filter(c => !migrated.includes(c))];
         setColumnOrder(merged);
         return;
       }
     } catch(e) {}
     setColumnOrder(catNames);
   }, [categories]);
+
   const [draggingColumn, setDraggingColumn] = useState(null);
 
   const getCategoryColor = (name) => {
@@ -105,7 +114,7 @@ export default function TasksPage() {
     return cat?.color || '#37474F';
   };
 
-  const isProtected = (name) => ['Entrada','Salida','Equipo','Solicitudes'].includes(name);
+  const isProtected = (name) => ['Llegada arrendatario','Publicar/Arrendar','Equipo','Solicitudes'].includes(name);
 
   const handleAddCategory = async () => {
     if (!newCatName.trim()) return;
@@ -140,17 +149,13 @@ export default function TasksPage() {
   );
 
   const handleDragStart = (event) => {
-    if (columnOrder.includes(event.active.id)) {
-      setDraggingColumn(event.active.id);
-    }
+    if (columnOrder.includes(event.active.id)) setDraggingColumn(event.active.id);
   };
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
     setDraggingColumn(null);
     if (!over || active.id === over.id) return;
-
-    // Check if dragging a column
     if (columnOrder.includes(active.id)) {
       const oldIdx = columnOrder.indexOf(active.id);
       const newIdx = columnOrder.indexOf(over.id);
@@ -161,8 +166,6 @@ export default function TasksPage() {
       }
       return;
     }
-
-    // Otherwise dragging a task
     for (const category of CATEGORIES) {
       const catTasks = tasksByCategory[category];
       const oldIndex = catTasks.findIndex(t => t.id === active.id);
@@ -207,7 +210,6 @@ export default function TasksPage() {
             </div>
           </div>
           <div style={styles.subtitleRow}>
-            {/* Selector de usuario (solo propietarios) */}
             {profile?.isOwner ? (
               <div style={styles.userSelectorWrapper}>
                 <select
@@ -255,7 +257,6 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Banner vista de otro usuario */}
       {isViewingOther && (
         <div style={styles.viewingBanner}>
           Estás viendo y editando las tareas de <strong>{effectiveInitials}</strong>.
@@ -268,59 +269,83 @@ export default function TasksPage() {
       {loading ? (
         <div style={styles.loading}>Cargando tareas...</div>
       ) : (
-        <>
-        {activeTab === 'planning' && (
-          <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} />
-        )}
-        {activeTab === 'tasks' && <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div style={styles.columnsWrapper}>
-            <div style={styles.columns}>
-              <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
-                {columnOrder.map(category => (
-                  <SortableColumn
-                    key={category}
-                    category={category}
-                    isDragging={draggingColumn === category}
-                    tasks={tasksByCategory[category] || []}
-                    onOpenTask={setSelectedTask}
-                    onCompleteTask={handleCompleteTask}
-                    onCreateTask={createTask}
-                    currentUserEmail={effectiveEmail}
-                    dormantTasks={dormantByCategory[category] || []}
-                    subtaskReloadTrigger={subtaskReloadTrigger}
-                    customColor={getCategoryColor(category)}
-                    canDelete={!isProtected(category)}
-                    onDelete={() => handleDeleteCategory(category)}
-                    onSubtaskCompleted={handleSubtaskCompleted}
-                  />
-                ))}
-              </SortableContext>
-            </div>
-          </div>
-          <DragOverlay>
-            {draggingColumn && (
-              <div style={{ opacity: 0.8, transform: 'rotate(2deg)', pointerEvents: 'none' }}>
-                <TaskColumn
-                  category={draggingColumn}
-                  tasks={tasksByCategory[draggingColumn] || []}
-                  onOpenTask={() => {}}
-                  onCompleteTask={() => {}}
-                  onCreateTask={() => {}}
-                  currentUserEmail={effectiveEmail}
-                  dormantTasks={dormantByCategory[draggingColumn] || []}
-                />
-              </div>
+        /* Contenedor principal con sidebars a la derecha */
+        <div style={styles.mainArea}>
+          {/* Área de columnas */}
+          <div style={styles.columnsArea}>
+            {activeTab === 'planning' && (
+              <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} />
             )}
-          </DragOverlay>
-        </DndContext>}
-        {isDiego && showGallery && (
-          <GallerySidebar
-            onClose={() => setShowGallery(false)}
-            userEmail={profile?.email}
-            unlockedSinceOpen={galleryUnlockCounter}
-          />
-        )}
-        </>
+            {activeTab === 'tasks' && (
+              <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                <div style={styles.columnsWrapper}>
+                  <div style={styles.columns}>
+                    <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                      {columnOrder.map(category => (
+                        <SortableColumn
+                          key={category}
+                          category={category}
+                          isDragging={draggingColumn === category}
+                          tasks={tasksByCategory[category] || []}
+                          onOpenTask={setSelectedTask}
+                          onCompleteTask={handleCompleteTask}
+                          onCreateTask={createTask}
+                          currentUserEmail={effectiveEmail}
+                          dormantTasks={dormantByCategory[category] || []}
+                          subtaskReloadTrigger={subtaskReloadTrigger}
+                          customColor={getCategoryColor(category)}
+                          canDelete={!isProtected(category)}
+                          onDelete={() => handleDeleteCategory(category)}
+                          onSubtaskCompleted={handleSubtaskCompleted}
+                        />
+                      ))}
+                    </SortableContext>
+                  </div>
+                </div>
+                <DragOverlay>
+                  {draggingColumn && (
+                    <div style={{ opacity: 0.8, transform: 'rotate(2deg)', pointerEvents: 'none' }}>
+                      <TaskColumn
+                        category={draggingColumn}
+                        tasks={tasksByCategory[draggingColumn] || []}
+                        onOpenTask={() => {}}
+                        onCompleteTask={() => {}}
+                        onCreateTask={() => {}}
+                        currentUserEmail={effectiveEmail}
+                        dormantTasks={dormantByCategory[draggingColumn] || []}
+                      />
+                    </div>
+                  )}
+                </DragOverlay>
+              </DndContext>
+            )}
+          </div>
+
+          {/* Sidebars a la derecha — igual que TaskPanel */}
+          {selectedTask && (
+            <div style={styles.sidebarArea}>
+              <TaskPanel
+                task={selectedTask}
+                onClose={() => { setSelectedTask(null); fetchTasks(); }}
+                onUpdate={updateTask}
+                onDelete={deleteTask}
+                onComplete={handleCompleteTask}
+                createSubtask={createSubtask}
+                getSubtasks={getSubtasks}
+                onSubtasksChanged={() => { fetchTasks(); setSubtaskReloadTrigger(k => k + 1); }}
+              />
+            </div>
+          )}
+          {isDiego && showGallery && (
+            <div style={styles.sidebarArea}>
+              <GallerySidebar
+                onClose={() => setShowGallery(false)}
+                userEmail={profile?.email}
+                unlockedSinceOpen={galleryUnlockCounter}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {showHistory && (
@@ -329,6 +354,7 @@ export default function TasksPage() {
           ownerEmail={effectiveEmail}
         />
       )}
+
       {/* Modal nueva categoría */}
       {showNewCategory && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
@@ -367,19 +393,6 @@ export default function TasksPage() {
           </div>
         </div>
       )}
-
-      {selectedTask && (
-        <TaskPanel
-          task={selectedTask}
-          onClose={() => { setSelectedTask(null); fetchTasks(); }}
-          onUpdate={updateTask}
-          onDelete={deleteTask}
-          onComplete={handleCompleteTask}
-          createSubtask={createSubtask}
-          getSubtasks={getSubtasks}
-          onSubtasksChanged={() => { fetchTasks(); setSubtaskReloadTrigger(k => k + 1); }}
-        />
-      )}
     </div>
   );
 }
@@ -403,14 +416,12 @@ const styles = {
   selectorIcon: { position: 'absolute', right: 8, pointerEvents: 'none' },
   userBadge: {
     fontSize: 13, fontWeight: 600, color: '#1a73e8',
-    background: '#e8f0fe', borderRadius: 8,
-    padding: '4px 10px',
+    background: '#e8f0fe', borderRadius: 8, padding: '4px 10px',
   },
   taskCountText: { fontSize: 14, color: '#5f6368', display: 'flex', alignItems: 'center', gap: 6 },
   viewingBadge: {
     background: '#fce8e6', color: '#c5221f',
-    fontSize: 11, fontWeight: 600,
-    padding: '2px 8px', borderRadius: 20,
+    fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
   },
   refreshBtn: {
     background: '#fff', border: '1px solid #dadce0',
@@ -430,7 +441,11 @@ const styles = {
     border: 'none', borderRadius: 6,
     fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
   },
+  // Layout principal con sidebars
+  mainArea: { flex: 1, display: 'flex', overflow: 'hidden', gap: 0 },
+  columnsArea: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   columnsWrapper: { flex: 1, overflow: 'auto' },
   columns: { display: 'flex', gap: 16, padding: '4px 4px 24px', minWidth: 'max-content', alignItems: 'flex-start' },
+  sidebarArea: { flexShrink: 0, height: '100%', overflow: 'hidden' },
   loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#5f6368', fontSize: 14 },
 };
