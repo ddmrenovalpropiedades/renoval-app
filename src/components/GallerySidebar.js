@@ -255,10 +255,9 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
         </div>
       )}
 
-      {/* Thumbnails — always show if there's a set selected with images */}
-      {activeSetId && total > 0 && (
+      {/* Thumbnails — solo las desbloqueadas */}
+      {images.length > 0 && (
         <div style={styles.thumbGrid}>
-          {/* Unlocked thumbnails */}
           {images.map((url, i) => (
             imageLoadErrors[i] ? (
               <div key={i} style={{ ...styles.thumbLocked, cursor: 'pointer', background: '#f8d7da' }}
@@ -275,10 +274,6 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
                 onError={() => setImageLoadErrors(prev => ({ ...prev, [i]: true }))}
               />
             )
-          ))}
-          {/* Locked slots */}
-          {Array.from({ length: total - images.length }).map((_, i) => (
-            <div key={`lock-${i}`} style={styles.thumbLocked}>🔒</div>
           ))}
         </div>
       )}
