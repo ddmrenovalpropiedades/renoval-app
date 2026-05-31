@@ -87,7 +87,7 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
         <AnimatedCheckbox onClick={() => !hasSubtasks && onComplete(task)} urgent={isUrgent} proxima={task.proxima_vencer} />
         <span onClick={() => onOpen(task)} style={styles.taskTitle}>
           {isUrgent && <span style={styles.urgentDot} title="Urgente">!</span>}
-          {isProxima && <span style={{ ...styles.urgentDot, background: '#f57c00' }} title="Próxima a vencer">!</span>}
+          {isProxima && <span style={{ ...styles.urgentDot, background: '#f57c00' }} title="Importante/por vencer">!</span>}
           {prefix}{task.title}
           {task.recurrence && task.recurrence !== 'none' && (
             <RefreshCw size={10} style={{ marginLeft: 5, color: '#9aa0a6', verticalAlign: 'middle' }} />
