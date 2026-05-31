@@ -8,6 +8,8 @@ import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
 import { RefreshCw, ChevronDown, History, Plus, X } from 'lucide-react';
+import GallerySidebar, { unlockNextGalleryImage } from '../components/GallerySidebar';
+import PlanningPage from './PlanningPage';
 import HistoryPanel from '../components/HistoryPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
@@ -57,6 +59,11 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [categories, setCategories] = useState(null); // null = loading
   const [showNewCategory, setShowNewCategory] = useState(false);
+  const [activeTab, setActiveTab] = useState('tasks'); // 'tasks' | 'planning'
+  const [showGallery, setShowGallery] = useState(false);
+  const [galleryUnlockCounter, setGalleryUnlockCounter] = useState(0);
+
+  const isDiego = profile?.email === 'ddm@renovalpropiedades.com';
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#0891b2');
 
@@ -172,6 +179,17 @@ export default function TasksPage() {
     await completeTask(task);
     if (selectedTask?.id === task.id) setSelectedTask(null);
     await fetchTasks();
+    if (isDiego) {
+      const activeSet = localStorage.getItem('galleryActiveSet');
+      if (activeSet) { await unlockNextGalleryImage(activeSet); setGalleryUnlockCounter(c => c + 1); }
+    }
+  };
+
+  const handleSubtaskCompleted = async () => {
+    if (isDiego) {
+      const activeSet = localStorage.getItem('galleryActiveSet');
+      if (activeSet) { await unlockNextGalleryImage(activeSet); setGalleryUnlockCounter(c => c + 1); }
+    }
   };
 
   const totalTasks = Object.values(tasksByCategory).flat().length;
@@ -181,7 +199,13 @@ export default function TasksPage() {
       {/* Header */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Tareas Pendientes</h1>
+          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+            <h1 style={styles.title}>Tareas Pendientes</h1>
+            <div style={{ display:'flex' }}>
+              <button onClick={() => setActiveTab('tasks')} style={{ padding:'4px 14px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:500, color: activeTab==='tasks' ? '#1a73e8' : '#5f6368', borderBottom: activeTab==='tasks' ? '2px solid #1a73e8' : '2px solid transparent', fontFamily:'inherit' }}>Tareas</button>
+              <button onClick={() => setActiveTab('planning')} style={{ padding:'4px 14px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:500, color: activeTab==='planning' ? '#1a73e8' : '#5f6368', borderBottom: activeTab==='planning' ? '2px solid #1a73e8' : '2px solid transparent', fontFamily:'inherit' }}>Planificación</button>
+            </div>
+          </div>
           <div style={styles.subtitleRow}>
             {/* Selector de usuario (solo propietarios) */}
             {profile?.isOwner ? (
@@ -223,6 +247,11 @@ export default function TasksPage() {
           <button onClick={() => setShowNewCategory(true)} style={{ ...styles.refreshBtn, display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'#e8f0fe', border:'1px solid #1a73e8', color:'#1a73e8', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }} title="Nueva lista">
             <Plus size={14} /> Nueva lista
           </button>
+          {isDiego && (
+            <button onClick={() => setShowGallery(g => !g)}
+              style={{ ...styles.refreshBtn, width:36, height:36, fontWeight:700, fontSize:16, background: showGallery ? '#202124' : '#fff', color: showGallery ? '#fff' : '#202124', border:'1px solid #dadce0', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+              title="Galería">G</button>
+          )}
         </div>
       </div>
 
@@ -239,7 +268,11 @@ export default function TasksPage() {
       {loading ? (
         <div style={styles.loading}>Cargando tareas...</div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <>
+        {activeTab === 'planning' && (
+          <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} />
+        )}
+        {activeTab === 'tasks' && <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div style={styles.columnsWrapper}>
             <div style={styles.columns}>
               <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
@@ -258,6 +291,7 @@ export default function TasksPage() {
                     customColor={getCategoryColor(category)}
                     canDelete={!isProtected(category)}
                     onDelete={() => handleDeleteCategory(category)}
+                    onSubtaskCompleted={handleSubtaskCompleted}
                   />
                 ))}
               </SortableContext>
@@ -278,7 +312,15 @@ export default function TasksPage() {
               </div>
             )}
           </DragOverlay>
-        </DndContext>
+        </DndContext>}
+        {isDiego && showGallery && (
+          <GallerySidebar
+            onClose={() => setShowGallery(false)}
+            userEmail={profile?.email}
+            unlockedSinceOpen={galleryUnlockCounter}
+          />
+        )}
+        </>
       )}
 
       {showHistory && (
