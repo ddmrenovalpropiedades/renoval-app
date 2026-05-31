@@ -10,7 +10,6 @@ export default function PlanningPage({ allTasks, userEmail }) {
 
   const today = new Date().toLocaleDateString('es-CL', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
-  // Filter tasks
   const urgentTasks = useMemo(() =>
     allTasks.filter(t => t.urgent && !t.completed && !t._dormant), [allTasks]);
   const importantTasks = useMemo(() =>
@@ -20,7 +19,7 @@ export default function PlanningPage({ allTasks, userEmail }) {
     if (userEmail !== DIEGO_EMAIL) return;
     setLoadingEmails(true);
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/claude-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
