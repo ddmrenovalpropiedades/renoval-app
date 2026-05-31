@@ -292,7 +292,7 @@ export async function unlockNextGalleryImage(setId) {
 }
 
 const styles = {
-  sidebar: { width: 320, background: '#fff', borderLeft: '1px solid #e8eaed', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', fontFamily: "'Google Sans','Segoe UI',sans-serif" },
+  sidebar: { width: 320, background: '#fff', borderLeft: '1px solid #e8eaed', display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', fontFamily: "'Google Sans','Segoe UI',sans-serif" },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid #e8eaed', flexShrink: 0 },
   title: { fontSize: 16, fontWeight: 700, color: '#202124' },
   closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#5f6368' },
@@ -312,7 +312,7 @@ const styles = {
   navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#5f6368' },
   mainCounter: { fontSize: 12, color: '#5f6368' },
   emptyState: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  thumbGrid: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '10px 14px', overflowY: 'auto', flex: 1 },
+  thumbGrid: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '10px 14px', overflowY: 'auto', flex: 1, minHeight: 100 },
   thumb: { width: 60, height: 80, objectFit: 'cover', borderRadius: 5, cursor: 'pointer', border: '2px solid transparent', transition: 'border 0.15s' },
   thumbActive: { border: '2px solid #1a73e8' },
   thumbLocked: { width: 60, height: 80, background: '#f1f3f4', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#bdbdbd' },
