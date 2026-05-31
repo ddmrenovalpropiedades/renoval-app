@@ -141,7 +141,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
     setProxima(newVal);
     if (newVal && urgent) { setUrgent(false); await onUpdate(task.id, { proxima_vencer: true, urgent: false }); }
     else { await onUpdate(task.id, { proxima_vencer: newVal }); }
-    showSaved(newVal ? '🟠 Próxima a vencer' : '✓ Prioridad quitada');
+    showSaved(newVal ? '🟠 Importante/por vencer' : '✓ Prioridad quitada');
   };
 
   const toggleUrgent = async () => {
@@ -211,7 +211,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
             </button>
             <button onClick={toggleProxima} style={{ ...styles.proximaBtn, ...(proxima ? styles.proximaBtnActive : {}) }}>
               <AlertCircle size={14} color={proxima ? '#fff' : '#f57c00'} />
-              {proxima ? 'Próxima a vencer — click para quitar' : 'Marcar como próxima a vencer'}
+              {proxima ? 'Importante/por vencer — click para quitar' : 'Marcar como importante/por vencer'}
             </button>
           </div>
 
