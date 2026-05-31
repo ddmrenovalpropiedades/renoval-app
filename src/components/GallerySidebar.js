@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { X, Upload, ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
 
@@ -14,9 +14,18 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
   const [uploadProgress, setUploadProgress] = useState('');
   const [showNewSet, setShowNewSet] = useState(false);
   const [newSetName, setNewSetName] = useState('');
+  const [imageLoadErrors, setImageLoadErrors] = useState({}); // track broken URLs
+
+  // Use refs to always have latest sets/progress when building URLs
+  const setsRef = useRef(sets);
+  const progressRef = useRef(progress);
+  useEffect(() => { setsRef.current = sets; }, [sets]);
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+
   const fetchSets = useCallback(async () => {
     const { data } = await supabase.from('gallery_sets').select('*').order('created_at', { ascending: true });
     setSets(data || []);
+    return data || [];
   }, []);
 
   const fetchProgress = useCallback(async () => {
@@ -24,34 +33,70 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     const map = {};
     (data || []).forEach(p => { map[p.set_id] = p.unlocked_count; });
     setProgress(map);
+    return map;
   }, []);
 
-  useEffect(() => { fetchSets(); fetchProgress(); }, [fetchSets, fetchProgress]);
-
-  // When unlock counter changes from outside (task completed), refresh progress
-  useEffect(() => {
-    if (unlockedSinceOpen > 0) fetchProgress();
-  }, [unlockedSinceOpen, fetchProgress]);
-
-  // Load image URLs for active set
-  useEffect(() => {
-    if (!activeSetId) { setImages([]); return; }
-    const set = sets.find(s => s.id === activeSetId);
-    if (!set) return;
-    const unlocked = progress[activeSetId] || 1;
+  // Build image URLs given a setId, sets array and progress map
+  const buildImageUrls = useCallback((setId, setsArr, progressMap) => {
+    if (!setId) return [];
+    const set = setsArr.find(s => s.id === setId);
+    if (!set || !set.total_images) return [];
+    const unlocked = progressMap[setId] || 1;
     const urls = [];
     for (let i = 1; i <= Math.min(unlocked, set.total_images); i++) {
-      const { data } = supabase.storage.from('gallery').getPublicUrl(`${activeSetId}/${i}.jpg`);
+      const { data } = supabase.storage.from('gallery').getPublicUrl(`${setId}/${i}.jpg`);
       urls.push(data.publicUrl);
     }
+    return urls;
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      const setsData = await fetchSets();
+      const progressData = await fetchProgress();
+      // If there's a stored active set, load its images immediately using fresh data
+      const stored = localStorage.getItem('galleryActiveSet');
+      if (stored) {
+        const urls = buildImageUrls(stored, setsData, progressData);
+        setImages(urls);
+        setMainIdx(0);
+        setImageLoadErrors({});
+      }
+    };
+    init();
+  }, [fetchSets, fetchProgress, buildImageUrls]);
+
+  // When unlock counter changes from outside (task completed), refresh progress + images
+  useEffect(() => {
+    if (unlockedSinceOpen > 0) {
+      fetchProgress().then(progressData => {
+        if (activeSetId) {
+          const urls = buildImageUrls(activeSetId, setsRef.current, progressData);
+          setImages(urls);
+          setImageLoadErrors({});
+        }
+      });
+    }
+  }, [unlockedSinceOpen, fetchProgress, activeSetId, buildImageUrls]);
+
+  // Reload images when activeSetId changes (set selector)
+  useEffect(() => {
+    if (!activeSetId) { setImages([]); return; }
+    const urls = buildImageUrls(activeSetId, setsRef.current, progressRef.current);
     setImages(urls);
     setMainIdx(0);
-  }, [activeSetId, sets, progress]);
+    setImageLoadErrors({});
+  }, [activeSetId, buildImageUrls]);
 
   const handleSetChange = (id) => {
+    if (!id) return;
     setActiveSetId(id);
     localStorage.setItem('galleryActiveSet', id);
     setMainIdx(0);
+    setImageLoadErrors({});
+    // Build URLs from current refs immediately
+    const urls = buildImageUrls(id, setsRef.current, progressRef.current);
+    setImages(urls);
   };
 
   const handleUpload = async (e) => {
@@ -69,6 +114,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       return na - nb;
     });
 
+    setUploading(true);
     let setId = activeSetId;
 
     if (!setId) {
@@ -76,24 +122,37 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       const name = newSetName.trim() || `Set ${sets.length + 1}`;
       const { data, error } = await supabase.from('gallery_sets')
         .insert({ name, total_images: jpgFiles.length }).select().single();
-      if (error || !data) { alert('Error creando set'); return; }
+      if (error || !data) { alert('Error creando set: ' + (error?.message || 'desconocido')); setUploading(false); return; }
       setId = data.id;
       // Create initial progress (1 image unlocked)
       await supabase.from('gallery_progress').insert({ set_id: setId, unlocked_count: 1 });
-      await fetchSets();
-      setActiveSetId(setId);
-      localStorage.setItem('galleryActiveSet', setId);
     }
 
-    setUploading(true);
+    // Upload files
     for (let i = 0; i < jpgFiles.length; i++) {
-      setUploadProgress(`Subiendo ${i+1} de ${jpgFiles.length}...`);
-      await supabase.storage.from('gallery').upload(`${setId}/${i+1}.jpg`, jpgFiles[i], { upsert: true });
+      setUploadProgress(`Subiendo ${i + 1} de ${jpgFiles.length}...`);
+      const { error: uploadError } = await supabase.storage
+        .from('gallery')
+        .upload(`${setId}/${i + 1}.jpg`, jpgFiles[i], { upsert: true });
+      if (uploadError) console.error(`Error subiendo imagen ${i + 1}:`, uploadError.message);
     }
+
     // Update total_images
     await supabase.from('gallery_sets').update({ total_images: jpgFiles.length }).eq('id', setId);
-    await fetchSets();
-    await fetchProgress();
+
+    // Fetch fresh data and build URLs
+    const freshSets = await fetchSets();
+    const freshProgress = await fetchProgress();
+
+    setActiveSetId(setId);
+    localStorage.setItem('galleryActiveSet', setId);
+
+    const urls = buildImageUrls(setId, freshSets, freshProgress);
+    setImages(urls);
+    setMainIdx(0);
+    setImageLoadErrors({});
+    setShowNewSet(false);
+    setNewSetName('');
     setUploading(false);
     setUploadProgress('');
     e.target.value = '';
@@ -116,7 +175,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
         <select value={activeSetId || ''} onChange={e => handleSetChange(e.target.value)} style={styles.setSelect}>
           <option value="">— Seleccionar set —</option>
           {sets.map(s => (
-            <option key={s.id} value={s.id}>{s.name} ({progress[s.id]||1}/{s.total_images})</option>
+            <option key={s.id} value={s.id}>{s.name} ({progress[s.id] || 1}/{s.total_images})</option>
           ))}
         </select>
         {sets.length < MAX_SETS && (
@@ -148,10 +207,10 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
         </label>
       )}
 
-      {/* Progress */}
+      {/* Progress bar */}
       {activeSetId && total > 0 && (
         <div style={styles.progressBar}>
-          <div style={{ ...styles.progressFill, width: `${(unlocked/total)*100}%` }} />
+          <div style={{ ...styles.progressFill, width: `${(unlocked / total) * 100}%` }} />
           <span style={styles.progressText}>{unlocked} / {total} imágenes desbloqueadas</span>
         </div>
       )}
@@ -159,15 +218,29 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       {/* Main image */}
       {images.length > 0 ? (
         <div style={styles.mainImageWrapper}>
-          <img src={images[mainIdx]} alt={`${mainIdx+1}`} style={styles.mainImage}
-            onError={e => { e.target.style.display='none'; }} />
+          {imageLoadErrors[mainIdx] ? (
+            <div style={styles.imgError}>
+              <ImageIcon size={32} color="#dadce0" />
+              <p style={{ color: '#9aa0a6', fontSize: 12, margin: '6px 0 0', textAlign: 'center' }}>
+                No se pudo cargar la imagen
+              </p>
+            </div>
+          ) : (
+            <img
+              key={images[mainIdx]}
+              src={images[mainIdx]}
+              alt={`${mainIdx + 1}`}
+              style={styles.mainImage}
+              onError={() => setImageLoadErrors(prev => ({ ...prev, [mainIdx]: true }))}
+            />
+          )}
           {images.length > 1 && (
             <div style={styles.mainNav}>
-              <button onClick={() => setMainIdx(i => Math.max(0, i-1))} style={styles.navBtn} disabled={mainIdx === 0}>
+              <button onClick={() => setMainIdx(i => Math.max(0, i - 1))} style={styles.navBtn} disabled={mainIdx === 0}>
                 <ChevronLeft size={18} />
               </button>
-              <span style={styles.mainCounter}>{mainIdx+1} / {images.length}</span>
-              <button onClick={() => setMainIdx(i => Math.min(images.length-1, i+1))} style={styles.navBtn} disabled={mainIdx === images.length-1}>
+              <span style={styles.mainCounter}>{mainIdx + 1} / {images.length}</span>
+              <button onClick={() => setMainIdx(i => Math.min(images.length - 1, i + 1))} style={styles.navBtn} disabled={mainIdx === images.length - 1}>
                 <ChevronRight size={18} />
               </button>
             </div>
@@ -176,20 +249,32 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       ) : (
         <div style={styles.emptyState}>
           <ImageIcon size={40} color="#dadce0" />
-          <p style={{ color: '#9aa0a6', fontSize: 13, margin: '8px 0 0' }}>
-            {activeSetId ? 'Cargando imágenes...' : 'Selecciona un set para ver imágenes'}
+          <p style={{ color: '#9aa0a6', fontSize: 13, margin: '8px 0 0', textAlign: 'center' }}>
+            {activeSetId ? (uploading ? uploadProgress : 'No hay imágenes disponibles') : 'Selecciona un set para ver imágenes'}
           </p>
         </div>
       )}
 
-      {/* Thumbnails */}
-      {images.length > 1 && (
+      {/* Thumbnails — always show if there's a set selected with images */}
+      {activeSetId && total > 0 && (
         <div style={styles.thumbGrid}>
+          {/* Unlocked thumbnails */}
           {images.map((url, i) => (
-            <img key={i} src={url} alt={`${i+1}`}
-              onClick={() => setMainIdx(i)}
-              style={{ ...styles.thumb, ...(i === mainIdx ? styles.thumbActive : {}) }}
-              onError={e => { e.target.style.display='none'; }} />
+            imageLoadErrors[i] ? (
+              <div key={i} style={{ ...styles.thumbLocked, cursor: 'pointer', background: '#f8d7da' }}
+                onClick={() => setMainIdx(i)} title="Error al cargar">
+                ⚠️
+              </div>
+            ) : (
+              <img
+                key={i}
+                src={url}
+                alt={`${i + 1}`}
+                onClick={() => setMainIdx(i)}
+                style={{ ...styles.thumb, ...(i === mainIdx ? styles.thumbActive : {}) }}
+                onError={() => setImageLoadErrors(prev => ({ ...prev, [i]: true }))}
+              />
+            )
           ))}
           {/* Locked slots */}
           {Array.from({ length: total - images.length }).map((_, i) => (
@@ -227,8 +312,9 @@ const styles = {
   progressText: { position: 'absolute', left: 0, right: 0, top: 0, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', zIndex: 1 },
   mainImageWrapper: { padding: '10px 14px 0', flexShrink: 0 },
   mainImage: { width: '100%', borderRadius: 8, display: 'block', maxHeight: 400, objectFit: 'contain', background: '#f8f9fa' },
+  imgError: { width: '100%', height: 200, borderRadius: 8, background: '#f8f9fa', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
   mainNav: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 6 },
-  navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#5f6368', ':disabled': { opacity: 0.3 } },
+  navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#5f6368' },
   mainCounter: { fontSize: 12, color: '#5f6368' },
   emptyState: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 },
   thumbGrid: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '10px 14px', overflowY: 'auto', flex: 1 },
