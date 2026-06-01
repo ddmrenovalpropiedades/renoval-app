@@ -36,7 +36,15 @@ export default function AppShell() {
     <div style={styles.root}>
       {/* Sidebar */}
       <aside
-        style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}
+        style={{
+          ...styles.sidebar,
+          width: collapsed ? 64 : 240,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          zIndex: 100,
+        }}
         onMouseEnter={() => setCollapsed(false)}
         onMouseLeave={() => setCollapsed(true)}
       >
@@ -171,6 +179,7 @@ const styles = {
     height: '100vh',
     background: '#f8f9fa',
     fontFamily: "'Google Sans', 'Segoe UI', sans-serif",
+    position: 'relative',
   },
   sidebar: {
     background: '#fff',
@@ -180,6 +189,7 @@ const styles = {
     transition: 'width 0.2s ease',
     overflow: 'hidden',
     flexShrink: 0,
+    boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
   },
   sidebarHeader: {
     display: 'flex',
@@ -289,6 +299,7 @@ const styles = {
     flex: 1,
     overflow: 'auto',
     padding: 32,
+    marginLeft: 64,
   },
   comingSoon: {
     display: 'flex',
