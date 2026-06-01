@@ -3,7 +3,7 @@ import { RefreshCw, Mail, AlertCircle, Clock } from 'lucide-react';
 
 const DIEGO_EMAIL = 'ddm@renovalpropiedades.com';
 
-export default function PlanningPage({ allTasks, userEmail }) {
+export default function PlanningPage({ allTasks, userEmail, userName }) {
   const [emailSummary, setEmailSummary] = useState('');
   const [loadingEmails, setLoadingEmails] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -50,8 +50,15 @@ export default function PlanningPage({ allTasks, userEmail }) {
     </div>
   );
 
+  const firstName = userName ? userName.split(' ')[0] : '';
+
   return (
     <div style={styles.container}>
+      {firstName && (
+        <div style={styles.greeting}>
+          Hola {firstName}, para el día de hoy tienes:
+        </div>
+      )}
       <div style={styles.dateHeader}>
         <span style={styles.dateText}>{today.charAt(0).toUpperCase() + today.slice(1)}</span>
       </div>
@@ -127,6 +134,7 @@ export default function PlanningPage({ allTasks, userEmail }) {
 
 const styles = {
   container: { height:'100%', overflow:'auto', fontFamily:"'Google Sans','Segoe UI',sans-serif", padding:'4px 0' },
+  greeting: { fontSize:22, fontWeight:700, color:'#202124', marginBottom:6 },
   dateHeader: { marginBottom:20 },
   dateText: { fontSize:14, color:'#5f6368', fontWeight:500 },
   grid: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 },
