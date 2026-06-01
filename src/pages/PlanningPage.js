@@ -2,13 +2,18 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, Mail, AlertCircle, Clock } from 'lucide-react';
 
 const DIEGO_EMAIL = 'ddm@renovalpropiedades.com';
+const EMAILS_WITH_ACCESS = [
+  'ddm@renovalpropiedades.com',
+  'fdm@renovalpropiedades.com',
+  'edith@renovalpropiedades.com',
+];
 const STORAGE_KEY = 'planningEmailSummary';
 const STORAGE_DATE_KEY = 'planningEmailDate';
 
 export default function PlanningPage({ allTasks, userEmail, userName }) {
   // Inicializar desde localStorage para persistir entre refrescos
   const [emailSummary, setEmailSummary] = useState(() => {
-    if (userEmail !== DIEGO_EMAIL) return '';
+    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return '';
     return localStorage.getItem(STORAGE_KEY) || '';
   });
   const [loadingEmails, setLoadingEmails] = useState(false);
@@ -25,13 +30,13 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
     allTasks.filter(t => t.proxima_vencer && !t.urgent && !t.completed && !t._dormant), [allTasks]);
 
   const fetchEmails = useCallback(async () => {
-    if (userEmail !== DIEGO_EMAIL) return;
+    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
     setLoadingEmails(true);
     try {
       const response = await fetch('/api/gmail-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ userEmail }),
       });
       const data = await response.json();
       const summary = data.error ? 'Error: ' + data.error : data.summary;
@@ -50,7 +55,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
   // Auto-actualización a las 8:00 AM y 11:59 AM
   const lastAutoFetch = useRef({ '08:00': null, '11:59': null });
   useEffect(() => {
-    if (userEmail !== DIEGO_EMAIL) return;
+    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
     const checkAutoFetch = () => {
       const now = new Date();
       const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -123,7 +128,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
           </div>
 
           {/* Correos */}
-          {userEmail === DIEGO_EMAIL && (
+          {EMAILS_WITH_ACCESS.includes(userEmail) && (
             <div style={{ ...styles.card, gridColumn: '1 / -1' }}>
               <div style={styles.cardHeader}>
                 <Mail size={16} color="#1a73e8" />
