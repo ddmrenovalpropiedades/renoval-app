@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, Mail, AlertCircle, Clock } from 'lucide-react';
 
-const DIEGO_EMAIL = 'ddm@renovalpropiedades.com';
 const EMAILS_WITH_ACCESS = [
   'ddm@renovalpropiedades.com',
   'fdm@renovalpropiedades.com',
