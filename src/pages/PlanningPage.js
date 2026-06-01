@@ -54,7 +54,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
 
   return (
     <div style={styles.container}>
-      <div style={styles.card}>
+      <div style={styles.pageCard}>
       {firstName && (
         <div style={styles.greeting}>
           ¡Hola {firstName}!, para el día de hoy tienes:
@@ -136,7 +136,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
 
 const styles = {
   container: { height:'100%', overflow:'auto', fontFamily:"'Google Sans','Segoe UI',sans-serif", padding:'4px 0' },
-  card: { background:'#fff', borderRadius:12, border:'1px solid #e8eaed', padding:'20px 20px 16px' },
+  pageCard: { background:'#fff', borderRadius:12, border:'1px solid #e8eaed', padding:'20px 20px 16px' },
   greeting: { fontSize:25, fontWeight:700, color:'#202124', marginBottom:25 },
   dateHeader: { marginBottom:20 },
   dateText: { fontSize:14, color:'#5f6368', fontWeight:500 },
