@@ -19,27 +19,17 @@ export default function PlanningPage({ allTasks, userEmail }) {
     if (userEmail !== DIEGO_EMAIL) return;
     setLoadingEmails(true);
     try {
-      const response = await fetch('/api/claude-proxy', {
+      const response = await fetch('/api/gmail-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          system: `Eres un asistente de planificación del día. Tienes acceso a Gmail.
-Tu tarea es: buscar los correos recibidos en las últimas 24 horas en la bandeja de entrada (inbox), y para cada uno indicar en una lista:
-- Remitente
-- Asunto
-- Resumen de 1-2 líneas del contenido
-
-Responde SIEMPRE en español. Si no hay correos recientes, dilo claramente.
-Sé conciso. Usa formato de lista con viñetas.`,
-          messages: [{ role: 'user', content: 'Lista los correos recibidos en las últimas 24 horas en mi bandeja de entrada. Para cada uno, dime el remitente, el asunto y un resumen breve.' }],
-          mcp_servers: [{ type: 'url', url: 'https://gmailmcp.googleapis.com/mcp/v1', name: 'gmail-mcp' }]
-        })
+        body: JSON.stringify({}),
       });
       const data = await response.json();
-      const text = data.content?.filter(b => b.type === 'text').map(b => b.text).join('\n') || 'No se pudo obtener los correos.';
-      setEmailSummary(text);
+      if (data.error) {
+        setEmailSummary('Error: ' + data.error);
+      } else {
+        setEmailSummary(data.summary);
+      }
       setLastUpdated(new Date());
     } catch(e) {
       setEmailSummary('Error al obtener correos: ' + e.message);
