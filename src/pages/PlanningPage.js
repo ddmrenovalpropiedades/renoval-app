@@ -23,7 +23,7 @@ export default function PlanningPage({ allTasks, userEmail }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1000,
           system: `Eres un asistente de planificación del día. Tienes acceso a Gmail.
 Tu tarea es: buscar los correos recibidos en las últimas 24 horas en la bandeja de entrada (inbox), y para cada uno indicar en una lista:
