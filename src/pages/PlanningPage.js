@@ -88,7 +88,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
       <div style={styles.pageCard}>
         {firstName && (
           <div style={styles.greeting}>
-            ¡Hola {firstName}!, para el día de hoy tienes:
+            ¡Hola {firstName}! Para el día de hoy tienes:
           </div>
         )}
         <div style={styles.dateHeader}>
