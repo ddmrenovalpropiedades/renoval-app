@@ -3,15 +3,29 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const { userEmail } = req.body || {};
+
+  // Seleccionar el refresh token según el usuario
+  const refreshTokenMap = {
+    'ddm@renovalpropiedades.com':      process.env.GOOGLE_REFRESH_TOKEN,
+    'fdm@renovalpropiedades.com':      process.env.GOOGLE_REFRESH_TOKEN_FDM,
+    'edith@renovalpropiedades.com':    process.env.GOOGLE_REFRESH_TOKEN_EDITH,
+  };
+
+  const refreshToken = refreshTokenMap[userEmail];
+  if (!refreshToken) {
+    return res.status(200).json({ summary: 'No hay acceso configurado al correo para este usuario.' });
+  }
+
   try {
-    // 1. Obtener access token usando el refresh token
+    // 1. Obtener access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+        refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }),
     });
@@ -45,9 +59,8 @@ export default async function handler(req, res) {
         const headers = msgData.payload?.headers || [];
         const from = headers.find(h => h.name === 'From')?.value || 'Desconocido';
         const subject = headers.find(h => h.name === 'Subject')?.value || '(sin asunto)';
-        const date = headers.find(h => h.name === 'Date')?.value || '';
         const snippet = msgData.snippet || '';
-        return { from, subject, date, snippet };
+        return { from, subject, snippet };
       })
     );
 
