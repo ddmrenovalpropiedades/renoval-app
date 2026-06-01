@@ -64,11 +64,12 @@ export default function TasksPage() {
   const [newCatColor, setNewCatColor] = useState('#0891b2');
 
   React.useEffect(() => {
+    if (!profile?.email) return;
     const loadCategories = async () => {
       const { data } = await supabase.from('task_categories').select('*').order('position', { ascending: true });
       if (data && data.length > 0) {
-        // Migrar nombres antiguos si existen
-        const migrated = data.map(c => {
+        const filtered = data.filter(c => c.is_default || c.user_email === profile.email);
+        const migrated = filtered.map(c => {
           if (c.name === 'Entrada') return { ...c, name: 'Llegada arrendatario' };
           if (c.name === 'Salida') return { ...c, name: 'Publicar/Arrendar' };
           return c;
@@ -82,18 +83,17 @@ export default function TasksPage() {
       }
     };
     loadCategories();
-  }, []);
+  }, [profile?.email]);
 
   const [columnOrder, setColumnOrder] = useState([...DEFAULT_CATEGORIES]);
 
   React.useEffect(() => {
-    if (!categories) return;
+    if (!categories || !profile?.email) return;
     const catNames = categories.map(c => c.name);
     try {
-      const saved = localStorage.getItem('tasksColumnOrder');
+      const saved = localStorage.getItem(`tasksColumnOrder_${profile.email}`);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Migrar nombres viejos en localStorage
         const migrated = parsed.map(n => {
           if (n === 'Entrada') return 'Llegada arrendatario';
           if (n === 'Salida') return 'Publicar/Arrendar';
@@ -105,7 +105,7 @@ export default function TasksPage() {
       }
     } catch(e) {}
     setColumnOrder(catNames);
-  }, [categories]);
+  }, [categories, profile?.email]);
 
   const [draggingColumn, setDraggingColumn] = useState(null);
 
@@ -120,12 +120,13 @@ export default function TasksPage() {
     if (!newCatName.trim()) return;
     const pos = (categories?.length || 5);
     const { data } = await supabase.from('task_categories')
-      .insert({ name: newCatName.trim(), color: newCatColor, position: pos, is_default: false })
+      .insert({ name: newCatName.trim(), color: newCatColor, position: pos, is_default: false, user_email: profile?.email })
       .select().single();
     if (data) {
       setCategories(prev => [...(prev||[]), data]);
-      setColumnOrder(prev => [...prev, data.name]);
-      localStorage.setItem('tasksColumnOrder', JSON.stringify([...columnOrder, data.name]));
+      const newOrder = [...columnOrder, data.name];
+      setColumnOrder(newOrder);
+      localStorage.setItem(`tasksColumnOrder_${profile?.email}`, JSON.stringify(newOrder));
     }
     setNewCatName('');
     setNewCatColor('#0891b2');
@@ -135,12 +136,12 @@ export default function TasksPage() {
   const handleDeleteCategory = async (name) => {
     if (isProtected(name)) return;
     if (!window.confirm(`¿Eliminar la lista "${name}"? Las tareas en esta lista también se eliminarán.`)) return;
-    await supabase.from('tasks').delete().eq('category', name);
-    await supabase.from('task_categories').delete().eq('name', name);
+    await supabase.from('tasks').delete().eq('category', name).eq('assigned_to', effectiveEmail);
+    await supabase.from('task_categories').delete().eq('name', name).eq('user_email', profile?.email);
     setCategories(prev => prev.filter(c => c.name !== name));
     const newOrder = columnOrder.filter(c => c !== name);
     setColumnOrder(newOrder);
-    localStorage.setItem('tasksColumnOrder', JSON.stringify(newOrder));
+    localStorage.setItem(`tasksColumnOrder_${profile?.email}`, JSON.stringify(newOrder));
   };
 
   const sensors = useSensors(
@@ -162,7 +163,7 @@ export default function TasksPage() {
       if (oldIdx !== -1 && newIdx !== -1) {
         const newOrder = arrayMove(columnOrder, oldIdx, newIdx);
         setColumnOrder(newOrder);
-        localStorage.setItem('tasksColumnOrder', JSON.stringify(newOrder));
+        localStorage.setItem(`tasksColumnOrder_${profile?.email}`, JSON.stringify(newOrder));
       }
       return;
     }
