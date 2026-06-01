@@ -54,9 +54,10 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
 
   return (
     <div style={styles.container}>
+      <div style={styles.card}>
       {firstName && (
         <div style={styles.greeting}>
-          Hola {firstName}, para el día de hoy tienes:
+          ¡Hola {firstName}!, para el día de hoy tienes:
         </div>
       )}
       <div style={styles.dateHeader}>
@@ -128,13 +129,15 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
       </div>
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      </div>
     </div>
   );
 }
 
 const styles = {
   container: { height:'100%', overflow:'auto', fontFamily:"'Google Sans','Segoe UI',sans-serif", padding:'4px 0' },
-  greeting: { fontSize:22, fontWeight:700, color:'#202124', marginBottom:6 },
+  card: { background:'#fff', borderRadius:12, border:'1px solid #e8eaed', padding:'20px 20px 16px' },
+  greeting: { fontSize:25, fontWeight:700, color:'#202124', marginBottom:25 },
   dateHeader: { marginBottom:20 },
   dateText: { fontSize:14, color:'#5f6368', fontWeight:500 },
   grid: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 },
