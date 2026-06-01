@@ -65,13 +65,13 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
   }, [userEmail, fetchEmails]);
 
   const TaskItem = ({ task, color }) => (
-    <div style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f3f4' }}>
-      <div style={{ width:8, height:8, borderRadius:'50%', background:color, marginTop:5, flexShrink:0 }} />
-      <div style={{ flex:1 }}>
+    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f3f4' }}>
+      <div style={{ width:8, height:8, borderRadius:'50%', background:color, flexShrink:0 }} />
+      <div style={{ flex:1, display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
         <div style={{ fontSize:13, fontWeight:600, color:'#202124' }}>{task.title}</div>
-        <div style={{ fontSize:11, color:'#9aa0a6', marginTop:2 }}>
+        <div style={{ fontSize:11, color:'#9aa0a6', whiteSpace:'nowrap', flexShrink:0 }}>
           {task.category}
-          {task.due_date && ` · Vence: ${new Date(task.due_date+'T12:00:00').toLocaleDateString('es-CL')}`}
+          {task.due_date && ` · ${new Date(task.due_date+'T12:00:00').toLocaleDateString('es-CL')}`}
         </div>
       </div>
     </div>
