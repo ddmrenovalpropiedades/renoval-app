@@ -274,7 +274,7 @@ export default function TasksPage() {
           {/* Área de columnas */}
           <div style={styles.columnsArea}>
             {activeTab === 'planning' && (
-              <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} />
+              <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} userName={profile?.full_name} />
             )}
             {activeTab === 'tasks' && (
               <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
