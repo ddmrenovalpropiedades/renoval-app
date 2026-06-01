@@ -141,7 +141,8 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     });
 
     setUploading(true);
-    let setId = activeSetId;
+    // Si showNewSet está activo, siempre crear un set nuevo (ignorar activeSetId)
+    let setId = showNewSet ? null : activeSetId;
 
     if (!setId) {
       const name = newSetName.trim() || `Set ${sets.length + 1}`;
