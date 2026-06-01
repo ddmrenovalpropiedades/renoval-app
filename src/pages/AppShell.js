@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutGrid, CheckSquare, DollarSign, FileText,
-  Zap, Users, LogOut, ChevronLeft, ChevronRight,
+  Zap, Users, LogOut,
   Building2
 } from 'lucide-react';
 import UserManagement from '../components/UserManagement';
@@ -13,40 +13,69 @@ import ArrendadasPage from './ArrendadasPage';
 import ContratosPage from './ContratosPage';
 import SaldosPage from './SaldosPage';
 
-const NAV_ITEMS = [
-  { id: 'cartera',    label: 'Cartera',               icon: Building2,    ownerOnly: false },
-  { id: 'pizarra',    label: 'Pizarra',              icon: LayoutGrid,   ownerOnly: false },
-  { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,   ownerOnly: false },
-  { id: 'tareas',     label: 'Tareas Pendientes',     icon: CheckSquare,  ownerOnly: false },
-  { id: 'cuentas',    label: 'Cuentas por Cobrar',    icon: DollarSign,   ownerOnly: true  },
-  { id: 'servicios',  label: 'Saldos',                icon: Zap,          ownerOnly: false },
-  { id: 'contratos',  label: 'Contratos',             icon: FileText,     ownerOnly: false },
-  { id: 'usuarios',   label: 'Usuarios',              icon: Users,        ownerOnly: true  },
+const NAV_TOP = [
+  { id: 'pizarra',    label: 'Pizarra',                icon: LayoutGrid,  ownerOnly: false },
+  { id: 'arrendadas', label: 'Propiedades Arrendadas',  icon: Building2,   ownerOnly: false },
+  { id: 'tareas',     label: 'Tareas Pendientes',       icon: CheckSquare, ownerOnly: false },
+  { id: 'servicios',  label: 'Saldos',                  icon: Zap,         ownerOnly: false },
+];
+
+const NAV_BOTTOM = [
+  { id: 'contratos',  label: 'Contratos',               icon: FileText,    ownerOnly: false },
+  { id: 'cartera',    label: 'Cartera',                  icon: Building2,   ownerOnly: false },
+  { id: 'cuentas',    label: 'Cuentas por Cobrar',       icon: DollarSign,  ownerOnly: true  },
+  { id: 'usuarios',   label: 'Usuarios',                 icon: Users,       ownerOnly: true  },
 ];
 
 export default function AppShell() {
   const { profile, signOut } = useAuth();
   const [activeModule, setActiveModule] = useState('pizarra');
-  const [collapsed, setCollapsed] = useState(false);
-
-  const visibleNav = NAV_ITEMS.filter(item => !item.ownerOnly || profile?.isOwner);
+  const [collapsed, setCollapsed] = useState(true);
 
   return (
     <div style={styles.root}>
       {/* Sidebar */}
-      <aside style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}>
+      <aside
+        style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}
+        onMouseEnter={() => setCollapsed(false)}
+        onMouseLeave={() => setCollapsed(true)}
+      >
         {/* Header */}
         <div style={styles.sidebarHeader}>
           <div style={styles.logoMark}>R</div>
           {!collapsed && <span style={styles.brandName}>Renoval</span>}
-          <button style={styles.collapseBtn} onClick={() => setCollapsed(!collapsed)}>
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
         </div>
 
-        {/* Nav */}
+        {/* Nav top */}
         <nav style={styles.nav}>
-          {visibleNav.map(item => {
+          {NAV_TOP.filter(item => !item.ownerOnly || profile?.isOwner).map(item => {
+            const Icon = item.icon;
+            const active = activeModule === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveModule(item.id)}
+                style={{
+                  ...styles.navItem,
+                  ...(active ? styles.navItemActive : {}),
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                }}
+                title={collapsed ? item.label : ''}
+              >
+                <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : '#5f6368' }} />
+                {!collapsed && (
+                  <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : '#3c4043' }}>
+                    {item.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Nav bottom */}
+        <nav style={styles.navBottom}>
+          {NAV_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner).map(item => {
             const Icon = item.icon;
             const active = activeModule === item.id;
             return (
@@ -180,23 +209,19 @@ const styles = {
     flex: 1,
     whiteSpace: 'nowrap',
   },
-  collapseBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: 4,
-    borderRadius: 4,
-    display: 'flex',
-    alignItems: 'center',
-    color: '#5f6368',
-    marginLeft: 'auto',
-  },
   nav: {
-    flex: 1,
     padding: '8px 8px',
     display: 'flex',
     flexDirection: 'column',
     gap: 2,
+  },
+  navBottom: {
+    marginTop: 'auto',
+    padding: '8px 8px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    borderTop: '1px solid #e8eaed',
   },
   navItem: {
     display: 'flex',
