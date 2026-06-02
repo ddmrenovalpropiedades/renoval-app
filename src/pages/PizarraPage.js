@@ -29,13 +29,11 @@ const daysDiff = (dateStr) => {
   return Math.floor((new Date() - date) / (1000 * 60 * 60 * 24));
 };
 
-
 const formatCLP = (n) => {
   if (!n && n !== 0) return '';
   return '$' + Math.round(n).toLocaleString('es-CL');
 };
 
-// Parse price: handles "$390.000", "390000", "30 UF", "UF 30"
 const parsePrice = (val) => {
   if (!val) return { amount: null, isUF: false };
   const str = String(val).trim();
@@ -46,6 +44,74 @@ const parsePrice = (val) => {
   }
   const n = parseFloat(str.replace(/[$.]/g, '').replace(',', '.'));
   return { amount: isNaN(n) ? null : n, isUF: false };
+};
+
+// Mapeo de iniciales a email
+const INITIALS_TO_EMAIL = {
+  'DD': 'ddm@renovalpropiedades.com',
+  'FD': 'fdm@renovalpropiedades.com',
+  'EA': 'edith@renovalpropiedades.com',
+  'FG': 'fernanda@renovalpropiedades.com',
+};
+
+// Crear tarea con subtareas en la tabla tasks (subtareas usan parent_id)
+const createAutoTasks = async (propiedad, e1, e2) => {
+  const CATEGORY = 'Publicar/Arrendar';
+
+  const createTaskWithSubtasks = async (initials, subtitlesList) => {
+    if (!initials) return;
+    const email = INITIALS_TO_EMAIL[initials];
+    if (!email) return;
+
+    // Insertar tarea principal
+    const { data: task, error } = await supabase
+      .from('tasks')
+      .insert({
+        owner_email: email,
+        title: `Arriendo ${propiedad}`,
+        category: CATEGORY,
+        completed: false,
+        position: -Date.now(),
+        recurrence: 'none',
+      })
+      .select()
+      .single();
+
+    if (error || !task) {
+      console.error('Error creando tarea automática:', error);
+      return;
+    }
+
+    // Insertar subtareas con parent_id apuntando a la tarea principal
+    for (let i = 0; i < subtitlesList.length; i++) {
+      await supabase.from('tasks').insert({
+        owner_email: email,
+        title: subtitlesList[i],
+        category: CATEGORY,
+        parent_id: task.id,
+        completed: false,
+        position: i,
+        recurrence: 'none',
+      });
+    }
+  };
+
+  // Subtareas para E1
+  await createTaskWithSubtasks(e1, [
+    'Notificar dueño',
+    'Carpeta antiguos',
+    'Definición precio',
+    'Publicar',
+    'Baja ControlProp',
+    'Respaldar publicación',
+  ]);
+
+  // Subtareas para E2
+  await createTaskWithSubtasks(e2, [
+    'Revisión situación depto',
+    'Agendar entrega',
+    'Acta de Entrega',
+  ]);
 };
 
 const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
@@ -62,9 +128,6 @@ const EMPTY_FORM = {
   e1: '', e2: '', db: '', eb: '', comuna: '',
   fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
 };
-
-
-
 
 // Money input with cursor after $ and live thousands formatting
 function MoneyInput({ value, onChange, placeholder = '' }) {
@@ -97,7 +160,6 @@ function MoneyInput({ value, onChange, placeholder = '' }) {
     </div>
   );
 }
-
 
 // ── Rent Modal ────────────────────────────────────────────────
 function RentModal({ row, onConfirm, onCancel }) {
@@ -174,7 +236,6 @@ const rentStyles = {
   confirmBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
-
 
 // Inline editable text cell
 function InlineEditCell({ value, onChange, placeholder = '' }) {
@@ -353,7 +414,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
   );
 }
 
-
 // ── Main page ─────────────────────────────────────────────────
 const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
 
@@ -383,7 +443,6 @@ export default function PizarraPage() {
 
   const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
 
-  // Totals
   const totals = useMemo(() => {
     let totalCLP = 0;
     let opCount = 0;
@@ -398,11 +457,9 @@ export default function PizarraPage() {
   }, [filtered, uf]);
 
   const handleSave = async (form) => {
-    // For inline edits: update local state only (field already saved to DB)
     if (form.id) {
       setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...form } : r));
     } else {
-      // New row insert
       const payload = {
         propiedad: form.propiedad.trim(),
         precio: form.precio || null, promo: form.promo || null,
@@ -414,7 +471,11 @@ export default function PizarraPage() {
       };
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
-      if (data) setRows(prev => [data, ...prev]);
+      if (data) {
+        setRows(prev => [data, ...prev]);
+        // Crear tareas automáticas para E1 y E2
+        await createAutoTasks(form.propiedad.trim(), form.e1, form.e2);
+      }
       setAddingNew(false);
     }
   };
@@ -428,7 +489,6 @@ export default function PizarraPage() {
     const row = rentingRow;
     setRentingRow(null);
 
-    // Calculate fecha_gar = fecha_salida + 60 days (parse safely to avoid timezone shifts)
     let fechaGar = null;
     if (row.fecha_salida) {
       const parts = String(row.fecha_salida).split('T')[0].split('-');
@@ -437,14 +497,11 @@ export default function PizarraPage() {
       fechaGar = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
 
-    // Get current month
     const now = new Date();
     const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    // Ensure month exists
     await supabase.from('arrendadas_meses').upsert({ mes }, { onConflict: 'mes' });
 
-    // Insert into arrendadas
     await supabase.from('arrendadas').insert({
       mes,
       propiedad: row.propiedad,
@@ -464,7 +521,6 @@ export default function PizarraPage() {
       meses: meses || null,
     });
 
-    // Remove from pizarra
     await supabase.from('pizarra').delete().eq('id', row.id);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
@@ -475,7 +531,6 @@ export default function PizarraPage() {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Pizarra</h1>
@@ -485,7 +540,6 @@ export default function PizarraPage() {
           </div>
         </div>
         <div style={styles.headerRight}>
-          {/* Encargado filters */}
           <div style={styles.filters}>
             {ENCARGADOS_ALL.map(e => (
               <button key={e} onClick={() => toggleFilter(e)} style={{
@@ -501,7 +555,6 @@ export default function PizarraPage() {
         </div>
       </div>
 
-      {/* Table */}
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loading}>Cargando pizarra...</div>
@@ -535,7 +588,6 @@ export default function PizarraPage() {
         )}
       </div>
 
-      {/* Totals row */}
       <div style={styles.totalsRow}>
         <span style={styles.totalsLabel}>TOTAL</span>
         <span style={styles.totalsItem}>
@@ -576,7 +628,6 @@ const styles = {
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  thAviso: { padding: '10px 14px', minWidth: 80, background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap', textAlign: 'center' },
   td: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center' },
   tdProp: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left' },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle' },
