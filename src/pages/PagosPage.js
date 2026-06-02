@@ -298,7 +298,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
 }
 
 // ─── New row ───────────────────────────────────────────────────────────────────
-function NewPagoRow({ onSave, onCancel }) {
+function NewPagoRow({ onSave, onCancel, maxPosition }) {
   const [form, setForm] = useState({
     propiedad: '', descripcion: '', cxc: '', estado: 'P',
     orden: '', fecha: today(), pagado_por: '', tipo: '',
@@ -322,6 +322,7 @@ function NewPagoRow({ onSave, onCancel }) {
       fecha_caja: form.fecha_caja || null,
       caja: form.caja || null,
       notas: form.notas || null,
+      position: (maxPosition || 0) + 1,
     }).select().single();
     if (data) onSave(data);
   };
@@ -363,8 +364,19 @@ export default function PagosPage() {
 
   const fetchPagos = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('pagos').select('*').order('fecha', { ascending: false }).order('created_at', { ascending: false });
-    setPagos(data || []);
+    let all = [];
+    let from = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data, error } = await supabase.from('pagos').select('*')
+        .order('position', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error || !data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+    setPagos(all);
     setLoading(false);
   }, []);
 
@@ -437,7 +449,7 @@ export default function PagosPage() {
               <tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 2 ? 'left' : 'center' }}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} />}
+              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={pagos.length > 0 ? Math.max(...pagos.map(p => p.position || 0)) : 0} />}
               {filtered.length === 0 && !addingNew
                 ? <tr><td colSpan={13} style={s.empty}>No hay pagos registrados.</td></tr>
                 : filtered.map(p => (
