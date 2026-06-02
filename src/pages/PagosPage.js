@@ -32,8 +32,8 @@ const today = () => new Date().toISOString().split('T')[0];
 
 const ESTADO_COLORS = {
   P:  { bg: '#fff3e0', color: '#f57c00' },
-  D:  { bg: '#fce8e6', color: '#c62828' },
-  PG: { bg: '#e6f4ea', color: '#2e7d32' },
+  D:  { bg: '#e6f4ea', color: '#2e7d32' },
+  PG: { bg: '#e8f0fe', color: '#1a73e8' },
 };
 
 // ─── Money input ───────────────────────────────────────────────────────────────
