@@ -22,7 +22,7 @@ const parseCLP = (str) => {
 };
 
 const antiguedad = (fechaStr) => {
-  if (!fechaStr) return '';
+  if (!fechaStr) return '+ 3 meses';
   const fecha = new Date(fechaStr + 'T12:00:00');
   const diff = (new Date() - fecha) / (1000 * 60 * 60 * 24);
   return diff > 90 ? '+ 3 meses' : '- 3 meses';
@@ -104,8 +104,18 @@ function InlineSelect({ value, options, onChange }) {
 
 // ─── Date cell ─────────────────────────────────────────────────────────────────
 function DateCell({ value, onChange }) {
+  const [showInput, setShowInput] = useState(false);
+  if (!value && !showInput) {
+    return (
+      <div onClick={() => setShowInput(true)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: 14, color: '#dadce0' }}>📅</span>
+      </div>
+    );
+  }
   return (
-    <input type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+    <input type="date" value={value || ''} onChange={e => { onChange(e.target.value); if (!e.target.value) setShowInput(false); }}
+      onBlur={() => { if (!value) setShowInput(false); }}
+      autoFocus={!value}
       style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', colorScheme: 'light', WebkitAppearance: 'none', width: 110 }}
       onClick={e => e.target.showPicker && e.target.showPicker()} />
   );
@@ -163,26 +173,38 @@ const panelStyles = {
 // ─── Metrics view ─────────────────────────────────────────────────────────────
 function MetricsView({ pagos, onClose }) {
   const fmt = formatCLP;
+  const today = new Date();
 
-  const total = pagos.reduce((s, p) => s + (p.cxc || 0), 0);
-  const soloDescontado = pagos.filter(p => p.estado === 'D').reduce((s, p) => s + (p.cxc || 0), 0);
+  const isPO = p => p.estado === 'P' || p.estado === 'PG';
+  const isD  = p => p.estado === 'D';
+  const isFutureCaja = p => p.fecha_caja && new Date(p.fecha_caja + 'T12:00:00') > today;
+  const ant  = p => antiguedad(p.fecha);
 
-  const recientes = pagos.filter(p => antiguedad(p.fecha) === '- 3 meses');
-  const antiguos  = pagos.filter(p => antiguedad(p.fecha) === '+ 3 meses');
+  // Totales
+  const totalFuera     = pagos.filter(p => isPO(p) || (isD(p) && isFutureCaja(p))).reduce((s,p) => s+(p.cxc||0),0);
+  const cxcTotales     = pagos.filter(isPO).reduce((s,p) => s+(p.cxc||0),0);
+  const soloDescontado = pagos.filter(p => isD(p) && isFutureCaja(p)).reduce((s,p) => s+(p.cxc||0),0);
 
-  const cxcRecientes = recientes.reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcAntiguos  = antiguos.reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcAntiguosRecientes = antiguos.filter(p => p.estado !== 'D').reduce((s, p) => s + (p.cxc || 0), 0);
+  // Recientes
+  const cxcRecientes = pagos.filter(p => isPO(p) && ant(p) === '- 3 meses').reduce((s,p) => s+(p.cxc||0),0);
 
+  // Antiguos
+  const cxcSinFecha      = pagos.filter(p => isPO(p) && !p.fecha).reduce((s,p) => s+(p.cxc||0),0);
+  const cxcAntConFecha   = pagos.filter(p => isPO(p) && p.fecha && ant(p) === '+ 3 meses').reduce((s,p) => s+(p.cxc||0),0);
+  const cxcAntTotal      = cxcAntConFecha + cxcSinFecha;
+
+  // DD
   const dd = pagos.filter(p => p.pagado_por === 'DD');
-  const fd = pagos.filter(p => p.pagado_por === 'FD');
-  const nn = pagos.filter(p => !p.pagado_por);
+  const cxcDDAnt = dd.filter(p => isPO(p) && ant(p) === '+ 3 meses').reduce((s,p) => s+(p.cxc||0),0);
+  const cxcDDRec = dd.filter(p => isPO(p) && ant(p) === '- 3 meses').reduce((s,p) => s+(p.cxc||0),0);
 
-  const cxcDDAnt = dd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcDDRec = dd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcFDAnt = fd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcFDRec = fd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcNNAnt = nn.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
+  // FD
+  const fd = pagos.filter(p => p.pagado_por === 'FD');
+  const cxcFDAnt = fd.filter(p => isPO(p) && ant(p) === '+ 3 meses').reduce((s,p) => s+(p.cxc||0),0);
+  const cxcFDRec = fd.filter(p => isPO(p) && ant(p) === '- 3 meses').reduce((s,p) => s+(p.cxc||0),0);
+
+  // N/N
+  const cxcNNAnt = pagos.filter(p => isPO(p) && !p.pagado_por).reduce((s,p) => s+(p.cxc||0),0);
 
   const MetricCard = ({ title, rows }) => (
     <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 12, padding: '16px 20px' }}>
@@ -205,25 +227,25 @@ function MetricsView({ pagos, onClose }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <MetricCard title="Totales" rows={[
-            ['Total fuera', fmt(total), '#ea4335'],
-            ['CxC totales', fmt(total)],
+            ['Total fuera', fmt(totalFuera), '#ea4335'],
+            ['CxC totales', fmt(cxcTotales)],
             ['Solo descontado', fmt(soloDescontado)],
           ]} />
           <MetricCard title="Recientes" rows={[
             ['CxC -3 meses', fmt(cxcRecientes)],
           ]} />
           <MetricCard title="Antiguos" rows={[
-            ['CxC antiguas', fmt(cxcAntiguos)],
-            ['CxC +3 meses reciente', fmt(cxcAntiguosRecientes)],
-            ['CxC +3 meses', fmt(cxcAntiguos), '#ea4335'],
+            ['CxC antiguas', fmt(cxcSinFecha)],
+            ['CxC +3 meses reciente', fmt(cxcAntConFecha)],
+            ['CxC +3 meses', fmt(cxcAntTotal), '#ea4335'],
           ]} />
           <MetricCard title="DD" rows={[
-            ['CxC antiguas', fmt(cxcDDAnt)],
-            ['CxC recientes', fmt(cxcDDRec)],
+            ['CxC +3 meses', fmt(cxcDDAnt)],
+            ['CxC -3 meses', fmt(cxcDDRec)],
           ]} />
           <MetricCard title="FD" rows={[
-            ['CxC antiguas', fmt(cxcFDAnt)],
-            ['CxC recientes', fmt(cxcFDRec)],
+            ['CxC +3 meses', fmt(cxcFDAnt)],
+            ['CxC -3 meses', fmt(cxcFDRec)],
           ]} />
           {cxcNNAnt > 0 && (
             <MetricCard title="N/N" rows={[
@@ -263,7 +285,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
           <InlineSelect value={pago.estado} options={ESTADO_OPTIONS} onChange={v => update('estado', v)} />
         </div>
       </td>
-      <td style={s.tdCenter}><InlineSelect value={pago.orden} options={[]} onChange={() => {}} /></td>
+
       <td style={s.tdCenter}><DateCell value={pago.fecha} onChange={v => update('fecha', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.pagado_por} options={PAGADO_POR_OPTIONS} onChange={v => update('pagado_por', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.tipo} options={TIPO_OPTIONS} onChange={v => update('tipo', v)} /></td>
@@ -333,7 +355,7 @@ function NewPagoRow({ onSave, onCancel, maxPosition }) {
       <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value)} placeholder="Descripción" style={inputStyle} /></td>
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
-      <td style={s.tdCenter}><input value={form.orden} onChange={e => set('orden', e.target.value)} style={{ ...inputStyle, width: 50 }} /></td>
+
       <td style={s.tdCenter}><input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
       <td style={s.tdCenter}><select value={form.pagado_por} onChange={e => set('pagado_por', e.target.value)} style={selectStyle}><option value="">—</option>{PAGADO_POR_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><select value={form.tipo} onChange={e => set('tipo', e.target.value)} style={selectStyle}><option value="">—</option>{TIPO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
@@ -402,7 +424,7 @@ export default function PagosPage() {
     setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p));
   };
 
-  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'ORDEN', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
+  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
 
   return (
     <div style={s.container}>
