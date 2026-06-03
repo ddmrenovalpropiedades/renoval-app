@@ -415,11 +415,15 @@ export default function PagosPage() {
   const filtered = useMemo(() => {
     let list = pagos;
     if (search.trim()) {
-      const s = search.trim().toLowerCase();
-      list = list.filter(p =>
-        [p.propiedad, p.descripcion, p.estado, p.pagado_por, p.tipo, p.caja, p.orden]
-          .some(v => v && String(v).toLowerCase().includes(s))
-      );
+      const normalize = str => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const words = normalize(search.trim()).split(/\s+/).filter(Boolean);
+      list = list.filter(p => {
+        const haystack = normalize(
+          [p.propiedad, p.descripcion, p.estado, p.pagado_por, p.tipo, p.caja, p.orden]
+            .filter(Boolean).join(' ')
+        );
+        return words.every(w => haystack.includes(w));
+      });
     }
     if (filterPor.length) list = list.filter(p => filterPor.includes(p.pagado_por));
     if (filterEstado.length) list = list.filter(p => filterEstado.includes(p.estado));
