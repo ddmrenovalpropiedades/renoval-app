@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, X, FileText, Trash2, BarChart2 } from 'lucide-react';
+import { Plus, X, FileText, Trash2, BarChart2, Search } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -383,6 +383,7 @@ export default function PagosPage() {
   const [showMetrics, setShowMetrics] = useState(false);
   const [filterPor, setFilterPor] = useState([]);
   const [filterEstado, setFilterEstado] = useState([]);
+  const [search, setSearch] = useState('');
 
   const fetchPagos = useCallback(async () => {
     setLoading(true);
@@ -406,10 +407,17 @@ export default function PagosPage() {
 
   const filtered = useMemo(() => {
     let list = pagos;
+    if (search.trim()) {
+      const s = search.trim().toLowerCase();
+      list = list.filter(p =>
+        [p.propiedad, p.descripcion, p.estado, p.pagado_por, p.tipo, p.caja, p.orden]
+          .some(v => v && String(v).toLowerCase().includes(s))
+      );
+    }
     if (filterPor.length) list = list.filter(p => filterPor.includes(p.pagado_por));
     if (filterEstado.length) list = list.filter(p => filterEstado.includes(p.estado));
     return list;
-  }, [pagos, filterPor, filterEstado]);
+  }, [pagos, filterPor, filterEstado, search]);
 
   const toggleFilter = (arr, setArr, val) => setArr(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]);
 
@@ -435,6 +443,20 @@ export default function PagosPage() {
           <p style={s.subtitle}>{filtered.length} registros · Total CxC: <strong>{formatCLP(totalCxC)}</strong></p>
         </div>
         <div style={s.headerRight}>
+          {/* Búsqueda libre */}
+          <div style={{ position:'relative', minWidth:220 }}>
+            <Search size={14} color="#9aa0a6" style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
+            <input
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar..."
+              style={{ width:'100%', padding:'7px 32px 7px 30px', border:'1px solid #dadce0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', background:'#fff' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:2, display:'flex' }}>
+                <X size={13} color="#9aa0a6" />
+              </button>
+            )}
+          </div>
           {/* Filtro por Pagado por */}
           <div style={s.filterGroup}>
             {PAGADO_POR_OPTIONS.map(v => (
@@ -449,8 +471,8 @@ export default function PagosPage() {
                 style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>
             ))}
           </div>
-          {(filterPor.length > 0 || filterEstado.length > 0) && (
-            <button onClick={() => { setFilterPor([]); setFilterEstado([]); }} style={s.clearFilter}>Limpiar</button>
+          {(filterPor.length > 0 || filterEstado.length > 0 || search) && (
+            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setSearch(''); }} style={s.clearFilter}>Limpiar</button>
           )}
           <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}>
             <BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas
