@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import PropertyAutocomplete from '../components/PropertyAutocomplete';
 import { Plus, Check, X, Home, Trash2 } from 'lucide-react';
 
 // ── UF value ──────────────────────────────────────────────────
@@ -333,8 +334,11 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     return (
       <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
         <td style={styles.td}>
-          <input value={form.propiedad} onChange={e => setForm(p => ({...p, propiedad: e.target.value}))}
-            placeholder="Dirección *" style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+          <PropertyAutocomplete
+            value={form.propiedad}
+            onChange={v => setForm(p => ({...p, propiedad: v}))}
+            hasError={!!errors.propiedad}
+          />
         </td>
         <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} /></td>
         <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} /></td>
