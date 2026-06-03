@@ -19,13 +19,15 @@ const parseArriendo = (val) => {
   return isNaN(n) ? null : n;
 };
 
+const normalize = (str) =>
+  String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 // ── Color logic ───────────────────────────────────────────────
 const isPagada = (val) => {
   if (!val) return false;
   return val.toLowerCase() === 'pagada';
 };
 
-// Check if a saldo row exceeds threshold level (1 or 2) in any service column
 const rowExceedsUmbral = (row, attrsMap, level) => {
   const attr = attrsMap?.[row.propiedad];
   const defaults = { agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000] };
@@ -59,24 +61,15 @@ const rowExceedsUmbral = (row, attrsMap, level) => {
 const getCellStyle = (val, tipo, attr, emptyWhite = false) => {
   const base = { padding: 0, fontSize: 12, textAlign: 'center', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 };
   if (!val || val === '') return { ...base, background: emptyWhite ? '#fff' : '#FAF3E0' };
-
   if (isPagada(val)) return { ...base, background: '#fff', color: '#bdbdbd' };
   const n = parseAmount(val);
   if (n === null) return { ...base, background: '#fff', color: '#202124' };
-
-  // Default thresholds
-  const defaults = {
-    agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000]
-  };
-
+  const defaults = { agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000] };
   if (tipo === 'agua' || tipo === 'luz' || tipo === 'gas') {
     let t1, t2;
     if (attr?.[`umbral1_${tipo}`] && attr?.[`umbral2_${tipo}`]) {
-      t1 = attr[`umbral1_${tipo}`];
-      t2 = attr[`umbral2_${tipo}`];
-    } else {
-      [t1, t2] = defaults[tipo] || [40000, 60000];
-    }
+      t1 = attr[`umbral1_${tipo}`]; t2 = attr[`umbral2_${tipo}`];
+    } else { [t1, t2] = defaults[tipo] || [40000, 60000]; }
     if (n < t1) return { ...base, background: '#fff', color: '#bdbdbd' };
     if (n < t2) return { ...base, background: '#FFCDD2', color: '#202124' };
     return { ...base, background: '#EF9A9A', color: '#202124' };
@@ -164,7 +157,7 @@ export default function SaldosPage() {
   const [lastUploads, setLastUploads] = useState({});
   const [search, setSearch] = useState('');
   const [filterE, setFilterE] = useState([]);
-  const [filterUmbral, setFilterUmbral] = useState(0); // 0=none, 1=umbral1, 2=umbral2
+  const [filterUmbral, setFilterUmbral] = useState(0);
   const [showUpload, setShowUpload] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -175,11 +168,9 @@ export default function SaldosPage() {
       supabase.from('property_attributes').select('*'),
     ]);
     setRows(saldos || []);
-    // Build attributes map by propiedad
     const aMap = {};
     (attrData || []).forEach(a => { aMap[a.propiedad] = a; });
     setAttrsMap(aMap);
-    // Keep only latest per tipo
     const latest = {};
     (uploads || []).forEach(u => { if (!latest[u.tipo]) latest[u.tipo] = u; });
     setLastUploads(latest);
@@ -188,7 +179,6 @@ export default function SaldosPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── File upload & processing ──────────────────────────────
   const handleUpload = async (tipo, file) => {
     setUploading(tipo);
     try {
@@ -196,14 +186,11 @@ export default function SaldosPage() {
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
       if (tipo === 'cuentas_ac' || tipo === 'cuentas_an') {
         await processCuentas(data, tipo);
       } else {
         await processArriendos(data);
       }
-
-      // Log upload
       await supabase.from('saldos_uploads').insert({ tipo, filename: file.name, row_count: data.length });
       await fetchData();
     } catch (err) {
@@ -216,18 +203,14 @@ export default function SaldosPage() {
   const processCuentas = async (data, tipo) => {
     const isAc = tipo === 'cuentas_ac';
     const now = new Date().toISOString();
-
-    // Load cartera once for batch matching
     const { data: cartera } = await supabase.from('properties').select('propiedad,propietario,e1,e2');
     const carteraMap = {};
     (cartera || []).forEach(c => { carteraMap[c.propiedad] = c; });
-
     const upsertBatch = [];
     for (const row of data) {
       const propiedad = (row['Propiedad'] || '').trim();
       if (!propiedad) continue;
       const match = carteraMap[propiedad];
-
       const record = {
         propiedad,
         ...(match ? { propietario: match.propietario, e1: match.e1, e2: match.e2 } : {}),
@@ -250,8 +233,6 @@ export default function SaldosPage() {
       };
       upsertBatch.push(record);
     }
-
-    // Batch upsert in chunks of 50
     const CHUNK = 50;
     for (let i = 0; i < upsertBatch.length; i += CHUNK) {
       await supabase.from('saldos').upsert(upsertBatch.slice(i, i + CHUNK), { onConflict: 'propiedad' });
@@ -263,7 +244,6 @@ export default function SaldosPage() {
     const { data: cartera } = await supabase.from('properties').select('propiedad,propietario,e1,e2');
     const carteraMap = {};
     (cartera || []).forEach(c => { carteraMap[c.propiedad] = c; });
-
     const upsertBatch = [];
     for (const row of data) {
       const propiedad = (row['Propiedad'] || '').trim();
@@ -277,14 +257,12 @@ export default function SaldosPage() {
         ...(match ? { propietario: match.propietario, e1: match.e1, e2: match.e2 } : {}),
       });
     }
-
     const CHUNK = 50;
     for (let i = 0; i < upsertBatch.length; i += CHUNK) {
       await supabase.from('saldos').upsert(upsertBatch.slice(i, i + CHUNK), { onConflict: 'propiedad' });
     }
   };
 
-  // ── Manual edits ──────────────────────────────────────────
   const handleCellChange = (rowId, field, value) => {
     setEdits(prev => ({ ...prev, [rowId]: { ...(prev[rowId] || {}), [field]: value } }));
   };
@@ -299,13 +277,15 @@ export default function SaldosPage() {
 
   // ── Filters ───────────────────────────────────────────────
   const filtered = useMemo(() => {
-    // Only show rows that appear in at least one loaded file
     let result = rows.filter(r => r.last_cuentas_ac || r.last_cuentas_an || r.last_arriendos);
     if (search.trim()) {
-      const s = search.trim().toLowerCase();
-      result = result.filter(r =>
-        [r.propiedad, r.propietario, r.e1, r.e2].some(v => v && v.toLowerCase().includes(s))
-      );
+      const words = normalize(search.trim()).split(/\s+/).filter(Boolean);
+      result = result.filter(r => {
+        const haystack = normalize(
+          [r.propiedad, r.propietario, r.e1, r.e2].filter(Boolean).join(' ')
+        );
+        return words.every(w => haystack.includes(w));
+      });
     }
     if (filterE.length > 0) {
       result = result.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
@@ -332,7 +312,6 @@ export default function SaldosPage() {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Saldos</h1>
@@ -350,7 +329,6 @@ export default function SaldosPage() {
         </div>
       </div>
 
-      {/* Upload panel */}
       {showUpload && (
         <div style={styles.uploadPanel}>
           <UploadBtn label="📄 Cuentas actuales" tipo="cuentas_ac" onUpload={handleUpload} lastUpload={lastUploads['cuentas_ac']} />
@@ -360,7 +338,6 @@ export default function SaldosPage() {
         </div>
       )}
 
-      {/* Filters */}
       <div style={styles.filtersRow}>
         <div style={styles.searchWrapper}>
           <Search size={15} color="#9aa0a6" style={styles.searchIcon} />
@@ -380,19 +357,16 @@ export default function SaldosPage() {
           {filterE.length > 0 && <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>}
           <div style={{ width: 1, background: '#dadce0', height: 20, margin: '0 4px' }} />
           <button onClick={() => setFilterUmbral(filterUmbral === 1 ? 0 : 1)}
-            style={{ ...styles.filterBtn, ...(filterUmbral === 1 ? { background: '#fff3e0', color: '#e65100', borderColor: '#e65100', fontWeight: 700 } : {}) }}
-            title="Mostrar filas con al menos un valor ≥ Umbral 1">
+            style={{ ...styles.filterBtn, ...(filterUmbral === 1 ? { background: '#fff3e0', color: '#e65100', borderColor: '#e65100', fontWeight: 700 } : {}) }}>
             ≥ U1
           </button>
           <button onClick={() => setFilterUmbral(filterUmbral === 2 ? 0 : 2)}
-            style={{ ...styles.filterBtn, ...(filterUmbral === 2 ? { background: '#fce8e6', color: '#c5221f', borderColor: '#c5221f', fontWeight: 700 } : {}) }}
-            title="Mostrar filas con al menos un valor ≥ Umbral 2">
+            style={{ ...styles.filterBtn, ...(filterUmbral === 2 ? { background: '#fce8e6', color: '#c5221f', borderColor: '#c5221f', fontWeight: 700 } : {}) }}>
             ≥ U2
           </button>
         </div>
       </div>
 
-      {/* Table */}
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loading}>Cargando saldos...</div>
@@ -413,7 +387,7 @@ export default function SaldosPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr><td colSpan={COLS.length + 4} style={styles.empty}>Sin resultados para este filtro.</td></tr>
-              ) : filtered.map((row, i) => {
+              ) : filtered.map((row) => {
                 const hasEdits = !!(edits[row.id] && Object.keys(edits[row.id]).length > 0);
                 const merged = { ...row, ...(edits[row.id] || {}) };
                 return (
@@ -422,7 +396,6 @@ export default function SaldosPage() {
                     <td style={{ ...styles.tdFixed, fontSize: 11, color: '#5f6368', textAlign: 'center' }}>{row.propietario || ''}</td>
                     {COLS.map(c => {
                       const rowAttr = attrsMap[row.propiedad];
-                      // Determine if empty cell should be white (arriendo always, or service not present)
                       const emptyWhite = c.tipo === 'arriendo' ||
                         (c.tipo === 'agua' && rowAttr?.tiene_agua === false) ||
                         (c.tipo === 'luz'  && rowAttr?.tiene_luz  === false) ||
