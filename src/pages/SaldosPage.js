@@ -384,8 +384,6 @@ Saludos`
         });
 
         const data = await response.json();
-        const ok = data.content?.some(b => b.type === 'text' && (b.text.toLowerCase().includes('enviado') || b.text.toLowerCase().includes('sent')));
-
         // Log in Supabase
         await supabase.from('gc_consultas_log').upsert({
           propiedad: row.propiedad,
@@ -672,8 +670,6 @@ function ReportabilidadTab() {
 }
 
 // ── MAIN ──────────────────────────────────────────────────────
-const ENCARGADOS_MAIN = ['DD','FD','EA','FG','AM'];
-
 export default function SaldosPage() {
   useAuth();
   const [tab, setTab] = useState('saldos');
