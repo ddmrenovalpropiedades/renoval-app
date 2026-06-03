@@ -198,7 +198,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
                       ))}
                       {cxcList.length > 9 && (
                         <button onClick={() => setCxcExpanded(e => !e)}
-                          style={{ display:'flex', alignItems:'center', gap:4, marginTop:8, background:'none', border:'none', cursor:'pointer', fontSize:12, color:'#1a73e8', fontFamily:'inherit', padding:0 }}>
+                          style={{ display:'flex', alignItems:'center', gap:4, marginTop:8, marginBottom:4, background:'none', border:'none', cursor:'pointer', fontSize:12, color:'#1a73e8', fontFamily:'inherit', padding:'4px 0' }}>
                           <ChevronDown size={14} style={{ transform: cxcExpanded ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }} />
                           {cxcExpanded ? 'Ver menos' : `Ver ${cxcList.length - 9} más`}
                         </button>
@@ -263,7 +263,7 @@ const styles = {
   cardHeader: { display:'flex', alignItems:'center', gap:8, padding:'12px 16px', borderBottom:'1px solid #f1f3f4', background:'#fff' },
   cardTitle: { fontSize:13, fontWeight:700 },
   badge: { fontSize:11, fontWeight:700, background:'#fce8e6', color:'#ea4335', borderRadius:20, padding:'2px 8px' },
-  cardBody: { padding:'4px 16px 12px', overflowY:'auto', maxHeight:320 },
+  cardBody: { padding:'4px 16px 16px', overflowY:'auto', maxHeight:360 },
   empty: { fontSize:13, color:'#9aa0a6', padding:'12px 0', margin:0 },
   lastUpdated: { fontSize:11, color:'#9aa0a6', marginLeft:4 },
 };
