@@ -37,12 +37,15 @@ export default function PropertyAutocomplete({ value, onChange, placeholder = 'D
     load();
   }, []);
 
-  // Filter suggestions based on current input
+  // Filter suggestions: every word must appear somewhere in the address
   const suggestions = useMemo(() => {
     if (!value || value.trim().length < 2) return [];
-    const q = normalize(value.trim());
+    const words = normalize(value.trim()).split(/\s+/).filter(Boolean);
     return properties
-      .filter(p => normalize(p).includes(q))
+      .filter(p => {
+        const norm = normalize(p);
+        return words.every(w => norm.includes(w));
+      })
       .slice(0, 8);
   }, [value, properties]);
 
