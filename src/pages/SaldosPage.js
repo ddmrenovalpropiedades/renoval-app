@@ -383,7 +383,7 @@ Saludos`
           }),
         });
 
-        const data = await response.json();
+        await response.json();
         // Log in Supabase
         await supabase.from('gc_consultas_log').upsert({
           propiedad: row.propiedad,
