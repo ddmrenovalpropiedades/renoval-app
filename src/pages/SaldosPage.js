@@ -137,6 +137,47 @@ function UploadBtn({ label, tipo, onUpload, lastUpload }) {
   );
 }
 
+// ── TEST MODAL ───────────────────────────────────────────────
+const TEST_PROPS = [
+  { propiedad: 'Vitacura 9123 C25',             mail: 'ddm@renovalpropiedades.com' },
+  { propiedad: 'María Monvel 1078 D9',           mail: 'fdm@renovalpropiedades.com' },
+  { propiedad: 'Alonso de Córdova 123 D27',      mail: 'diegoadm9@gmail.com' },
+];
+
+function TestModal({ onClose, onSend }) {
+  const [mails, setMails] = useState(TEST_PROPS.map(p => ({ ...p })));
+  const setMail = (i, v) => setMails(prev => prev.map((r, idx) => idx === i ? { ...r, mail: v } : r));
+
+  return (
+    <div style={st.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...st.modal, width: 540 }}>
+        <div style={st.modalHeader}>
+          <span style={st.modalTitle}>🧪 Envío de prueba</span>
+          <button onClick={onClose} style={st.closeBtn}><X size={18}/></button>
+        </div>
+        <div style={{ padding:'16px 20px', fontSize:13, color:'#5f6368', marginBottom:4 }}>
+          Se enviarán 3 correos de prueba. Puedes editar los correos destino antes de enviar.
+        </div>
+        <div style={{ padding:'0 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
+          {mails.map((row, i) => (
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, alignItems:'center', padding:'10px 12px', background:'#f8f9fa', borderRadius:8 }}>
+              <div style={{ fontSize:12, fontWeight:600, color:'#202124' }}>{row.propiedad}</div>
+              <input value={row.mail} onChange={e => setMail(i, e.target.value)}
+                style={{ border:'1px solid #dadce0', borderRadius:6, padding:'5px 8px', fontSize:12, outline:'none', fontFamily:'inherit' }}/>
+            </div>
+          ))}
+          <div style={{ display:'flex', gap:8, marginTop:8 }}>
+            <button onClick={() => onSend(mails)} style={{ ...st.btnPrimary, display:'flex', alignItems:'center', gap:6 }}>
+              <Send size={13}/> Enviar prueba
+            </button>
+            <button onClick={onClose} style={st.btnSecondary}>Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── EMAIL PREVIEW MODAL ───────────────────────────────────────
 function EmailPreviewModal({ propiedad, mailAdmin, onClose }) {
   const mes = new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
@@ -300,6 +341,7 @@ function ConsultasTab() {
   const [addingNew, setAddingNew] = useState(false);
   const [newRow, setNewRow] = useState({ propiedad:'', mail_admin:'' });
   const [sendResult, setSendResult] = useState(null);
+  const [showTestModal, setShowTestModal] = useState(false);
 
   const mes = currentMes();
 
@@ -466,6 +508,10 @@ No incluyas texto adicional, solo el JSON.`,
           style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6 }}>
           <Plus size={14}/> Nueva fila
         </button>
+        <button onClick={() => setShowTestModal(true)}
+          style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6, color:'#f57c00', borderColor:'#f57c00' }}>
+          🧪 Prueba
+        </button>
         <button onClick={handleCheckReplies} disabled={updating}
           style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6 }}>
           <RefreshCw size={14} style={{animation:updating?'spin 1s linear infinite':'none'}}/> 
@@ -562,6 +608,50 @@ No incluyas texto adicional, solo el JSON.`,
         )}
       </div>
       {previewRow && <EmailPreviewModal propiedad={previewRow.propiedad} mailAdmin={previewRow.mail_admin} onClose={()=>setPreviewRow(null)}/>}
+      {showTestModal && (
+        <TestModal
+          onClose={() => setShowTestModal(false)}
+          onSend={async (testRows) => {
+            setShowTestModal(false);
+            setSending(true);
+            setSendResult(null);
+            const mesLabel = new Date().toLocaleDateString('es-CL', { month:'long', year:'numeric' });
+            let sent = 0, errors = 0;
+            for (const row of testRows) {
+              if (!row.mail?.trim()) continue;
+              try {
+                await fetch('https://api.anthropic.com/v1/messages', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    model: 'claude-sonnet-4-20250514',
+                    max_tokens: 1000,
+                    system: 'Eres un asistente que envía correos usando Gmail. Usa la herramienta de Gmail para enviar el correo exactamente como se indica.',
+                    messages: [{ role:'user', content: `Envía este correo usando Gmail:
+Para: ${row.mail}
+CC: edith@renovalpropiedades.com
+Desde: gcrenovalpropiedades@gmail.com
+Asunto: [PRUEBA] Consulta Gasto Común ${mesLabel}
+Cuerpo:
+Buenos días,
+
+Junto con saludar, quería solicitar el saldo de gasto común de la siguiente propiedad:
+${row.propiedad}
+
+Quedo atento a su respuesta,
+
+Saludos` }],
+                    mcp_servers: [{ type:'url', url:'https://gmailmcp.googleapis.com/mcp/v1', name:'gmail' }],
+                  }),
+                });
+                sent++;
+              } catch(e) { errors++; }
+            }
+            setSendResult({ sent, errors });
+            setSending(false);
+          }}
+        />
+      )}
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
@@ -605,11 +695,11 @@ function ReportabilidadTab() {
   if (loading) return <div style={st.loading}>Cargando...</div>;
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden', gap:20 }}>
+    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'auto', gap:20, paddingBottom:24 }}>
       {/* Tabla 1: Status de correos */}
-      <div>
+      <div style={{ flexShrink:0 }}>
         <div style={{ fontSize:14, fontWeight:700, color:'#202124', marginBottom:8 }}>Estado de correos</div>
-        <div style={st.tableWrapper}>
+        <div style={{ ...st.tableWrapper, maxHeight:320 }}>
           <table style={st.table}>
             <thead><tr>
               <th style={{...st.th,textAlign:'left',minWidth:260,position:'sticky',left:0,zIndex:2}}>PROPIEDAD</th>
@@ -637,9 +727,9 @@ function ReportabilidadTab() {
       </div>
 
       {/* Tabla 2: Valores GC */}
-      <div>
+      <div style={{ flexShrink:0 }}>
         <div style={{ fontSize:14, fontWeight:700, color:'#202124', marginBottom:8 }}>Valores GC registrados</div>
-        <div style={st.tableWrapper}>
+        <div style={{ ...st.tableWrapper, maxHeight:320 }}>
           <table style={st.table}>
             <thead><tr>
               <th style={{...st.th,textAlign:'left',minWidth:260,position:'sticky',left:0,zIndex:2}}>PROPIEDAD</th>
