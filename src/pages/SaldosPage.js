@@ -440,7 +440,12 @@ function ConsultasTab() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
         },
-        body: JSON.stringify({ mes, propiedades: config.map(r => r.propiedad) }),
+        body: JSON.stringify({
+          mes,
+          propiedades: config.map(r => r.propiedad),
+          enviado_desde: log.filter(l => l.mes === mes && l.enviado_at)
+            .reduce((min, l) => (!min || l.enviado_at < min ? l.enviado_at : min), null),
+        }),
       });
       const data = await response.json();
       const text = JSON.stringify(data.replies || []);
