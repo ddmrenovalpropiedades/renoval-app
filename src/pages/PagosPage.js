@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -459,8 +459,6 @@ export default function PagosPage() {
     setPage(0);
   };
 
-  const totalCxC = useMemo(() => pagos.reduce((s, p) => s + (p.cxc || 0), 0), [pagos]);
-
   const handleUpdate = (updated) => setPagos(prev => prev.map(p => p.id === updated.id ? updated : p));
   const handleDelete = (id) => {
     setPagos(prev => prev.filter(p => p.id !== id));
@@ -499,7 +497,6 @@ export default function PagosPage() {
               ? `${totalCount} registros (filtrados)`
               : `${totalCount} registros`
             }
-            {' · '}CxC página: <strong>{formatCLP(totalCxC)}</strong>
           </p>
         </div>
         <div style={s.headerRight}>
