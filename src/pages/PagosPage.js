@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import PropertyAutocomplete from '../components/PropertyAutocomplete';
-import { Plus, X, FileText, Trash2, BarChart2, Search } from 'lucide-react';
+import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 const PAGADO_POR_OPTIONS = ['DD', 'FD'];
 const ESTADO_OPTIONS = ['P', 'D', 'PG'];
 const TIPO_OPTIONS = ['T', 'C', 'A'];
+const PAGE_SIZE = 100;
 
 const formatCLP = (n) => {
   if (n === null || n === undefined || n === '') return '';
@@ -23,7 +23,7 @@ const parseCLP = (str) => {
 };
 
 const antiguedad = (fechaStr) => {
-  if (!fechaStr) return '+ 3 meses';
+  if (!fechaStr) return '';
   const fecha = new Date(fechaStr + 'T12:00:00');
   const diff = (new Date() - fecha) / (1000 * 60 * 60 * 24);
   return diff > 90 ? '+ 3 meses' : '- 3 meses';
@@ -33,8 +33,8 @@ const today = () => new Date().toISOString().split('T')[0];
 
 const ESTADO_COLORS = {
   P:  { bg: '#fff3e0', color: '#f57c00' },
-  D:  { bg: '#e6f4ea', color: '#2e7d32' },
-  PG: { bg: '#e8f0fe', color: '#1a73e8' },
+  D:  { bg: '#fce8e6', color: '#c62828' },
+  PG: { bg: '#e6f4ea', color: '#2e7d32' },
 };
 
 // ─── Money input ───────────────────────────────────────────────────────────────
@@ -105,18 +105,8 @@ function InlineSelect({ value, options, onChange }) {
 
 // ─── Date cell ─────────────────────────────────────────────────────────────────
 function DateCell({ value, onChange }) {
-  const [showInput, setShowInput] = useState(false);
-  if (!value && !showInput) {
-    return (
-      <div onClick={() => setShowInput(true)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: 14, color: '#dadce0' }}>📅</span>
-      </div>
-    );
-  }
   return (
-    <input type="date" value={value || ''} onChange={e => { onChange(e.target.value); if (!e.target.value) setShowInput(false); }}
-      onBlur={() => { if (!value) setShowInput(false); }}
-      autoFocus={!value}
+    <input type="date" value={value || ''} onChange={e => onChange(e.target.value)}
       style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', colorScheme: 'light', WebkitAppearance: 'none', width: 110 }}
       onClick={e => e.target.showPicker && e.target.showPicker()} />
   );
@@ -172,40 +162,49 @@ const panelStyles = {
 };
 
 // ─── Metrics view ─────────────────────────────────────────────────────────────
-function MetricsView({ pagos, onClose }) {
+function MetricsView({ onClose }) {
+  const [pagos, setPagos] = useState([]);
+  const [loading, setLoading] = useState(true);
   const fmt = formatCLP;
-  const today = new Date();
 
-  const isPO = p => p.estado === 'P' || p.estado === 'PG';
-  const isD  = p => p.estado === 'D';
-  const isFutureCaja = p => p.fecha_caja && new Date(p.fecha_caja + 'T12:00:00') > today;
-  const ant  = p => antiguedad(p.fecha);
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoading(true);
+      let all = [];
+      let from = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data } = await supabase.from('pagos').select('cxc, estado, fecha, pagado_por').range(from, from + batchSize - 1);
+        if (!data || data.length === 0) break;
+        all = [...all, ...data];
+        if (data.length < batchSize) break;
+        from += batchSize;
+      }
+      setPagos(all);
+      setLoading(false);
+    };
+    fetchAll();
+  }, []);
 
-  // Totales
-  const totalFuera     = pagos.filter(p => isPO(p) || (isD(p) && isFutureCaja(p))).reduce((s,p) => s+(p.cxc||0),0);
-  const cxcTotales     = pagos.filter(isPO).reduce((s,p) => s+(p.cxc||0),0);
-  const soloDescontado = pagos.filter(p => isD(p) && isFutureCaja(p)).reduce((s,p) => s+(p.cxc||0),0);
+  const total = pagos.reduce((s, p) => s + (p.cxc || 0), 0);
+  const soloDescontado = pagos.filter(p => p.estado === 'D').reduce((s, p) => s + (p.cxc || 0), 0);
 
-  // Recientes
-  const cxcRecientes = pagos.filter(p => isPO(p) && ant(p) === '- 3 meses').reduce((s,p) => s+(p.cxc||0),0);
+  const recientes = pagos.filter(p => antiguedad(p.fecha) === '- 3 meses');
+  const antiguos  = pagos.filter(p => antiguedad(p.fecha) === '+ 3 meses');
 
-  // Antiguos
-  const cxcSinFecha      = pagos.filter(p => isPO(p) && !p.fecha).reduce((s,p) => s+(p.cxc||0),0);
-  const cxcAntConFecha   = pagos.filter(p => isPO(p) && p.fecha && ant(p) === '+ 3 meses').reduce((s,p) => s+(p.cxc||0),0);
-  const cxcAntTotal      = cxcAntConFecha + cxcSinFecha;
+  const cxcRecientes = recientes.reduce((s, p) => s + (p.cxc || 0), 0);
+  const cxcAntiguos  = antiguos.reduce((s, p) => s + (p.cxc || 0), 0);
+  const cxcAntiguosRecientes = antiguos.filter(p => p.estado !== 'D').reduce((s, p) => s + (p.cxc || 0), 0);
 
-  // DD
   const dd = pagos.filter(p => p.pagado_por === 'DD');
-  const cxcDDAnt = dd.filter(p => isPO(p) && ant(p) === '+ 3 meses').reduce((s,p) => s+(p.cxc||0),0);
-  const cxcDDRec = dd.filter(p => isPO(p) && ant(p) === '- 3 meses').reduce((s,p) => s+(p.cxc||0),0);
-
-  // FD
   const fd = pagos.filter(p => p.pagado_por === 'FD');
-  const cxcFDAnt = fd.filter(p => isPO(p) && ant(p) === '+ 3 meses').reduce((s,p) => s+(p.cxc||0),0);
-  const cxcFDRec = fd.filter(p => isPO(p) && ant(p) === '- 3 meses').reduce((s,p) => s+(p.cxc||0),0);
+  const nn = pagos.filter(p => !p.pagado_por);
 
-  // N/N
-  const cxcNNAnt = pagos.filter(p => isPO(p) && !p.pagado_por).reduce((s,p) => s+(p.cxc||0),0);
+  const cxcDDAnt = dd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
+  const cxcDDRec = dd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
+  const cxcFDAnt = fd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
+  const cxcFDRec = fd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
+  const cxcNNAnt = nn.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
 
   const MetricCard = ({ title, rows }) => (
     <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 12, padding: '16px 20px' }}>
@@ -226,34 +225,38 @@ function MetricsView({ pagos, onClose }) {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#202124' }}>Métricas de Pagos</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5f6368' }}><X size={20} /></button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <MetricCard title="Totales" rows={[
-            ['Total fuera', fmt(totalFuera), '#ea4335'],
-            ['CxC totales', fmt(cxcTotales)],
-            ['Solo descontado', fmt(soloDescontado)],
-          ]} />
-          <MetricCard title="Recientes" rows={[
-            ['CxC -3 meses', fmt(cxcRecientes)],
-          ]} />
-          <MetricCard title="Antiguos" rows={[
-            ['CxC antiguas', fmt(cxcSinFecha)],
-            ['CxC +3 meses reciente', fmt(cxcAntConFecha)],
-            ['CxC +3 meses', fmt(cxcAntTotal), '#ea4335'],
-          ]} />
-          <MetricCard title="DD" rows={[
-            ['CxC +3 meses', fmt(cxcDDAnt)],
-            ['CxC -3 meses', fmt(cxcDDRec)],
-          ]} />
-          <MetricCard title="FD" rows={[
-            ['CxC +3 meses', fmt(cxcFDAnt)],
-            ['CxC -3 meses', fmt(cxcFDRec)],
-          ]} />
-          {cxcNNAnt > 0 && (
-            <MetricCard title="N/N" rows={[
-              ['CxC antiguas', fmt(cxcNNAnt)],
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 }}>Cargando métricas...</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <MetricCard title="Totales" rows={[
+              ['Total fuera', fmt(total), '#ea4335'],
+              ['CxC totales', fmt(total)],
+              ['Solo descontado', fmt(soloDescontado)],
             ]} />
-          )}
-        </div>
+            <MetricCard title="Recientes" rows={[
+              ['CxC -3 meses', fmt(cxcRecientes)],
+            ]} />
+            <MetricCard title="Antiguos" rows={[
+              ['CxC antiguas', fmt(cxcAntiguos)],
+              ['CxC +3 meses reciente', fmt(cxcAntiguosRecientes)],
+              ['CxC +3 meses', fmt(cxcAntiguos), '#ea4335'],
+            ]} />
+            <MetricCard title="DD" rows={[
+              ['CxC antiguas', fmt(cxcDDAnt)],
+              ['CxC recientes', fmt(cxcDDRec)],
+            ]} />
+            <MetricCard title="FD" rows={[
+              ['CxC antiguas', fmt(cxcFDAnt)],
+              ['CxC recientes', fmt(cxcFDRec)],
+            ]} />
+            {cxcNNAnt > 0 && (
+              <MetricCard title="N/N" rows={[
+                ['CxC antiguas', fmt(cxcNNAnt)],
+              ]} />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -286,7 +289,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
           <InlineSelect value={pago.estado} options={ESTADO_OPTIONS} onChange={v => update('estado', v)} />
         </div>
       </td>
-
+      <td style={s.tdCenter}><InlineSelect value={pago.orden} options={[]} onChange={() => {}} /></td>
       <td style={s.tdCenter}><DateCell value={pago.fecha} onChange={v => update('fecha', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.pagado_por} options={PAGADO_POR_OPTIONS} onChange={v => update('pagado_por', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.tipo} options={TIPO_OPTIONS} onChange={v => update('tipo', v)} /></td>
@@ -321,7 +324,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
 }
 
 // ─── New row ───────────────────────────────────────────────────────────────────
-function NewPagoRow({ onSave, onCancel, maxPosition }) {
+function NewPagoRow({ onSave, onCancel }) {
   const [form, setForm] = useState({
     propiedad: '', descripcion: '', cxc: '', estado: 'P',
     orden: '', fecha: today(), pagado_por: '', tipo: '',
@@ -345,24 +348,17 @@ function NewPagoRow({ onSave, onCancel, maxPosition }) {
       fecha_caja: form.fecha_caja || null,
       caja: form.caja || null,
       notas: form.notas || null,
-      position: (maxPosition || 0) + 1,
     }).select().single();
     if (data) onSave(data);
   };
 
   return (
     <tr style={{ background: '#f0f7ff' }}>
-      <td style={s.td}>
-        <PropertyAutocomplete
-          value={form.propiedad}
-          onChange={v => set('propiedad', v)}
-          hasError={!form.propiedad.trim() && false}
-        />
-      </td>
+      <td style={s.td}><input value={form.propiedad} onChange={e => set('propiedad', e.target.value)} placeholder="Propiedad *" style={inputStyle} /></td>
       <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value)} placeholder="Descripción" style={inputStyle} /></td>
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
-
+      <td style={s.tdCenter}><input value={form.orden} onChange={e => set('orden', e.target.value)} style={{ ...inputStyle, width: 50 }} /></td>
       <td style={s.tdCenter}><input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
       <td style={s.tdCenter}><select value={form.pagado_por} onChange={e => set('pagado_por', e.target.value)} style={selectStyle}><option value="">—</option>{PAGADO_POR_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><select value={form.tipo} onChange={e => set('tipo', e.target.value)} style={selectStyle}><option value="">—</option>{TIPO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
@@ -381,6 +377,42 @@ function NewPagoRow({ onSave, onCancel, maxPosition }) {
 const inputStyle = { border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' };
 const selectStyle = { border: '1px solid #dadce0', borderRadius: 5, padding: '3px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff' };
 
+// ─── Pagination controls ───────────────────────────────────────────────────────
+function Pagination({ page, totalCount, pageSize, onPageChange }) {
+  const totalPages = Math.ceil(totalCount / pageSize);
+  if (totalPages <= 1) return null;
+
+  const from = page * pageSize + 1;
+  const to = Math.min((page + 1) * pageSize, totalCount);
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', borderTop: '1px solid #e8eaed', flexShrink: 0, background: '#fafafa' }}>
+      <span style={{ fontSize: 12, color: '#5f6368' }}>{from}–{to} de {totalCount}</span>
+      <button
+        onClick={() => onPageChange(page - 1)}
+        disabled={page === 0}
+        style={{ ...paginationBtn, opacity: page === 0 ? 0.35 : 1 }}>
+        <ChevronLeft size={15} />
+      </button>
+      <span style={{ fontSize: 12, color: '#3c4043', minWidth: 60, textAlign: 'center' }}>
+        Página {page + 1} de {totalPages}
+      </span>
+      <button
+        onClick={() => onPageChange(page + 1)}
+        disabled={page >= totalPages - 1}
+        style={{ ...paginationBtn, opacity: page >= totalPages - 1 ? 0.35 : 1 }}>
+        <ChevronRight size={15} />
+      </button>
+    </div>
+  );
+}
+
+const paginationBtn = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  width: 28, height: 28, border: '1px solid #dadce0', borderRadius: 6,
+  background: '#fff', cursor: 'pointer', color: '#5f6368', padding: 0,
+};
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 export default function PagosPage() {
   const [pagos, setPagos] = useState([]);
@@ -390,60 +422,71 @@ export default function PagosPage() {
   const [showMetrics, setShowMetrics] = useState(false);
   const [filterPor, setFilterPor] = useState([]);
   const [filterEstado, setFilterEstado] = useState([]);
-  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const fetchPagos = useCallback(async () => {
+  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter) => {
     setLoading(true);
-    let all = [];
-    let from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase.from('pagos').select('*')
-        .order('position', { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error || !data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    setPagos(all);
+
+    let query = supabase.from('pagos').select('*', { count: 'exact' });
+
+    if (porFilter.length === 1) query = query.eq('pagado_por', porFilter[0]);
+    else if (porFilter.length > 1) query = query.in('pagado_por', porFilter);
+
+    if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
+    else if (estadoFilter.length > 1) query = query.in('estado', estadoFilter);
+
+    const from = currentPage * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { data, count } = await query
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    setPagos(data || []);
+    setTotalCount(count || 0);
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchPagos(); }, [fetchPagos]);
+  useEffect(() => {
+    fetchPagos(page, filterPor, filterEstado);
+  }, [fetchPagos, page, filterPor, filterEstado]);
 
-  const filtered = useMemo(() => {
-    let list = pagos;
-    if (search.trim()) {
-      const normalize = str => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const words = normalize(search.trim()).split(/\s+/).filter(Boolean);
-      list = list.filter(p => {
-        const haystack = normalize(
-          [p.propiedad, p.descripcion, p.estado, p.pagado_por, p.tipo, p.caja, p.orden]
-            .filter(Boolean).join(' ')
-        );
-        return words.every(w => haystack.includes(w));
-      });
-    }
-    if (filterPor.length) list = list.filter(p => filterPor.includes(p.pagado_por));
-    if (filterEstado.length) list = list.filter(p => filterEstado.includes(p.estado));
-    return list;
-  }, [pagos, filterPor, filterEstado, search]);
+  const toggleFilter = (arr, setArr, val) => {
+    const next = arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
+    setArr(next);
+    setPage(0);
+  };
 
-  const toggleFilter = (arr, setArr, val) => setArr(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]);
-
-  const totalCxC = useMemo(() => filtered.reduce((s, p) => s + (p.cxc || 0), 0), [filtered]);
+  const totalCxC = useMemo(() => pagos.reduce((s, p) => s + (p.cxc || 0), 0), [pagos]);
 
   const handleUpdate = (updated) => setPagos(prev => prev.map(p => p.id === updated.id ? updated : p));
-  const handleDelete = (id) => setPagos(prev => prev.filter(p => p.id !== id));
-  const handleSaveNew = (newPago) => { setPagos(prev => [newPago, ...prev]); setAddingNew(false); };
+  const handleDelete = (id) => {
+    setPagos(prev => prev.filter(p => p.id !== id));
+    setTotalCount(prev => prev - 1);
+  };
+  const handleSaveNew = (newPago) => {
+    setPagos(prev => [newPago, ...prev]);
+    setTotalCount(prev => prev + 1);
+    setAddingNew(false);
+  };
 
   const handleSaveNotes = async (id, notas) => {
     await supabase.from('pagos').update({ notas }).eq('id', id);
     setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p));
   };
 
-  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
+  const handlePageChange = (newPage) => {
+    setPage(newPage);
+    // Scroll table to top on page change
+    const wrapper = document.getElementById('pagos-table-wrapper');
+    if (wrapper) wrapper.scrollTop = 0;
+  };
+
+  const activeFilters = filterPor.length > 0 || filterEstado.length > 0;
+
+  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'ORDEN', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
 
   return (
     <div style={s.container}>
@@ -451,23 +494,15 @@ export default function PagosPage() {
       <div style={s.header}>
         <div>
           <h1 style={s.title}>Pagos</h1>
-          <p style={s.subtitle}>{filtered.length} registros · Total CxC: <strong>{formatCLP(totalCxC)}</strong></p>
+          <p style={s.subtitle}>
+            {activeFilters
+              ? `${totalCount} registros (filtrados)`
+              : `${totalCount} registros`
+            }
+            {' · '}CxC página: <strong>{formatCLP(totalCxC)}</strong>
+          </p>
         </div>
         <div style={s.headerRight}>
-          {/* Búsqueda libre */}
-          <div style={{ position:'relative', minWidth:220 }}>
-            <Search size={14} color="#9aa0a6" style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar..."
-              style={{ width:'100%', padding:'7px 32px 7px 30px', border:'1px solid #dadce0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', background:'#fff' }}
-            />
-            {search && (
-              <button onClick={() => setSearch('')} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:2, display:'flex' }}>
-                <X size={13} color="#9aa0a6" />
-              </button>
-            )}
-          </div>
           {/* Filtro por Pagado por */}
           <div style={s.filterGroup}>
             {PAGADO_POR_OPTIONS.map(v => (
@@ -482,8 +517,8 @@ export default function PagosPage() {
                 style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>
             ))}
           </div>
-          {(filterPor.length > 0 || filterEstado.length > 0 || search) && (
-            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setSearch(''); }} style={s.clearFilter}>Limpiar</button>
+          {activeFilters && (
+            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setPage(0); }} style={s.clearFilter}>Limpiar</button>
           )}
           <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}>
             <BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas
@@ -495,7 +530,7 @@ export default function PagosPage() {
       </div>
 
       {/* Table */}
-      <div style={s.tableWrapper}>
+      <div id="pagos-table-wrapper" style={s.tableWrapper}>
         {loading ? (
           <div style={s.loading}>Cargando pagos...</div>
         ) : (
@@ -504,10 +539,10 @@ export default function PagosPage() {
               <tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 2 ? 'left' : 'center' }}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={pagos.length > 0 ? Math.max(...pagos.map(p => p.position || 0)) : 0} />}
-              {filtered.length === 0 && !addingNew
+              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} />}
+              {pagos.length === 0 && !addingNew
                 ? <tr><td colSpan={13} style={s.empty}>No hay pagos registrados.</td></tr>
-                : filtered.map(p => (
+                : pagos.map(p => (
                   <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor} />
                 ))
               }
@@ -516,13 +551,21 @@ export default function PagosPage() {
         )}
       </div>
 
+      {/* Pagination */}
+      <Pagination
+        page={page}
+        totalCount={totalCount}
+        pageSize={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
+
       {/* Notes panel */}
       {notesFor && (
         <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} />
       )}
 
       {/* Metrics */}
-      {showMetrics && <MetricsView pagos={pagos} onClose={() => setShowMetrics(false)} />}
+      {showMetrics && <MetricsView onClose={() => setShowMetrics(false)} />}
     </div>
   );
 }
