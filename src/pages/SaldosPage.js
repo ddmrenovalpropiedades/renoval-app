@@ -397,35 +397,19 @@ function ConsultasTab() {
 
     for (const row of toSend) {
       try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+        await fetch('/api/send-gc-email', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
+          },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            system: 'Eres un asistente que envía correos usando Gmail. Usa la herramienta de Gmail para enviar el correo exactamente como se indica, sin modificar el contenido.',
-            messages: [{
-              role: 'user',
-              content: `Envía este correo usando Gmail:
-Para: ${row.mail_admin}
-CC: edith@renovalpropiedades.com
-Desde: gcrenovalpropiedades@gmail.com
-Asunto: Consulta Gasto Común ${mesLabel}
-Cuerpo:
-Buenos días,
-
-Junto con saludar, quería solicitar el saldo de gasto común de la siguiente propiedad:
-${row.propiedad}
-
-Quedo atento a su respuesta,
-
-Saludos`
-            }],
-            mcp_servers: [{ type: 'url', url: 'https://gmailmcp.googleapis.com/mcp/v1', name: 'gmail' }],
+            propiedad: row.propiedad,
+            mailAdmin: row.mail_admin,
+            mesLabel,
+            isTest: false,
           }),
         });
-
-        await response.json();
         // Log in Supabase
         await supabase.from('gc_consultas_log').upsert({
           propiedad: row.propiedad,
@@ -450,30 +434,18 @@ Saludos`
   const handleCheckReplies = async () => {
     setUpdating(true);
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/check-gc-replies', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: `Eres un asistente que revisa la bandeja de entrada de Gmail buscando respuestas a consultas de gasto común.
-Busca correos recibidos en gcrenovalpropiedades@gmail.com que sean respuestas a consultas de gasto común del mes ${formatMes(mes)}.
-Para cada respuesta encontrada, responde SOLO con un JSON array con este formato:
-[{"propiedad": "...", "gc_valor": "...", "respondido_at": "..."}]
-Si no hay respuestas, responde con [].
-Si hay PDFs adjuntos, intenta extraer el valor del gasto común del PDF.
-No incluyas texto adicional, solo el JSON.`,
-          messages: [{ role:'user', content: `Revisa la bandeja de entrada de gcrenovalpropiedades@gmail.com y encuentra respuestas a consultas de gasto común del mes ${formatMes(mes)}. Devuelve el JSON con los resultados.` }],
-          mcp_servers: [{ type:'url', url:'https://gmailmcp.googleapis.com/mcp/v1', name:'gmail' }],
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
+        },
+        body: JSON.stringify({ mes }),
       });
       const data = await response.json();
-      const text = data.content?.filter(b=>b.type==='text').map(b=>b.text).join('') || '[]';
+      const text = JSON.stringify(data.replies || []);
       let replies = [];
-      try {
-        const clean = text.replace(/```json|```/g,'').trim();
-        replies = JSON.parse(clean);
-      } catch(e) { replies = []; }
+      try { replies = JSON.parse(text); } catch(e) { replies = []; }
 
       for (const r of replies) {
         if (!r.propiedad) continue;
@@ -620,28 +592,17 @@ No incluyas texto adicional, solo el JSON.`,
             for (const row of testRows) {
               if (!row.mail?.trim()) continue;
               try {
-                await fetch('https://api.anthropic.com/v1/messages', {
+                await fetch('/api/send-gc-email', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
+                  },
                   body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
-                    max_tokens: 1000,
-                    system: 'Eres un asistente que envía correos usando Gmail. Usa la herramienta de Gmail para enviar el correo exactamente como se indica.',
-                    messages: [{ role:'user', content: `Envía este correo usando Gmail:
-Para: ${row.mail}
-CC: edith@renovalpropiedades.com
-Desde: gcrenovalpropiedades@gmail.com
-Asunto: [PRUEBA] Consulta Gasto Común ${mesLabel}
-Cuerpo:
-Buenos días,
-
-Junto con saludar, quería solicitar el saldo de gasto común de la siguiente propiedad:
-${row.propiedad}
-
-Quedo atento a su respuesta,
-
-Saludos` }],
-                    mcp_servers: [{ type:'url', url:'https://gmailmcp.googleapis.com/mcp/v1', name:'gmail' }],
+                    propiedad: row.propiedad,
+                    mailAdmin: row.mail,
+                    mesLabel,
+                    isTest: true,
                   }),
                 });
                 sent++;
