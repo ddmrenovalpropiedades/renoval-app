@@ -135,7 +135,19 @@ export default async function handler(req, res) {
       const date = headers.find(h => h.name === 'Date')?.value || '';
       const receivedAt = new Date(date).toISOString();
 
+      // Debug: log payload structure
+      console.log('Message ID:', msg.id, 'Subject:', subject);
+      console.log('Payload mimeType:', full.data.payload.mimeType);
+      console.log('Parts:', JSON.stringify((full.data.payload.parts || []).map(p => ({
+        mimeType: p.mimeType,
+        filename: p.filename,
+        hasAttachmentId: !!p.body?.attachmentId,
+        hasData: !!p.body?.data,
+        partsCount: p.parts?.length || 0,
+      }))));
+
       const pdfs = await getPdfAttachments(gmail, msg.id, full.data.payload);
+      console.log('PDFs found:', pdfs.length, pdfs.map(p => p.filename));
       if (!pdfs.length) continue;
 
       const body = getTextBody(full.data.payload);
