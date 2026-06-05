@@ -49,12 +49,14 @@ async function getPdfAttachments(gmail, messageId, payload) {
 
 async function extractGCFromPdf(pdfBase64, propiedad) {
   try {
+    const cleanBase64 = pdfBase64.replace(/-/g, '+').replace(/_/g, '/');
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'pdfs-2024-09-25',
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
@@ -67,22 +69,22 @@ async function extractGCFromPdf(pdfBase64, propiedad) {
               source: {
                 type: 'base64',
                 media_type: 'application/pdf',
-                data: pdfBase64.replace(/-/g, '+').replace(/_/g, '/'),
+                data: cleanBase64,
               },
             },
             {
               type: 'text',
-              text: `Este PDF es un estado de cuenta de gasto común para la propiedad "${propiedad}". 
-Extrae el monto total a pagar del gasto común. 
-Responde ÚNICAMENTE con el número en formato chileno, por ejemplo: $85.430 
-Si no puedes encontrar el valor, responde: NO_ENCONTRADO`,
+              text: `Este PDF es un estado de cuenta de gasto común para la propiedad "${propiedad}". Extrae el monto total a pagar del gasto común. Responde ÚNICAMENTE con el número en formato chileno, por ejemplo: $85.430. Si no puedes encontrar el valor, responde: NO_ENCONTRADO`,
             },
           ],
         }],
       }),
     });
-    const data = await response.json();
-    console.log('PDF extraction response:', JSON.stringify(data.content));
+    const rawText = await response.text();
+    console.log('PDF extraction status:', response.status);
+    console.log('PDF extraction raw:', rawText.substring(0, 500));
+    let data;
+    try { data = JSON.parse(rawText); } catch(e) { return null; }
     const text = data.content?.[0]?.text?.trim() || 'NO_ENCONTRADO';
     return text === 'NO_ENCONTRADO' ? null : text;
   } catch(e) {
@@ -122,8 +124,8 @@ export default async function handler(req, res) {
     });
 
     const messages = listRes.data.messages || [];
-    console.log(`Found ${messages.length} messages`);
     const replies = [];
+    const debug = [];
 
     for (const msg of messages) {
       const full = await gmail.users.messages.get({
@@ -135,19 +137,26 @@ export default async function handler(req, res) {
       const date = headers.find(h => h.name === 'Date')?.value || '';
       const receivedAt = new Date(date).toISOString();
 
-      // Debug: log payload structure
-      console.log('Message ID:', msg.id, 'Subject:', subject);
-      console.log('Payload mimeType:', full.data.payload.mimeType);
-      console.log('Parts:', JSON.stringify((full.data.payload.parts || []).map(p => ({
-        mimeType: p.mimeType,
-        filename: p.filename,
-        hasAttachmentId: !!p.body?.attachmentId,
-        hasData: !!p.body?.data,
-        partsCount: p.parts?.length || 0,
-      }))));
+      // Debug info
+      const msgDebug = {
+        id: msg.id,
+        subject,
+        mimeType: full.data.payload.mimeType,
+        parts: (full.data.payload.parts || []).map(p => ({
+          mimeType: p.mimeType,
+          filename: p.filename || null,
+          hasAttachmentId: !!p.body?.attachmentId,
+          subParts: (p.parts || []).map(sp => ({
+            mimeType: sp.mimeType,
+            filename: sp.filename || null,
+            hasAttachmentId: !!sp.body?.attachmentId,
+          })),
+        })),
+      };
+      debug.push(msgDebug);
 
       const pdfs = await getPdfAttachments(gmail, msg.id, full.data.payload);
-      console.log('PDFs found:', pdfs.length, pdfs.map(p => p.filename));
+      msgDebug.pdfsFound = pdfs.map(p => p.filename);
       if (!pdfs.length) continue;
 
       const body = getTextBody(full.data.payload);
@@ -187,7 +196,7 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({ replies });
+    return res.status(200).json({ replies, debug });
   } catch (err) {
     console.error('check-gc-replies error:', err);
     return res.status(500).json({ error: err.message, replies: [] });
