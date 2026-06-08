@@ -440,8 +440,7 @@ export default function PagosPage() {
     const to = from + PAGE_SIZE - 1;
 
     const { data, count } = await query
-      .order('fecha', { ascending: false })
-      .order('created_at', { ascending: false })
+      .order('position', { ascending: true })
       .range(from, to);
 
     setPagos(data || []);
