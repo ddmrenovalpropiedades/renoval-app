@@ -106,7 +106,7 @@ function InlineSelect({ value, options, onChange }) {
 // ─── Date cell ─────────────────────────────────────────────────────────────────
 function DateCell({ value, onChange }) {
   return (
-    <input type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+    <input type="date" lang="es-CL" value={value || ''} onChange={e => onChange(e.target.value)}
       style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', colorScheme: 'light', WebkitAppearance: 'none', width: 110 }}
       onClick={e => e.target.showPicker && e.target.showPicker()} />
   );
@@ -359,11 +359,11 @@ function NewPagoRow({ onSave, onCancel }) {
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><input value={form.orden} onChange={e => set('orden', e.target.value)} style={{ ...inputStyle, width: 50 }} /></td>
-      <td style={s.tdCenter}><input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
+      <td style={s.tdCenter}><input type="date" lang="es-CL" value={form.fecha} onChange={e => set('fecha', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
       <td style={s.tdCenter}><select value={form.pagado_por} onChange={e => set('pagado_por', e.target.value)} style={selectStyle}><option value="">—</option>{PAGADO_POR_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><select value={form.tipo} onChange={e => set('tipo', e.target.value)} style={selectStyle}><option value="">—</option>{TIPO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><MoneyInput value={form.comision} onChange={v => set('comision', v)} /></td>
-      <td style={s.tdCenter}><input type="date" value={form.fecha_caja} onChange={e => set('fecha_caja', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
+      <td style={s.tdCenter}><input type="date" lang="es-CL" value={form.fecha_caja} onChange={e => set('fecha_caja', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
       <td style={{ ...s.tdCenter, fontSize: 11, color: '#9aa0a6' }}>{form.fecha ? antiguedad(form.fecha) : '—'}</td>
       <td style={s.tdCenter}><input value={form.caja} onChange={e => set('caja', e.target.value)} style={{ ...inputStyle, width: 60 }} /></td>
       <td style={s.tdActions}>
