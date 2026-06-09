@@ -219,7 +219,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Fecha límite</div>
             <input
-              type="date"
+              type="date" lang="es-CL"
               value={dueDate}
               onChange={e => setDueDate(e.target.value)}
               onBlur={() => handleSave()}
