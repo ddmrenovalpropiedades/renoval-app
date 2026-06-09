@@ -184,7 +184,7 @@ function RentModal({ row, onConfirm, onCancel }) {
         </div>
         <div style={rentStyles.field}>
           <label style={rentStyles.label}>Fecha de entrega *</label>
-          <input type="date" value={entrega} onChange={e => setEntrega(e.target.value)}
+          <input type="date" lang="es-CL" value={entrega} onChange={e => setEntrega(e.target.value)}
             style={rentStyles.input} />
         </div>
         {hasPromo && (
@@ -349,7 +349,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
-        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none',appearance:'none',WebkitAppearance:'none',colorScheme:'light'}} onClick={e=>e.target.showPicker&&e.target.showPicker()} /></td>
+        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" lang="es-CL" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none',appearance:'none',WebkitAppearance:'none',colorScheme:'light'}} onClick={e=>e.target.showPicker&&e.target.showPicker()} /></td>
         <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
         <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
         <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
@@ -391,7 +391,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
       <td style={styles.tdCenter}>
-        <input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
+        <input type="date" lang="es-CL" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
           style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}), WebkitAppearance: 'none', MozAppearance: 'none', colorScheme: 'light' }}
           onClick={e => e.target.showPicker && e.target.showPicker()} />
       </td>
