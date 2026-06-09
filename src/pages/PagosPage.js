@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+
+const normalize = (str) =>
+  String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -422,10 +425,12 @@ export default function PagosPage() {
   const [showMetrics, setShowMetrics] = useState(false);
   const [filterPor, setFilterPor] = useState([]);
   const [filterEstado, setFilterEstado] = useState([]);
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
 
-  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter) => {
+  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText) => {
     setLoading(true);
 
     let query = supabase.from('pagos').select('*', { count: 'exact' });
@@ -435,6 +440,14 @@ export default function PagosPage() {
 
     if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
     else if (estadoFilter.length > 1) query = query.in('estado', estadoFilter);
+
+    if (searchText.trim()) {
+      const words = normalize(searchText.trim()).split(/\s+/).filter(Boolean);
+      const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo', 'caja'];
+      for (const word of words) {
+        query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
+      }
+    }
 
     const from = currentPage * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
@@ -449,8 +462,17 @@ export default function PagosPage() {
   }, []);
 
   useEffect(() => {
-    fetchPagos(page, filterPor, filterEstado);
-  }, [fetchPagos, page, filterPor, filterEstado]);
+    fetchPagos(page, filterPor, filterEstado, search);
+  }, [fetchPagos, page, filterPor, filterEstado, search]);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const toggleFilter = (arr, setArr, val) => {
     const next = arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
@@ -481,7 +503,7 @@ export default function PagosPage() {
     if (wrapper) wrapper.scrollTop = 0;
   };
 
-  const activeFilters = filterPor.length > 0 || filterEstado.length > 0;
+  const activeFilters = filterPor.length > 0 || filterEstado.length > 0 || search.trim().length > 0;
 
   const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'ORDEN', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
 
@@ -499,6 +521,21 @@ export default function PagosPage() {
           </p>
         </div>
         <div style={s.headerRight}>
+          {/* Búsqueda texto libre */}
+          <div style={s.searchWrapper}>
+            <Search size={14} color="#9aa0a6" style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
+            <input
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              placeholder="Buscar propiedad, descripción..."
+              style={s.searchInput}
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch(''); setPage(0); }} style={s.clearSearch}>
+                <X size={12} />
+              </button>
+            )}
+          </div>
           {/* Filtro por Pagado por */}
           <div style={s.filterGroup}>
             {PAGADO_POR_OPTIONS.map(v => (
@@ -514,7 +551,7 @@ export default function PagosPage() {
             ))}
           </div>
           {activeFilters && (
-            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setPage(0); }} style={s.clearFilter}>Limpiar</button>
+            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>
           )}
           <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}>
             <BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas
@@ -587,4 +624,7 @@ const s = {
   actionBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
+  searchInput: { paddingLeft: 30, paddingRight: 28, paddingTop: 7, paddingBottom: 7, border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit', width: 220 },
+  clearSearch: { position: 'absolute', right: 8, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', color: '#9aa0a6' },
 };
