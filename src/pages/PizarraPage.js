@@ -3,6 +3,53 @@ import { supabase } from '../supabaseClient';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
 import { Plus, Check, X, Home, Trash2 } from 'lucide-react';
 
+// ─── Date picker dd/mm/yyyy ────────────────────────────────────────────────────
+function DatePicker({ value, onChange, style = {}, inputStyle = {} }) {
+  const toparts = (v) => {
+    if (!v) return { d: '', m: '', y: '' };
+    const [yr, mo, dy] = v.split('-');
+    return { d: dy || '', m: mo || '', y: yr || '' };
+  };
+  const [parts, setParts] = React.useState(() => toparts(value));
+  React.useEffect(() => { setParts(toparts(value)); }, [value]);
+
+  const commit = (d, m, y) => {
+    if (d.length === 2 && m.length === 2 && y.length === 4) {
+      const iso = `${y}-${m}-${d}`;
+      if (!isNaN(new Date(iso))) onChange(iso);
+    } else if (!d && !m && !y) {
+      onChange('');
+    }
+  };
+
+  const handleD = (v) => {
+    const d = v.replace(/\D/g,'').slice(0,2);
+    setParts(p => { const next = {...p, d}; commit(d, p.m, p.y); return next; });
+  };
+  const handleM = (v) => {
+    const m = v.replace(/\D/g,'').slice(0,2);
+    setParts(p => { const next = {...p, m}; commit(p.d, m, p.y); return next; });
+  };
+  const handleY = (v) => {
+    const y = v.replace(/\D/g,'').slice(0,4);
+    setParts(p => { const next = {...p, y}; commit(p.d, p.m, y); return next; });
+  };
+
+  const base = { border: 'none', outline: 'none', background: 'transparent', fontSize: 12, fontFamily: 'inherit', textAlign: 'center', padding: 0, ...inputStyle };
+  const sep = { fontSize: 12, color: '#9aa0a6', userSelect: 'none' };
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 1, ...style }}>
+      <input value={parts.d} onChange={e => handleD(e.target.value)} placeholder="dd" style={{ ...base, width: 20 }} maxLength={2} />
+      <span style={sep}>/</span>
+      <input value={parts.m} onChange={e => handleM(e.target.value)} placeholder="mm" style={{ ...base, width: 20 }} maxLength={2} />
+      <span style={sep}>/</span>
+      <input value={parts.y} onChange={e => handleY(e.target.value)} placeholder="aaaa" style={{ ...base, width: 36 }} maxLength={4} />
+    </div>
+  );
+}
+
+
 // ── UF value ──────────────────────────────────────────────────
 const useUFValue = () => {
   const [uf, setUf] = useState(null);
@@ -184,8 +231,7 @@ function RentModal({ row, onConfirm, onCancel }) {
         </div>
         <div style={rentStyles.field}>
           <label style={rentStyles.label}>Fecha de entrega *</label>
-          <input type="date" lang="es-CL" value={entrega} onChange={e => setEntrega(e.target.value)}
-            style={rentStyles.input} />
+          <DatePicker value={entrega} onChange={v => setEntrega(v)} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '6px 10px', background: '#fff' }} />
         </div>
         {hasPromo && (
           <div style={rentStyles.field}>
@@ -349,7 +395,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
-        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" lang="es-CL" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none',appearance:'none',WebkitAppearance:'none',colorScheme:'light'}} onClick={e=>e.target.showPicker&&e.target.showPicker()} /></td>
+        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><DatePicker value={form.fecha_salida||''} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',background:'#fff'}} /></td>
         <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
         <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
         <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
@@ -391,7 +437,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
       <td style={styles.tdCenter}>
-        <input type="date" lang="es-CL" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
+        <DatePicker value={form.fecha_salida || ''} onChange={v => set('fecha_salida', v)}
           style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}), WebkitAppearance: 'none', MozAppearance: 'none', colorScheme: 'light' }}
           onClick={e => e.target.showPicker && e.target.showPicker()} />
       </td>
