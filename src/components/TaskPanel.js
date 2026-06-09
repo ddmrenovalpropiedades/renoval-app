@@ -3,6 +3,53 @@ import { X, Trash2, RefreshCw, AlertCircle, Check } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { formatLocalDate } from '../hooks/useTasks';
 import AnimatedCheckbox from './AnimatedCheckbox';
+// ─── Date picker dd/mm/yyyy ────────────────────────────────────────────────────
+function DatePicker({ value, onChange, style = {} }) {
+  const toparts = (v) => {
+    if (!v) return { d: '', m: '', y: '' };
+    const [yr, mo, dy] = v.split('-');
+    return { d: dy || '', m: mo || '', y: yr || '' };
+  };
+  const [parts, setParts] = React.useState(() => toparts(value));
+  React.useEffect(() => { setParts(toparts(value)); }, [value]);
+
+  const commit = (d, m, y) => {
+    if (d.length === 2 && m.length === 2 && y.length === 4) {
+      const iso = `${y}-${m}-${d}`;
+      if (!isNaN(new Date(iso))) onChange(iso);
+    } else if (!d && !m && !y) {
+      onChange('');
+    }
+  };
+
+  const handleD = (v) => {
+    const d = v.replace(/\D/g,'').slice(0,2);
+    setParts(p => { const next = {...p, d}; commit(d, p.m, p.y); return next; });
+  };
+  const handleM = (v) => {
+    const m = v.replace(/\D/g,'').slice(0,2);
+    setParts(p => { const next = {...p, m}; commit(p.d, m, p.y); return next; });
+  };
+  const handleY = (v) => {
+    const y = v.replace(/\D/g,'').slice(0,4);
+    setParts(p => { const next = {...p, y}; commit(p.d, p.m, y); return next; });
+  };
+
+  const base = { border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', textAlign: 'center', padding: 0 };
+  const sep = { fontSize: 13, color: '#9aa0a6', userSelect: 'none' };
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, ...style }}>
+      <input value={parts.d} onChange={e => handleD(e.target.value)} placeholder="dd" style={{ ...base, width: 22 }} maxLength={2} />
+      <span style={sep}>/</span>
+      <input value={parts.m} onChange={e => handleM(e.target.value)} placeholder="mm" style={{ ...base, width: 22 }} maxLength={2} />
+      <span style={sep}>/</span>
+      <input value={parts.y} onChange={e => handleY(e.target.value)} placeholder="aaaa" style={{ ...base, width: 38 }} maxLength={4} />
+    </div>
+  );
+}
+
+
 
 const RECURRENCE_OPTIONS = [
   { value: 'none',    label: 'No se repite' },
@@ -218,13 +265,11 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
           {/* Fecha límite */}
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Fecha límite</div>
-            <input
-              type="date" lang="es-CL"
-              value={dueDate}
-              onChange={e => setDueDate(e.target.value)}
-              onBlur={() => handleSave()}
-              style={styles.dateInput}
-            />
+            <DatePicker
+                value={dueDate}
+                onChange={v => { setDueDate(v); handleSave({ due_date: v || null }); }}
+                style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '6px 10px', background: '#fff' }}
+              />
             {dueDate && (
               <button onClick={() => { setDueDate(''); handleSave({ due_date: null }); }} style={styles.clearDate}>
                 Quitar fecha
