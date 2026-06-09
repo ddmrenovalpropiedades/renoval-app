@@ -106,12 +106,49 @@ function InlineSelect({ value, options, onChange }) {
   );
 }
 
-// ─── Date cell ─────────────────────────────────────────────────────────────────
-function DateCell({ value, onChange }) {
+// ─── Date picker dd/mm/yyyy ────────────────────────────────────────────────────
+function DatePicker({ value, onChange, style = {} }) {
+  const toparts = (v) => {
+    if (!v) return { d: '', m: '', y: '' };
+    const [yr, mo, dy] = v.split('-');
+    return { d: dy || '', m: mo || '', y: yr || '' };
+  };
+  const [parts, setParts] = React.useState(() => toparts(value));
+  React.useEffect(() => { setParts(toparts(value)); }, [value]);
+
+  const commit = (d, m, y) => {
+    if (d.length === 2 && m.length === 2 && y.length === 4) {
+      const iso = `${y}-${m}-${d}`;
+      if (!isNaN(new Date(iso))) onChange(iso);
+    } else if (!d && !m && !y) {
+      onChange('');
+    }
+  };
+
+  const handleD = (v) => {
+    const d = v.replace(/\D/g,'').slice(0,2);
+    setParts(p => { const next = {...p, d}; commit(d, p.m, p.y); return next; });
+  };
+  const handleM = (v) => {
+    const m = v.replace(/\D/g,'').slice(0,2);
+    setParts(p => { const next = {...p, m}; commit(p.d, m, p.y); return next; });
+  };
+  const handleY = (v) => {
+    const y = v.replace(/\D/g,'').slice(0,4);
+    setParts(p => { const next = {...p, y}; commit(p.d, p.m, y); return next; });
+  };
+
+  const baseInput = { border: 'none', outline: 'none', background: 'transparent', fontSize: 11, fontFamily: 'inherit', textAlign: 'center', padding: 0 };
+  const sep = { fontSize: 11, color: '#9aa0a6', userSelect: 'none' };
+
   return (
-    <input type="date" lang="es-CL" value={value || ''} onChange={e => onChange(e.target.value)}
-      style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', colorScheme: 'light', WebkitAppearance: 'none', width: 110 }}
-      onClick={e => e.target.showPicker && e.target.showPicker()} />
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 1, ...style }}>
+      <input value={parts.d} onChange={e => handleD(e.target.value)} placeholder="dd" style={{ ...baseInput, width: 18 }} maxLength={2} />
+      <span style={sep}>/</span>
+      <input value={parts.m} onChange={e => handleM(e.target.value)} placeholder="mm" style={{ ...baseInput, width: 18 }} maxLength={2} />
+      <span style={sep}>/</span>
+      <input value={parts.y} onChange={e => handleY(e.target.value)} placeholder="aaaa" style={{ ...baseInput, width: 32 }} maxLength={4} />
+    </div>
   );
 }
 
@@ -293,11 +330,11 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
         </div>
       </td>
       <td style={s.tdCenter}><InlineSelect value={pago.orden} options={[]} onChange={() => {}} /></td>
-      <td style={s.tdCenter}><DateCell value={pago.fecha} onChange={v => update('fecha', v)} /></td>
+      <td style={s.tdCenter}><DatePicker value={pago.fecha} onChange={v => update('fecha', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.pagado_por} options={PAGADO_POR_OPTIONS} onChange={v => update('pagado_por', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.tipo} options={TIPO_OPTIONS} onChange={v => update('tipo', v)} /></td>
       <td style={s.tdCenter}><MoneyInput value={pago.comision} onChange={v => update('comision', v)} /></td>
-      <td style={s.tdCenter}><DateCell value={pago.fecha_caja} onChange={v => update('fecha_caja', v)} /></td>
+      <td style={s.tdCenter}><DatePicker value={pago.fecha_caja} onChange={v => update('fecha_caja', v)} /></td>
       <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: 600, color: ant === '+ 3 meses' ? '#ea4335' : '#34a853', whiteSpace: 'nowrap' }}>{ant}</td>
       <td style={s.tdCenter}><InlineText value={pago.caja} onChange={v => update('caja', v)} /></td>
       <td style={s.tdActions}>
@@ -362,11 +399,11 @@ function NewPagoRow({ onSave, onCancel }) {
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><input value={form.orden} onChange={e => set('orden', e.target.value)} style={{ ...inputStyle, width: 50 }} /></td>
-      <td style={s.tdCenter}><input type="date" lang="es-CL" value={form.fecha} onChange={e => set('fecha', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
+      <td style={s.tdCenter}><DatePicker value={form.fecha} onChange={v => set('fecha', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
       <td style={s.tdCenter}><select value={form.pagado_por} onChange={e => set('pagado_por', e.target.value)} style={selectStyle}><option value="">—</option>{PAGADO_POR_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><select value={form.tipo} onChange={e => set('tipo', e.target.value)} style={selectStyle}><option value="">—</option>{TIPO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><MoneyInput value={form.comision} onChange={v => set('comision', v)} /></td>
-      <td style={s.tdCenter}><input type="date" lang="es-CL" value={form.fecha_caja} onChange={e => set('fecha_caja', e.target.value)} style={{ ...inputStyle, colorScheme: 'light' }} /></td>
+      <td style={s.tdCenter}><DatePicker value={form.fecha_caja} onChange={v => set('fecha_caja', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
       <td style={{ ...s.tdCenter, fontSize: 11, color: '#9aa0a6' }}>{form.fecha ? antiguedad(form.fecha) : '—'}</td>
       <td style={s.tdCenter}><input value={form.caja} onChange={e => set('caja', e.target.value)} style={{ ...inputStyle, width: 60 }} /></td>
       <td style={s.tdActions}>
