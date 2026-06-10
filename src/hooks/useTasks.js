@@ -5,7 +5,6 @@ import { USER_INITIALS } from '../supabaseClient';
 
 const CATEGORIES = ['Entrada', 'Salida', 'Equipo', 'Solicitudes', 'Misceláneo'];
 
-// Fix timezone: parse date without shifting
 const parseLocalDate = (dateStr) => {
   if (!dateStr) return null;
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -16,6 +15,26 @@ export const formatLocalDate = (dateStr) => {
   if (!dateStr) return '';
   const d = parseLocalDate(dateStr);
   return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+// Insert a task bypassing RLS using the service role via API
+const insertMirrorTask = async (mirrorTask) => {
+  try {
+    const response = await fetch('/api/create-mirror-task', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
+      },
+      body: JSON.stringify({ mirrorTask }),
+    });
+    const result = await response.json();
+    if (!response.ok) console.error('insertMirrorTask error:', result.error);
+    return result.data;
+  } catch(e) {
+    console.error('insertMirrorTask fetch error:', e.message);
+    return null;
+  }
 };
 
 export function useTasks(targetEmail = null) {
@@ -44,7 +63,6 @@ export function useTasks(targetEmail = null) {
         .order('position', { ascending: true }),
     ]);
 
-    // Dormant Equipo tasks
     const { data: equipoDormant } = await supabase.from('tasks').select('*')
       .eq('completed', false).is('parent_id', null)
       .eq('category', 'Equipo').eq('delegated_to', effectiveEmail)
@@ -58,7 +76,6 @@ export function useTasks(targetEmail = null) {
     ];
     const all = [...allActive, ...allDormant];
     const unique = Array.from(new Map(all.map(t => [t.id, t])).values());
-    // Auto-upgrade proxima_vencer to urgent if due_date passed
     const today2 = new Date().toISOString().split('T')[0];
     const toUpgrade = unique.filter(t => t.proxima_vencer && !t.urgent && t.due_date && t.due_date <= today2);
     for (const t of toUpgrade) {
@@ -101,7 +118,8 @@ export function useTasks(targetEmail = null) {
     if (!error && data) {
       setTasks(prev => [data, ...prev]);
       if (taskData.category === 'Solicitudes' && taskData.assigned_to) {
-        await supabase.from('tasks').insert({
+        // Use service role to bypass RLS when inserting for another user
+        await insertMirrorTask({
           owner_email: taskData.assigned_to,
           title: taskData.title,
           category: 'Equipo',
@@ -128,29 +146,26 @@ export function useTasks(targetEmail = null) {
       completed: false,
     }).select().single();
 
-    // Mirror subtask to Equipo if parent is Solicitudes
     if (!error && data && parent?.category === 'Solicitudes' && parent?.assigned_to) {
-      // Find the Equipo mirror task
       const { data: equipoParent } = await supabase.from('tasks')
         .select('id').eq('solicitud_id', parentId).eq('category', 'Equipo').maybeSingle();
       if (equipoParent) {
-        await supabase.from('tasks').insert({
+        await insertMirrorTask({
           owner_email: parent.assigned_to,
           title,
           category: 'Equipo',
           parent_id: equipoParent.id,
           position: Date.now(),
           completed: false,
-          solicitud_id: data.id, // reference to original subtask
+          solicitud_id: data.id,
         });
       }
     }
-    // Mirror subtask to Solicitudes if parent is Equipo
     if (!error && data && parent?.category === 'Equipo' && parent?.solicitud_id) {
       const { data: solicitudParent } = await supabase.from('tasks')
         .select('id,owner_email').eq('id', parent.solicitud_id).eq('category', 'Solicitudes').maybeSingle();
       if (solicitudParent) {
-        await supabase.from('tasks').insert({
+        await insertMirrorTask({
           owner_email: solicitudParent.owner_email,
           title,
           category: 'Solicitudes',
@@ -171,8 +186,6 @@ export function useTasks(targetEmail = null) {
     const { data, error } = await supabase.from('tasks').update(updates).eq('id', id).select().single();
     if (!error && data) {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
-
-      // Sync shared fields to mirror task
       const syncFields = {};
       ['notes','recurrence','recurrence_config','next_occurrence','urgent','due_date'].forEach(f => {
         if (f in updates) syncFields[f] = updates[f];
@@ -201,8 +214,6 @@ export function useTasks(targetEmail = null) {
       const next = getNextOccurrence(task);
       await supabase.from('tasks').update({ next_occurrence: next }).eq('id', task.id);
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, next_occurrence: next, _dormant: true } : t));
-
-      // Also put mirror to sleep
       if (task.category === 'Solicitudes') {
         await supabase.from('tasks').update({ next_occurrence: next })
           .eq('solicitud_id', task.id).eq('category', 'Equipo');
@@ -276,10 +287,8 @@ export function useTasks(targetEmail = null) {
   const getNextOccurrence = (task) => {
     const config = task.recurrence_config || {};
     const now = new Date();
-    now.setHours(12, 0, 0, 0); // avoid timezone shifts
-
+    now.setHours(12, 0, 0, 0);
     const clampDay = (year, month, day) => Math.min(day, new Date(year, month + 1, 0).getDate());
-
     switch (task.recurrence) {
       case 'daily': now.setDate(now.getDate() + 1); break;
       case 'weekly': {
@@ -310,7 +319,6 @@ export function useTasks(targetEmail = null) {
     return now.toISOString().split('T')[0];
   };
 
-  // Add prefix for Solicitudes/Equipo display
   const getDisplayTitle = (task) => {
     if (task.category === 'Solicitudes' && task.assigned_to) {
       return `[${USER_INITIALS[task.assigned_to] || '?'}] ${task.title}`;
@@ -321,8 +329,6 @@ export function useTasks(targetEmail = null) {
     return task.title;
   };
 
-  // Build tasksByCategory for ALL categories (default + custom)
-  // Get all unique categories from loaded tasks + default CATEGORIES
   const allCats = [...new Set([...CATEGORIES, ...tasks.map(t => t.category).filter(Boolean)])];
 
   const tasksByCategory = allCats.reduce((acc, cat) => {
