@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // Verificación del webhook (GET) — Meta llama esto una vez para confirmar
   if (req.method === 'GET') {
     const mode      = req.query['hub.mode'];
     const token     = req.query['hub.verify_token'];
@@ -12,11 +11,10 @@ export default async function handler(req, res) {
     return res.status(403).end();
   }
 
-  // Recepción de mensajes (POST) — aquí llega cada mensaje
   if (req.method === 'POST') {
-    const body = req.body;
-    console.log('Mensaje recibido:', JSON.stringify(body, null, 2));
-    // Por ahora solo confirmamos recepción
+    console.log('=== MENSAJE RECIBIDO ===');
+    console.log(JSON.stringify(req.body, null, 2));
+    console.log('=======================');
     return res.status(200).json({ status: 'ok' });
   }
 
