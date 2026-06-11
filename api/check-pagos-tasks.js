@@ -26,6 +26,7 @@ export default async function handler(req, res) {
     .from('pagos')
     .select('id, propiedad, descripcion, cxc, notas, pagado_por, fecha')
     .in('pagado_por', ['DD', 'FD'])
+    .in('estado', ['P', 'PG'])
     .eq('fecha', targetStr);
 
   if (pagosError) {
