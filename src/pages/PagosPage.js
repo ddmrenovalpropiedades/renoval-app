@@ -205,19 +205,20 @@ function MetricsView({ onClose }) {
     fetchAll();
   }, []);
 
-  const total = pagos.reduce((s, p) => s + (p.cxc || 0), 0);
+  const noD = pagos.filter(p => p.estado !== 'D');
   const soloDescontado = pagos.filter(p => p.estado === 'D').reduce((s, p) => s + (p.cxc || 0), 0);
+  const total = noD.reduce((s, p) => s + (p.cxc || 0), 0);
 
-  const recientes = pagos.filter(p => antiguedad(p.fecha) === '- 3 meses');
-  const antiguos  = pagos.filter(p => antiguedad(p.fecha) === '+ 3 meses');
+  const recientes = noD.filter(p => antiguedad(p.fecha) === '- 3 meses');
+  const antiguos  = noD.filter(p => antiguedad(p.fecha) === '+ 3 meses');
 
   const cxcRecientes = recientes.reduce((s, p) => s + (p.cxc || 0), 0);
   const cxcAntiguos  = antiguos.reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcAntiguosRecientes = antiguos.filter(p => p.estado !== 'D').reduce((s, p) => s + (p.cxc || 0), 0);
+  const cxcAntiguosRecientes = cxcAntiguos; // ya excluye D, son los mismos
 
-  const dd = pagos.filter(p => p.pagado_por === 'DD');
-  const fd = pagos.filter(p => p.pagado_por === 'FD');
-  const nn = pagos.filter(p => !p.pagado_por);
+  const dd = noD.filter(p => p.pagado_por === 'DD');
+  const fd = noD.filter(p => p.pagado_por === 'FD');
+  const nn = noD.filter(p => !p.pagado_por);
 
   const cxcDDAnt = dd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
   const cxcDDRec = dd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
