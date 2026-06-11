@@ -4,6 +4,10 @@
     {
       "path": "/api/create-monthly-page",
       "schedule": "0 5 1 * *"
+    },
+    {
+      "path": "/api/check-pagos-tasks",
+      "schedule": "0 8 * * *"
     }
   ]
 }
