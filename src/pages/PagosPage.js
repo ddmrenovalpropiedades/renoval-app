@@ -42,7 +42,7 @@ const ESTADO_COLORS = {
 };
 
 // ─── Money input ───────────────────────────────────────────────────────────────
-function MoneyInput({ value, onChange, style = {} }) {
+function MoneyInput({ value, onChange, style = {}, alwaysVisible = false }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
 
@@ -71,8 +71,8 @@ function MoneyInput({ value, onChange, style = {} }) {
     );
   }
   return (
-    <div onClick={start} style={{ cursor: 'text', fontSize: 12, padding: '2px 4px', borderRadius: 4, ...style }}>
-      {value != null && value !== '' ? formatCLP(value) : <span style={{ color: '#dadce0' }}>—</span>}
+    <div onClick={start} style={{ cursor: 'text', fontSize: 12, padding: '2px 6px', borderRadius: 6, minWidth: 80, border: alwaysVisible ? '1px solid #dadce0' : 'none', background: alwaysVisible ? '#fff' : 'transparent', ...style }}>
+      {value != null && value !== '' ? formatCLP(value) : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0' }}>{alwaysVisible ? '$—' : '—'}</span>}
     </div>
   );
 }
@@ -300,15 +300,14 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
     <tr style={{ background: hovered ? '#f8f9fa' : '#fff', transition: 'background 0.1s' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}>
-      <td style={s.td}><InlineText value={pago.propiedad} onChange={v => update('propiedad', v)} /></td>
-      <td style={s.td}><InlineText value={pago.descripcion} onChange={v => update('descripcion', v)} /></td>
+      <td style={s.td}><InlineText value={pago.propiedad} onChange={v => update('propiedad', v.toUpperCase())} /></td>
+      <td style={s.td}><InlineText value={pago.descripcion} onChange={v => update('descripcion', v.toUpperCase())} /></td>
       <td style={s.tdCenter}><MoneyInput value={pago.cxc} onChange={v => update('cxc', v)} /></td>
       <td style={s.tdCenter}>
         <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700, background: estadoStyle.bg, color: estadoStyle.color, minWidth: 32 }}>
           <InlineSelect value={pago.estado} options={ESTADO_OPTIONS} onChange={v => update('estado', v)} />
         </div>
       </td>
-      <td style={s.tdCenter}><InlineSelect value={pago.orden} options={[]} onChange={() => {}} /></td>
       <td style={s.tdCenter}><DatePicker value={pago.fecha} onChange={v => update('fecha', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.pagado_por} options={PAGADO_POR_OPTIONS} onChange={v => update('pagado_por', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.tipo} options={TIPO_OPTIONS} onChange={v => update('tipo', v)} /></td>
@@ -373,15 +372,14 @@ function NewPagoRow({ onSave, onCancel }) {
 
   return (
     <tr style={{ background: '#f0f7ff' }}>
-      <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v)} placeholder="Propiedad *" hasError={!form.propiedad.trim() && false} /></td>
-      <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value)} placeholder="Descripción" style={inputStyle} /></td>
-      <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} /></td>
+      <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} placeholder="Propiedad *" hasError={!form.propiedad.trim() && false} /></td>
+      <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value.toUpperCase())} placeholder="Descripción" style={inputStyle} /></td>
+      <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} alwaysVisible /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
-      <td style={s.tdCenter}><input value={form.orden} onChange={e => set('orden', e.target.value)} style={{ ...inputStyle, width: 50 }} /></td>
       <td style={s.tdCenter}><DatePicker value={form.fecha} onChange={v => set('fecha', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
       <td style={s.tdCenter}><select value={form.pagado_por} onChange={e => set('pagado_por', e.target.value)} style={selectStyle}><option value="">—</option>{PAGADO_POR_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><select value={form.tipo} onChange={e => set('tipo', e.target.value)} style={selectStyle}><option value="">—</option>{TIPO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
-      <td style={s.tdCenter}><MoneyInput value={form.comision} onChange={v => set('comision', v)} /></td>
+      <td style={s.tdCenter}><MoneyInput value={form.comision} onChange={v => set('comision', v)} alwaysVisible /></td>
       <td style={s.tdCenter}><DatePicker value={form.fecha_caja} onChange={v => set('fecha_caja', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
       <td style={{ ...s.tdCenter, fontSize: 11, color: '#9aa0a6' }}>{form.fecha ? antiguedad(form.fecha) : '—'}</td>
       <td style={s.tdCenter}><input value={form.caja} onChange={e => set('caja', e.target.value)} style={{ ...inputStyle, width: 60 }} /></td>
@@ -441,12 +439,13 @@ export default function PagosPage() {
   const [showMetrics, setShowMetrics] = useState(false);
   const [filterPor, setFilterPor] = useState([]);
   const [filterEstado, setFilterEstado] = useState([]);
+  const [filterAntiguedad, setFilterAntiguedad] = useState(''); // '' | 'reciente' | 'antigua'
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
 
-  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText) => {
+  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter) => {
     setLoading(true);
 
     let query = supabase.from('pagos').select('*', { count: 'exact' });
@@ -456,6 +455,14 @@ export default function PagosPage() {
 
     if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
     else if (estadoFilter.length > 1) query = query.in('estado', estadoFilter);
+
+    if (antiguedadFilter) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      if (antiguedadFilter === 'reciente') query = query.gte('fecha', cutoffStr);
+      else if (antiguedadFilter === 'antigua') query = query.lt('fecha', cutoffStr);
+    }
 
     if (searchText.trim()) {
       const words = normalize(searchText.trim()).split(/\s+/).filter(Boolean);
@@ -478,8 +485,8 @@ export default function PagosPage() {
   }, []);
 
   useEffect(() => {
-    fetchPagos(page, filterPor, filterEstado, search);
-  }, [fetchPagos, page, filterPor, filterEstado, search]);
+    fetchPagos(page, filterPor, filterEstado, search, filterAntiguedad);
+  }, [fetchPagos, page, filterPor, filterEstado, search, filterAntiguedad]);
 
   // Debounce search input
   useEffect(() => {
@@ -519,9 +526,9 @@ export default function PagosPage() {
     if (wrapper) wrapper.scrollTop = 0;
   };
 
-  const activeFilters = filterPor.length > 0 || filterEstado.length > 0 || search.trim().length > 0;
+  const activeFilters = filterPor.length > 0 || filterEstado.length > 0 || filterAntiguedad || search.trim().length > 0;
 
-  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'ORDEN', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
+  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
 
   return (
     <div style={s.container}>
@@ -566,8 +573,16 @@ export default function PagosPage() {
                 style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>
             ))}
           </div>
+          {/* Filtro por Antigüedad */}
+          <div style={s.filterGroup}>
+            {[{ val: 'reciente', label: '- 3m' }, { val: 'antigua', label: '+ 3m' }].map(({ val, label }) => (
+              <button key={val}
+                onClick={() => { setFilterAntiguedad(prev => prev === val ? '' : val); setPage(0); }}
+                style={{ ...s.filterBtn, ...(filterAntiguedad === val ? s.filterBtnActive : {}) }}>{label}</button>
+            ))}
+          </div>
           {activeFilters && (
-            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>
+            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setFilterAntiguedad(''); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>
           )}
           <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}>
             <BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas
