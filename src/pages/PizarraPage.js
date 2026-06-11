@@ -460,19 +460,19 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <td style={styles.td}>
           <PropertyAutocomplete
             value={form.propiedad}
-            onChange={v => setForm(p => ({...p, propiedad: v}))}
+            onChange={v => setForm(p => ({...p, propiedad: v.toUpperCase()}))}
             hasError={!!errors.propiedad}
           />
         </td>
         <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} uf={uf} alwaysVisible /></td>
         <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} uf={uf} alwaysVisible /></td>
-        <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
+        <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value.toUpperCase()}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
         <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
         <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e1||''} options={['DD','FD']} onChange={v=>setForm(p=>({...p,e1:v}))} alwaysVisible /></td>
         <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e2||''} options={['EA','FG']} onChange={v=>setForm(p=>({...p,e2:v}))} alwaysVisible /></td>
         <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
-        <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
+        <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value.toUpperCase()}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
         <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><DatePicker value={form.fecha_salida||''} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',background:'#fff'}} /></td>
         <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
         <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
@@ -493,13 +493,13 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={{ ...styles.tdProp }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
           {showAlert && <UrgentDot />}
-          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} />
+          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} />
         </div>
       </td>
       <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} uf={uf} /></td>
       <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} uf={uf} /></td>
       <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
-        <InlineEditCell value={form.status} onChange={v => set('status', v)} />
+        <InlineEditCell value={form.status} onChange={v => set('status', v.toUpperCase())} />
       </td>
       <td style={styles.tdCenter}>
         <InlineSelectCell value={form.destaque} options={['OP']} onChange={v => set('destaque', v)}
@@ -513,7 +513,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       </td>
       <td style={styles.tdCenter}><InlineEditCell value={form.db} onChange={v => set('db', v)} /></td>
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
-      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
+      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v.toUpperCase())} /></td>
       <td style={styles.tdCenter}>
         <DatePicker value={form.fecha_salida || ''} onChange={v => set('fecha_salida', v)}
           style={{ ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}) }} />
