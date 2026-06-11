@@ -14,7 +14,7 @@ import HistoryPanel from '../components/HistoryPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
-const DEFAULT_CATEGORIES = ['Llegada arrendatario', 'Publicar/Arrendar', 'Equipo', 'Solicitudes', 'Misceláneo'];
+const DEFAULT_CATEGORIES = ['Llegada arrendatario', 'Publicar/Arrendar', 'Equipo', 'Solicitudes', 'Misceláneo', 'PAGOS'];
 
 function SortableColumn({ category, isDragging, ...props }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: category });
@@ -114,7 +114,31 @@ export default function TasksPage() {
     return cat?.color || '#37474F';
   };
 
-  const isProtected = (name) => ['Llegada arrendatario','Publicar/Arrendar','Equipo','Solicitudes'].includes(name);
+  const isProtected = (name) => ['Llegada arrendatario','Publicar/Arrendar','Equipo','Solicitudes','PAGOS'].includes(name);
+
+  // Auto-create PAGOS category for DD/FD if missing
+  React.useEffect(() => {
+    if (!profile?.email) return;
+    const isAdmin = ['ddm@renovalpropiedades.com','fdm@renovalpropiedades.com'].includes(profile.email);
+    if (!isAdmin) return;
+    const hasPagos = categories?.some(c => c.name === 'PAGOS');
+    if (hasPagos) return;
+    const insertPagos = async () => {
+      const pos = (categories?.length || 6);
+      const { data } = await supabase.from('task_categories')
+        .insert({ name: 'PAGOS', color: '#C62828', position: pos, is_default: false, user_email: profile.email })
+        .select().single();
+      if (data) {
+        setCategories(prev => [...(prev || []), data]);
+        setColumnOrder(prev => {
+          const next = [...prev, 'PAGOS'];
+          localStorage.setItem(`tasksColumnOrder_${profile.email}`, JSON.stringify(next));
+          return next;
+        });
+      }
+    };
+    insertPagos();
+  }, [profile?.email, categories]);
 
   const handleAddCategory = async () => {
     if (!newCatName.trim()) return;
