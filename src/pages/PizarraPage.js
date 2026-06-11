@@ -5,46 +5,18 @@ import { Plus, Check, X, Home, Trash2 } from 'lucide-react';
 
 // ─── Date picker dd/mm/yyyy ────────────────────────────────────────────────────
 function DatePicker({ value, onChange, style = {}, inputStyle = {} }) {
-  const toparts = (v) => {
-    if (!v) return { d: '', m: '', y: '' };
-    const [yr, mo, dy] = v.split('-');
-    return { d: dy || '', m: mo || '', y: yr || '' };
+  const fmt = (iso) => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
   };
-  const [parts, setParts] = React.useState(() => toparts(value));
-  React.useEffect(() => { setParts(toparts(value)); }, [value]);
-
-  const commit = (d, m, y) => {
-    if (d.length === 2 && m.length === 2 && y.length === 4) {
-      const iso = `${y}-${m}-${d}`;
-      if (!isNaN(new Date(iso))) onChange(iso);
-    } else if (!d && !m && !y) {
-      onChange('');
-    }
-  };
-
-  const handleD = (v) => {
-    const d = v.replace(/\D/g,'').slice(0,2);
-    setParts(p => { const next = {...p, d}; commit(d, p.m, p.y); return next; });
-  };
-  const handleM = (v) => {
-    const m = v.replace(/\D/g,'').slice(0,2);
-    setParts(p => { const next = {...p, m}; commit(p.d, m, p.y); return next; });
-  };
-  const handleY = (v) => {
-    const y = v.replace(/\D/g,'').slice(0,4);
-    setParts(p => { const next = {...p, y}; commit(p.d, p.m, y); return next; });
-  };
-
-  const base = { border: 'none', outline: 'none', background: 'transparent', fontSize: 12, fontFamily: 'inherit', textAlign: 'center', padding: 0, ...inputStyle };
-  const sep = { fontSize: 12, color: '#9aa0a6', userSelect: 'none' };
-
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 1, ...style }}>
-      <input value={parts.d} onChange={e => handleD(e.target.value)} placeholder="dd" style={{ ...base, width: 20 }} maxLength={2} />
-      <span style={sep}>/</span>
-      <input value={parts.m} onChange={e => handleM(e.target.value)} placeholder="mm" style={{ ...base, width: 20 }} maxLength={2} />
-      <span style={sep}>/</span>
-      <input value={parts.y} onChange={e => handleY(e.target.value)} placeholder="aaaa" style={{ ...base, width: 36 }} maxLength={4} />
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', ...style }}>
+      <span style={{ fontSize: 12, fontFamily: 'inherit', color: value ? 'inherit' : '#9aa0a6', userSelect: 'none', whiteSpace: 'nowrap' }}>
+        {value ? fmt(value) : 'dd/mm/aaaa'}
+      </span>
+      <input type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', border: 'none', padding: 0, margin: 0 }} />
     </div>
   );
 }
@@ -538,8 +510,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
       <td style={styles.tdCenter}>
         <DatePicker value={form.fecha_salida || ''} onChange={v => set('fecha_salida', v)}
-          style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}), WebkitAppearance: 'none', MozAppearance: 'none', colorScheme: 'light' }}
-          onClick={e => e.target.showPicker && e.target.showPicker()} />
+          style={{ ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}) }} />
       </td>
       <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
