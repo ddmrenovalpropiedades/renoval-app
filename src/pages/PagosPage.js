@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import PropertyAutocomplete from '../components/PropertyAutocomplete';
 
 const normalize = (str) =>
   String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -372,7 +373,7 @@ function NewPagoRow({ onSave, onCancel }) {
 
   return (
     <tr style={{ background: '#f0f7ff' }}>
-      <td style={s.td}><input value={form.propiedad} onChange={e => set('propiedad', e.target.value)} placeholder="Propiedad *" style={inputStyle} /></td>
+      <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v)} placeholder="Propiedad *" hasError={!form.propiedad.trim() && false} /></td>
       <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value)} placeholder="Descripción" style={inputStyle} /></td>
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
