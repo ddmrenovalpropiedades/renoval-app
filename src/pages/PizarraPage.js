@@ -388,6 +388,34 @@ function InlineSelectCell({ value, options, onChange }) {
   );
 }
 
+// Encargado cell: badge con color + select nativo
+function EncargadoSelectCell({ value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const EC = ENCARGADO_COLORS;
+  const color = EC[value] || '#9aa0a6';
+
+  if (open) {
+    return (
+      <select autoFocus value={value || ''}
+        onChange={e => { onChange(e.target.value); setOpen(false); }}
+        onBlur={() => setOpen(false)}
+        style={{ border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}>
+        <option value="">—</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+  }
+
+  return (
+    <div onClick={() => setOpen(true)} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center' }}>
+      {value
+        ? <span style={{ display: 'inline-block', borderRadius: 20, padding: '2px 9px', fontSize: 11, fontWeight: 700, background: `${color}22`, color, border: `1px solid ${color}44` }}>{value}</span>
+        : <span style={{ color: '#dadce0', fontSize: 12 }}>—</span>
+      }
+    </div>
+  );
+}
+
 // ── Property Row ──────────────────────────────────────────────
 function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
@@ -462,8 +490,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} uf={uf} /></td>
         <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
         <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>DD</option><option>FD</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>EA</option><option>FG</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e1||''} options={['DD','FD']} onChange={v=>setForm(p=>({...p,e1:v}))} /></td>
+        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e2||''} options={['EA','FG']} onChange={v=>setForm(p=>({...p,e2:v}))} /></td>
         <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
@@ -500,10 +528,10 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
           renderValue={v => v ? <span style={destaqueStyle(v)}>{v}</span> : null} />
       </td>
       <td style={styles.tdCenter}>
-        <InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} />
+        <EncargadoSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} />
       </td>
       <td style={styles.tdCenter}>
-        <InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} />
+        <EncargadoSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} />
       </td>
       <td style={styles.tdCenter}><InlineEditCell value={form.db} onChange={v => set('db', v)} /></td>
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
