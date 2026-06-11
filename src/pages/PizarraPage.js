@@ -156,7 +156,7 @@ const EMPTY_FORM = {
 };
 
 // Money input with CLP/UF toggle
-function MoneyInput({ value, onChange, uf, placeholder = '' }) {
+function MoneyInput({ value, onChange, uf, placeholder = '', alwaysVisible = false }) {
   const parsed = parsePrice(value || '');
   const [currency, setCurrency] = useState(parsed.isUF ? 'UF' : 'CLP');
   const [editing, setEditing] = useState(false);
@@ -243,7 +243,7 @@ function MoneyInput({ value, onChange, uf, placeholder = '' }) {
         setRaw(amount ? (isUF ? String(amount) : String(Math.round(amount))) : '');
         setEditing(true);
       }}
-      style={{ cursor: 'text', fontSize: 12, minWidth: 90, padding: '3px 4px', borderRadius: 4, textAlign: 'center' }}>
+      style={{ cursor: 'text', fontSize: 12, minWidth: 90, padding: '3px 6px', borderRadius: 6, textAlign: 'center', border: alwaysVisible ? '1px solid #dadce0' : 'none', background: alwaysVisible ? '#fff' : 'transparent' }}>
       {displayVal
         ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -253,7 +253,7 @@ function MoneyInput({ value, onChange, uf, placeholder = '' }) {
             )}
           </div>
         )
-        : <span style={{ color: '#dadce0' }}>—</span>
+        : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0' }}>{alwaysVisible ? '$—' : '—'}</span>
       }
     </div>
   );
@@ -367,7 +367,7 @@ function InlineSelectCell({ value, options, onChange }) {
 }
 
 // Encargado cell: badge con color + select nativo
-function EncargadoSelectCell({ value, options, onChange }) {
+function EncargadoSelectCell({ value, options, onChange, alwaysVisible = false }) {
   const [open, setOpen] = useState(false);
   const EC = ENCARGADO_COLORS;
   const color = EC[value] || '#9aa0a6';
@@ -385,10 +385,10 @@ function EncargadoSelectCell({ value, options, onChange }) {
   }
 
   return (
-    <div onClick={() => setOpen(true)} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center' }}>
+    <div onClick={() => setOpen(true)} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center', ...(alwaysVisible && !value ? { border: '1px solid #dadce0', borderRadius: 6, padding: '2px 8px', background: '#fff' } : {}) }}>
       {value
         ? <span style={{ display: 'inline-block', borderRadius: 20, padding: '2px 9px', fontSize: 11, fontWeight: 700, background: `${color}22`, color, border: `1px solid ${color}44` }}>{value}</span>
-        : <span style={{ color: '#dadce0', fontSize: 12 }}>—</span>
+        : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0', fontSize: 12 }}>{alwaysVisible ? 'Sel.' : '—'}</span>
       }
     </div>
   );
@@ -464,12 +464,12 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
             hasError={!!errors.propiedad}
           />
         </td>
-        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} uf={uf} /></td>
-        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} uf={uf} /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} uf={uf} alwaysVisible /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} uf={uf} alwaysVisible /></td>
         <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
         <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e1||''} options={['DD','FD']} onChange={v=>setForm(p=>({...p,e1:v}))} /></td>
-        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e2||''} options={['EA','FG']} onChange={v=>setForm(p=>({...p,e2:v}))} /></td>
+        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e1||''} options={['DD','FD']} onChange={v=>setForm(p=>({...p,e1:v}))} alwaysVisible /></td>
+        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e2||''} options={['EA','FG']} onChange={v=>setForm(p=>({...p,e2:v}))} alwaysVisible /></td>
         <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
