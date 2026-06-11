@@ -5,18 +5,24 @@ import { formatLocalDate } from '../hooks/useTasks';
 import AnimatedCheckbox from './AnimatedCheckbox';
 // ─── Date picker dd/mm/yyyy ────────────────────────────────────────────────────
 function DatePicker({ value, onChange, style = {} }) {
+  const ref = React.useRef(null);
   const fmt = (iso) => {
     if (!iso) return '';
     const [y, m, d] = iso.split('-');
     return `${d}/${m}/${y}`;
   };
+  const handleClick = () => {
+    if (ref.current) {
+      try { ref.current.showPicker(); } catch(e) { ref.current.click(); }
+    }
+  };
   return (
-    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', ...style }}>
-      <span style={{ fontSize: 13, fontFamily: 'inherit', color: value ? 'inherit' : '#9aa0a6', pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap' }}>
+    <div onClick={handleClick} style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', ...style }}>
+      <span style={{ fontSize: 13, fontFamily: 'inherit', color: value ? 'inherit' : '#9aa0a6', userSelect: 'none', whiteSpace: 'nowrap' }}>
         {value ? fmt(value) : 'dd/mm/aaaa'}
       </span>
-      <input type="date" value={value || ''} onChange={e => onChange(e.target.value)}
-        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', border: 'none', padding: 0, margin: 0 }} />
+      <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0, border: 'none', padding: 0, margin: 0 }} />
     </div>
   );
 }
