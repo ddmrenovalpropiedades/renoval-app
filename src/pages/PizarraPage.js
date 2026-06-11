@@ -12,7 +12,7 @@ function DatePicker({ value, onChange, style = {}, inputStyle = {} }) {
   };
   return (
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', ...style }}>
-      <span style={{ fontSize: 12, fontFamily: 'inherit', color: value ? 'inherit' : '#9aa0a6', userSelect: 'none', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 12, fontFamily: 'inherit', color: value ? 'inherit' : '#9aa0a6', pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap' }}>
         {value ? fmt(value) : 'dd/mm/aaaa'}
       </span>
       <input type="date" value={value || ''} onChange={e => onChange(e.target.value)}
