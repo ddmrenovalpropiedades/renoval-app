@@ -177,34 +177,106 @@ const EMPTY_FORM = {
   fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
 };
 
-// Money input with cursor after $ and live thousands formatting
-function MoneyInput({ value, onChange, placeholder = '' }) {
+// Money input with CLP/UF toggle
+function MoneyInput({ value, onChange, uf, placeholder = '' }) {
+  const parsed = parsePrice(value || '');
+  const [currency, setCurrency] = useState(parsed.isUF ? 'UF' : 'CLP');
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
+
+  // Sync currency when value changes from outside (e.g. initial load)
+  React.useEffect(() => {
+    const p = parsePrice(value || '');
+    setCurrency(p.isUF ? 'UF' : 'CLP');
+  }, [value]);
+
   const { amount, isUF } = parsePrice(value || '');
-  const displayVal = value ? (isUF ? `${amount} UF` : (amount ? formatCLP(amount) : value)) : '';
+
+  const displayVal = value
+    ? (isUF ? `${amount} UF` : (amount ? formatCLP(amount) : value))
+    : '';
+
+  const clpEquiv = isUF && amount && uf
+    ? formatCLP(amount * uf)
+    : null;
+
+  const handleCurrencyChange = (newCurrency) => {
+    setCurrency(newCurrency);
+    // Clear the stored value when switching currency
+    onChange('');
+  };
 
   const handleChange = (e) => {
     const digits = e.target.value.replace(/[^0-9]/g, '');
     setRaw(digits);
   };
 
+  const handleUFChange = (e) => {
+    // Allow digits and one decimal
+    const v = e.target.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+    setRaw(v);
+  };
+
+  const commitEdit = () => {
+    setEditing(false);
+    if (!raw) { onChange(''); return; }
+    if (currency === 'UF') {
+      onChange(`${raw} UF`);
+    } else {
+      onChange(raw);
+    }
+  };
+
   if (editing) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', minWidth: 80 }}>
-        <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2, flexShrink: 0 }}>$</span>
-        <input autoFocus value={raw ? parseInt(raw).toLocaleString('es-CL') : ''}
-          onChange={handleChange}
-          onBlur={() => { setEditing(false); onChange(raw || ''); }}
-          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-          style={{ border: 'none', outline: 'none', width: 90, fontSize: 12, fontFamily: 'inherit' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 110 }}>
+        {/* Currency toggle */}
+        <div style={{ display: 'flex', borderRadius: 5, overflow: 'hidden', border: '1px solid #dadce0', width: 'fit-content', alignSelf: 'center' }}>
+          {['CLP', 'UF'].map(c => (
+            <button key={c} type="button"
+              onMouseDown={e => { e.preventDefault(); handleCurrencyChange(c); }}
+              style={{
+                padding: '2px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                border: 'none', fontFamily: 'inherit',
+                background: currency === c ? '#1a73e8' : '#f1f3f4',
+                color: currency === c ? '#fff' : '#5f6368',
+              }}>{c}</button>
+          ))}
+        </div>
+        {/* Value input */}
+        <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff' }}>
+          {currency === 'CLP' && <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2, flexShrink: 0 }}>$</span>}
+          <input autoFocus
+            value={currency === 'CLP' ? (raw ? parseInt(raw || '0').toLocaleString('es-CL') : '') : raw}
+            onChange={currency === 'CLP' ? handleChange : handleUFChange}
+            onBlur={commitEdit}
+            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+            style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }}
+            placeholder={currency === 'UF' ? '0.00' : '0'} />
+          {currency === 'UF' && <span style={{ fontSize: 11, color: '#9aa0a6', marginLeft: 2, flexShrink: 0 }}>UF</span>}
+        </div>
       </div>
     );
   }
+
   return (
-    <div onClick={() => { setRaw(amount ? String(Math.round(amount)) : ''); setEditing(true); }}
-      style={{ cursor: 'text', fontSize: 12, minWidth: 70, padding: '3px 4px', borderRadius: 4 }}>
-      {displayVal || <span style={{ color: '#dadce0' }}>—</span>}
+    <div
+      onClick={() => {
+        setRaw(amount ? (isUF ? String(amount) : String(Math.round(amount))) : '');
+        setEditing(true);
+      }}
+      style={{ cursor: 'text', fontSize: 12, minWidth: 90, padding: '3px 4px', borderRadius: 4, textAlign: 'center' }}>
+      {displayVal
+        ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <span>{displayVal}</span>
+            {clpEquiv && (
+              <span style={{ fontSize: 10, color: '#5f6368', fontStyle: 'italic' }}>{clpEquiv}</span>
+            )}
+          </div>
+        )
+        : <span style={{ color: '#dadce0' }}>—</span>
+      }
     </div>
   );
 }
@@ -386,8 +458,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
             hasError={!!errors.propiedad}
           />
         </td>
-        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} /></td>
-        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} uf={uf} /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} uf={uf} /></td>
         <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
         <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
         <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>DD</option><option>FD</option></select></td>
@@ -418,8 +490,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
           <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} />
         </div>
       </td>
-      <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} /></td>
-      <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} /></td>
+      <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} uf={uf} /></td>
+      <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} uf={uf} /></td>
       <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
         <InlineEditCell value={form.status} onChange={v => set('status', v)} />
       </td>
