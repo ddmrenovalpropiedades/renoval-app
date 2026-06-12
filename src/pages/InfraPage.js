@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { ExternalLink, RefreshCw, Save, Plus, Trash2 } from 'lucide-react';
+import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
 
 // ── Límites del plan gratuito ─────────────────────────────────
 const LIMITS = {
