@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Shield, User, Ban, CheckCircle, RefreshCw,
   ChevronRight, X, Plus, Trash2, Briefcase,
-  Umbrella, AlertCircle, FileText, Calendar
+  Umbrella, AlertCircle
 } from 'lucide-react';
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -71,7 +71,6 @@ function Section({ icon: Icon, title, color, children, defaultOpen = false }) {
 function WorkerPanel({ user, onClose }) {
   const email = user.email;
   const initials = getUserInitials(email);
-  const role = getUserRole(email);
   const color = ENCARGADO_COLORS[initials] || '#5f6368';
 
   const [worker, setWorker] = useState(null);
