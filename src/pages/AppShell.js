@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutGrid, CheckSquare, DollarSign, FileText,
-  Zap, Users, LogOut, Building2
+  Zap, Users, LogOut, Building2, Activity
 } from 'lucide-react';
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
@@ -12,6 +12,7 @@ import ArrendadasPage from './ArrendadasPage';
 import ContratosPage from './ContratosPage';
 import SaldosPage from './SaldosPage';
 import PagosPage from './PagosPage';
+import InfraPage from './InfraPage';
 
 const NAV_TOP = [
   { id: 'pizarra',    label: 'Pizarra',                icon: LayoutGrid,  ownerOnly: false },
@@ -25,6 +26,7 @@ const NAV_BOTTOM = [
   { id: 'cartera',    label: 'Cartera',                  icon: Building2,   ownerOnly: false },
   { id: 'pagos',      label: 'Pagos',                   icon: DollarSign,  ownerOnly: true  },
   { id: 'usuarios',   label: 'Usuarios',                 icon: Users,       ownerOnly: true  },
+  { id: 'infra',      label: 'Infraestructura',          icon: Activity,    ownerOnly: true  },
 ];
 
 function NavButton({ item, active, collapsed, onClick }) {
@@ -152,6 +154,7 @@ function ModuleRenderer({ module, profile }) {
     case 'tareas':     return <TasksPage />;
     case 'pagos':      return <PagosPage />;
     case 'usuarios':   return <UserManagement />;
+    case 'infra':      return <InfraPage />;
     default:           return <ComingSoon module={module} />;
   }
 }
