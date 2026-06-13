@@ -29,6 +29,7 @@ async function sendTextMessage(to, text) {
     }
   );
   const data = await res.json();
+  console.log('META sendTextMessage RESPONSE:', JSON.stringify(data));
   return data?.messages?.[0]?.id ?? null;
 }
 
@@ -63,6 +64,7 @@ async function sendMenuMessage(to) {
     }
   );
   const data = await res.json();
+  console.log('META sendMenuMessage RESPONSE:', JSON.stringify(data));
   return data?.messages?.[0]?.id ?? null;
 }
 
@@ -168,6 +170,8 @@ module.exports = async function handler(req, res) {
       const wamid       = message.id;
       const contactName = value?.contacts?.[0]?.profile?.name || null;
 
+      console.log('INBOUND from:', from, 'type:', message.type, 'wamid:', wamid);
+
       // Obtener o crear conversación
       const conversacion = await getOrCreateConversacion(from, contactName);
       const convId       = conversacion.id;
@@ -184,6 +188,8 @@ module.exports = async function handler(req, res) {
         selectedOption = reply?.id;
         inboundText    = reply?.title || '';
       }
+
+      console.log('selectedOption:', selectedOption, 'estado:', conversacion.estado);
 
       // Guardar mensaje entrante
       await saveMessage({
