@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
-  LayoutGrid, CheckSquare, DollarSign, FileText,
+  LayoutGrid, CheckSquare, FileText,
   Zap, Users, LogOut, ChevronLeft, ChevronRight,
   Building2, MessageCircle, CreditCard
 } from 'lucide-react';
