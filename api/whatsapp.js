@@ -54,9 +54,9 @@ async function sendMenuMessage(to) {
           },
           action: {
             buttons: [
-              { type: 'reply', reply: { id: 'AGENDAR_VISITA',   title: '📅 Agendar visita'      } },
-              { type: 'reply', reply: { id: 'MAS_INFORMACION',  title: 'ℹ️ Más información'     } },
-              { type: 'reply', reply: { id: 'HABLAR_EJECUTIVO', title: '👤 Hablar con ejecutivo' } },
+              { type: 'reply', reply: { id: 'AGENDAR_VISITA',   title: 'Agendar visita'    } },
+              { type: 'reply', reply: { id: 'MAS_INFORMACION',  title: 'Más información'   } },
+              { type: 'reply', reply: { id: 'HABLAR_EJECUTIVO', title: 'Hablar ejecutivo'  } },
             ],
           },
         },
