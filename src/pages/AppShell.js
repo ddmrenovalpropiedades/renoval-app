@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutGrid, CheckSquare, DollarSign, FileText,
   Zap, Users, LogOut, ChevronLeft, ChevronRight,
-  Building2, MessageCircle
+  Building2, MessageCircle, CreditCard
 } from 'lucide-react';
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
@@ -12,18 +12,19 @@ import PizarraPage from './PizarraPage';
 import ArrendadasPage from './ArrendadasPage';
 import ContratosPage from './ContratosPage';
 import SaldosPage from './SaldosPage';
+import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
 
 const NAV_ITEMS = [
-  { id: 'cartera',    label: 'Cartera',                 icon: Building2,      ownerOnly: false },
-  { id: 'pizarra',    label: 'Pizarra',                 icon: LayoutGrid,     ownerOnly: false },
-  { id: 'arrendadas', label: 'Propiedades Arrendadas',  icon: Building2,      ownerOnly: false },
-  { id: 'tareas',     label: 'Tareas Pendientes',       icon: CheckSquare,    ownerOnly: false },
-  { id: 'cuentas',    label: 'Cuentas por Cobrar',      icon: DollarSign,     ownerOnly: true  },
-  { id: 'servicios',  label: 'Saldos',                  icon: Zap,            ownerOnly: false },
-  { id: 'mensajes',   label: 'Mensajes',                icon: MessageCircle,  ownerOnly: false },
-  { id: 'contratos',  label: 'Contratos',               icon: FileText,       ownerOnly: false },
-  { id: 'usuarios',   label: 'Usuarios',                icon: Users,          ownerOnly: true  },
+  { id: 'cartera',    label: 'Cartera',                icon: Building2,     ownerOnly: false },
+  { id: 'pizarra',    label: 'Pizarra',                icon: LayoutGrid,    ownerOnly: false },
+  { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,     ownerOnly: false },
+  { id: 'tareas',     label: 'Tareas Pendientes',      icon: CheckSquare,   ownerOnly: false },
+  { id: 'pagos',      label: 'Pagos',                  icon: CreditCard,    ownerOnly: true  },
+  { id: 'servicios',  label: 'Saldos',                 icon: Zap,           ownerOnly: false },
+  { id: 'mensajes',   label: 'Mensajes',               icon: MessageCircle, ownerOnly: false },
+  { id: 'contratos',  label: 'Contratos',              icon: FileText,      ownerOnly: false },
+  { id: 'usuarios',   label: 'Usuarios',               icon: Users,         ownerOnly: true  },
 ];
 
 export default function AppShell() {
@@ -32,6 +33,8 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
 
   const visibleNav = NAV_ITEMS.filter(item => !item.ownerOnly || profile?.isOwner);
+
+  const fullWidth = activeModule === 'mensajes';
 
   return (
     <div style={styles.root}>
@@ -95,8 +98,8 @@ export default function AppShell() {
       {/* Main content */}
       <main style={{
         ...styles.main,
-        padding: activeModule === 'mensajes' ? 0 : 32,
-        overflow: activeModule === 'mensajes' ? 'hidden' : 'auto',
+        padding: fullWidth ? 0 : 32,
+        overflow: fullWidth ? 'hidden' : 'auto',
       }}>
         <ModuleRenderer module={activeModule} profile={profile} />
       </main>
@@ -118,6 +121,8 @@ function ModuleRenderer({ module, profile }) {
       return <SaldosPage />;
     case 'tareas':
       return <TasksPage />;
+    case 'pagos':
+      return <PagosPage />;
     case 'mensajes':
       return <MensajesPage currentUser={profile} />;
     case 'usuarios':
@@ -129,16 +134,16 @@ function ModuleRenderer({ module, profile }) {
 
 function ComingSoon({ module }) {
   const labels = {
-    pizarra: 'Pizarra',
+    pizarra:    'Pizarra',
     arrendadas: 'Propiedades Arrendadas',
-    tareas: 'Tareas Pendientes',
-    cuentas: 'Cuentas por Cobrar',
-    servicios: 'Servicios y Gastos',
+    tareas:     'Tareas Pendientes',
+    pagos:      'Pagos',
+    servicios:  'Saldos',
   };
   return (
     <div style={styles.comingSoon}>
       <div style={styles.comingSoonIcon}>🚧</div>
-      <h2 style={styles.comingSoonTitle}>{labels[module]}</h2>
+      <h2 style={styles.comingSoonTitle}>{labels[module] || module}</h2>
       <p style={styles.comingSoonText}>Este módulo está en construcción.</p>
     </div>
   );
