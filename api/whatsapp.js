@@ -1,5 +1,5 @@
 // api/whatsapp.js
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -130,7 +130,7 @@ async function updateEstadoConversacion(conversacionId, estado) {
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
 
   // Verificación del webhook (GET)
   if (req.method === 'GET') {
@@ -285,4 +285,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(405).end();
-}
+};
