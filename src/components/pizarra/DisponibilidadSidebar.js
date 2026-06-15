@@ -197,7 +197,7 @@ export default function DisponibilidadSidebar({ row, currentUser, onClose }) {
               ) : (
                 <div style={styles.resumenList}>
                   {bloquesResumen.map((b, i) => {
-                    const [y, m, d] = b.fecha.split('-');
+                    const [, m, d] = b.fecha.split('-');
                     return (
                       <div key={i} style={styles.resumenItem}>
                         {d}/{m} · {b.inicio} - {b.fin}
