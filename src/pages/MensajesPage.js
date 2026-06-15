@@ -12,6 +12,7 @@ export default function MensajesPage({ currentUser }) {
     loadingMensajes,
     filtroEstado,
     setFiltroEstado,
+    sendError,
     selectConversacion,
     enviarMensaje,
     cerrarConversacion,
@@ -40,6 +41,7 @@ export default function MensajesPage({ currentUser }) {
           conversacion={selectedConv}
           mensajes={mensajes}
           loading={loadingMensajes}
+          sendError={sendError}
           onEnviar={enviarMensaje}
           onTomar={tomarConversacion}
           onCerrar={cerrarConversacion}
