@@ -15,16 +15,19 @@ import SaldosPage from './SaldosPage';
 import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
 
-const NAV_ITEMS = [
+const NAV_ITEMS_TOP = [
   { id: 'mensajes',   label: 'Mensajes',               icon: MessageCircle, ownerOnly: false },
   { id: 'pizarra',    label: 'Pizarra',                icon: LayoutGrid,    ownerOnly: false },
   { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,     ownerOnly: false },
   { id: 'servicios',  label: 'Saldos',                 icon: Zap,           ownerOnly: false },
   { id: 'contratos',  label: 'Contratos',              icon: FileText,      ownerOnly: false },
   { id: 'tareas',     label: 'Tareas Pendientes',      icon: CheckSquare,   ownerOnly: false },
-  { id: 'pagos',      label: 'Pagos',                  icon: CreditCard,    ownerOnly: true  },
-  { id: 'cartera',    label: 'Cartera',                icon: Building2,     ownerOnly: false },
-  { id: 'usuarios',   label: 'Usuarios',               icon: Users,         ownerOnly: true  },
+];
+
+const NAV_ITEMS_BOTTOM = [
+  { id: 'pagos',      label: 'Pagos',    icon: CreditCard, ownerOnly: true },
+  { id: 'cartera',    label: 'Cartera',  icon: Building2,  ownerOnly: false },
+  { id: 'usuarios',   label: 'Usuarios', icon: Users,      ownerOnly: true },
 ];
 
 export default function AppShell() {
@@ -32,7 +35,8 @@ export default function AppShell() {
   const [activeModule, setActiveModule] = useState('pizarra');
   const [collapsed, setCollapsed] = useState(false);
 
-  const visibleNav = NAV_ITEMS.filter(item => !item.ownerOnly || profile?.isOwner);
+  const visibleNavTop    = NAV_ITEMS_TOP.filter(item => !item.ownerOnly || profile?.isOwner);
+  const visibleNavBottom = NAV_ITEMS_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner);
 
   const fullWidth = activeModule === 'mensajes';
 
@@ -51,7 +55,35 @@ export default function AppShell() {
 
         {/* Nav */}
         <nav style={styles.nav}>
-          {visibleNav.map(item => {
+          {visibleNavTop.map(item => {
+            const Icon = item.icon;
+            const active = activeModule === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveModule(item.id)}
+                style={{
+                  ...styles.navItem,
+                  ...(active ? styles.navItemActive : {}),
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                }}
+                title={collapsed ? item.label : ''}
+              >
+                <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : '#5f6368' }} />
+                {!collapsed && (
+                  <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : '#3c4043' }}>
+                    {item.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {/* Espaciador + separador para el grupo inferior */}
+          <div style={styles.navSpacer} />
+          <div style={styles.navDivider} />
+
+          {visibleNavBottom.map(item => {
             const Icon = item.icon;
             const active = activeModule === item.id;
             return (
@@ -210,6 +242,13 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: 2,
+  },
+  navSpacer: {
+    flex: 1,
+  },
+  navDivider: {
+    borderTop: '1px solid #e8eaed',
+    margin: '8px 4px',
   },
   navItem: {
     display: 'flex',
