@@ -15,10 +15,7 @@ const useUFValue = () => {
     const d = String(today.getDate()).padStart(2, '0');
     fetch(`https://mindicador.cl/api/uf/${d}-${m}-${y}`)
       .then(r => r.json())
-      .then(data => {
-        const val = data?.serie?.[0]?.valor;
-        if (val) setUf(val);
-      })
+      .then(data => { const val = data?.serie?.[0]?.valor; if (val) setUf(val); })
       .catch(() => {});
   }, []);
   return uf;
@@ -32,13 +29,11 @@ const daysDiff = (dateStr) => {
   return Math.floor((new Date() - date) / (1000 * 60 * 60 * 24));
 };
 
-
 const formatCLP = (n) => {
   if (!n && n !== 0) return '';
   return '$' + Math.round(n).toLocaleString('es-CL');
 };
 
-// Parse price: handles "$390.000", "390000", "30 UF", "UF 30"
 const parsePrice = (val) => {
   if (!val) return { amount: null, isUF: false };
   const str = String(val).trim();
@@ -52,6 +47,7 @@ const parsePrice = (val) => {
 };
 
 const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
+
 const UrgentDot = () => (
   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#ea4335', color: '#fff', fontSize: 10, fontWeight: 900, flexShrink: 0, marginRight: 4 }}>!</span>
 );
@@ -67,11 +63,8 @@ const EMPTY_FORM = {
   url_publicacion: '',
 };
 
-
-
-
-// Money input with cursor after $ and live thousands formatting
-function MoneyInput({ value, onChange, placeholder = '' }) {
+// ── MoneyInput ────────────────────────────────────────────────
+function MoneyInput({ value, onChange }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
   const { amount, isUF } = parsePrice(value || '');
@@ -102,8 +95,7 @@ function MoneyInput({ value, onChange, placeholder = '' }) {
   );
 }
 
-
-// ── Rent Modal ────────────────────────────────────────────────
+// ── RentModal ─────────────────────────────────────────────────
 function RentModal({ row, onConfirm, onCancel }) {
   const [comision, setComision] = useState('');
   const [entrega, setEntrega] = useState('');
@@ -179,8 +171,7 @@ const rentStyles = {
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
-
-// Inline editable text cell
+// ── InlineEditCell ─────────────────────────────────────────────
 function InlineEditCell({ value, onChange, placeholder = '' }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState(value || '');
@@ -201,7 +192,7 @@ function InlineEditCell({ value, onChange, placeholder = '' }) {
   );
 }
 
-// Inline select cell
+// ── InlineSelectCell ───────────────────────────────────────────
 function InlineSelectCell({ value, options, onChange }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}
@@ -212,15 +203,19 @@ function InlineSelectCell({ value, options, onChange }) {
   );
 }
 
-// ── Property Row ──────────────────────────────────────────────
+// ── PropertyRow ───────────────────────────────────────────────
 function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf, currentUser, onOpenUrlModal, onOpenDisponibilidad }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [errors, setErrors] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Sincronizar form cuando row cambia desde el padre (fix badge URL + Realtime)
+  useEffect(() => {
+    setForm(prev => ({ ...prev, ...row }));
+  }, [row]);
+
   const set = (k, v) => {
-    const updated = { ...form, [k]: v };
-    setForm(updated);
+    setForm(prev => ({ ...prev, [k]: v }));
     if (!isNew) saveField(k, v);
   };
 
@@ -293,9 +288,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
         <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
         <td style={{...styles.tdCenter,...(errors.admin?{background:'#fce8e6'}:{})}}><select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Sí</option><option>No</option></select></td>
-        <td style={styles.tdCenter}>
-          <span style={{ color: '#dadce0', fontSize: 11 }}>—</span>
-        </td>
+        <td style={styles.tdCenter}><span style={{ color: '#dadce0', fontSize: 11 }}>—</span></td>
         <td style={styles.tdActions}>
           <button onClick={handleNewSave} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
           <button onClick={() => { if(onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
@@ -323,12 +316,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
         <InlineSelectCell value={form.destaque} options={['OP']} onChange={v => set('destaque', v)}
           renderValue={v => v ? <span style={destaqueStyle(v)}>{v}</span> : null} />
       </td>
-      <td style={styles.tdCenter}>
-        <InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} />
-      </td>
-      <td style={styles.tdCenter}>
-        <InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} />
-      </td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} /></td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} /></td>
       <td style={styles.tdCenter}><InlineEditCell value={form.db} onChange={v => set('db', v)} /></td>
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
@@ -339,21 +328,13 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       </td>
       <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
-      <td style={styles.tdCenter}>
-        <InlineSelectCell value={form.tipo} options={['Nuevo','Renovación']} onChange={v => set('tipo', v)} />
-      </td>
-      <td style={styles.tdCenter}>
-        <InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => set('admin', v)} />
-      </td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.tipo} options={['Nuevo','Renovación']} onChange={v => set('tipo', v)} /></td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => set('admin', v)} /></td>
       <td style={styles.tdCenter}>
         <button
           onClick={() => onOpenUrlModal(row)}
-          style={{
-            ...styles.urlBtn,
-            ...(form.url_publicacion ? styles.urlBtnActive : styles.urlBtnInactive),
-          }}
-          title={form.url_publicacion ? 'URL cargada — click para ver/editar' : 'Sin URL — click para agregar'}
-        >
+          style={{ ...styles.urlBtn, ...(form.url_publicacion ? styles.urlBtnActive : styles.urlBtnInactive) }}
+          title={form.url_publicacion ? 'URL cargada — click para editar' : 'Sin URL — click para agregar'}>
           <Link2 size={13} />
         </button>
       </td>
@@ -372,7 +353,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     </tr>
   );
 }
-
 
 // ── Main page ─────────────────────────────────────────────────
 const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
@@ -399,6 +379,23 @@ export default function PizarraPage() {
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
+  // ── Realtime ──────────────────────────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('pizarra_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pizarra' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setRows(prev => [payload.new, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
+        } else if (payload.eventType === 'DELETE') {
+          setRows(prev => prev.filter(r => r.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
+
   const filtered = useMemo(() => {
     if (!filterE.length) return rows;
     return rows.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
@@ -406,26 +403,21 @@ export default function PizarraPage() {
 
   const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
 
-  // Totals
   const totals = useMemo(() => {
     let totalCLP = 0;
     let opCount = 0;
     filtered.forEach(r => {
       if (r.destaque === 'OP') opCount++;
       const { amount, isUF } = parsePrice(r.precio);
-      if (amount) {
-        totalCLP += isUF && uf ? amount * uf : isUF ? 0 : amount;
-      }
+      if (amount) totalCLP += isUF && uf ? amount * uf : isUF ? 0 : amount;
     });
     return { totalCLP, opCount };
   }, [filtered, uf]);
 
   const handleSave = async (form) => {
-    // For inline edits: update local state only (field already saved to DB)
     if (form.id) {
       setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...form } : r));
     } else {
-      // New row insert
       const payload = {
         propiedad: form.propiedad.trim(),
         precio: form.precio || null, promo: form.promo || null,
@@ -456,8 +448,6 @@ export default function PizarraPage() {
   const handleRentedConfirm = async ({ comision, entrega, meses }) => {
     const row = rentingRow;
     setRentingRow(null);
-
-    // Calculate fecha_gar = fecha_salida + 60 days (parse safely to avoid timezone shifts)
     let fechaGar = null;
     if (row.fecha_salida) {
       const parts = String(row.fecha_salida).split('T')[0].split('-');
@@ -465,35 +455,16 @@ export default function PizarraPage() {
       d.setDate(d.getDate() + 60);
       fechaGar = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
-
-    // Get current month
     const now = new Date();
     const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-    // Ensure month exists
     await supabase.from('arrendadas_meses').upsert({ mes }, { onConflict: 'mes' });
-
-    // Insert into arrendadas
     await supabase.from('arrendadas').insert({
-      mes,
-      propiedad: row.propiedad,
-      arriendo: row.precio,
-      comision,
-      tipo: row.tipo,
-      admin: row.admin,
-      e1: row.e1,
-      e2: row.e2,
-      entrega: entrega || null,
-      contrato: 'Pendiente',
-      liquidacion: 'Pendiente',
-      fecha_gar: fechaGar,
-      dev_gar: 'Pendiente',
-      cuentas: 'Pendiente',
-      promocion: row.promo || null,
-      meses: meses || null,
+      mes, propiedad: row.propiedad, arriendo: row.precio, comision,
+      tipo: row.tipo, admin: row.admin, e1: row.e1, e2: row.e2,
+      entrega: entrega || null, contrato: 'Pendiente', liquidacion: 'Pendiente',
+      fecha_gar: fechaGar, dev_gar: 'Pendiente', cuentas: 'Pendiente',
+      promocion: row.promo || null, meses: meses || null,
     });
-
-    // Remove from pizarra
     await supabase.from('pizarra').delete().eq('id', row.id);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
@@ -504,7 +475,6 @@ export default function PizarraPage() {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Pizarra</h1>
@@ -514,7 +484,6 @@ export default function PizarraPage() {
           </div>
         </div>
         <div style={styles.headerRight}>
-          {/* Encargado filters */}
           <div style={styles.filters}>
             {ENCARGADOS_ALL.map(e => (
               <button key={e} onClick={() => toggleFilter(e)} style={{
@@ -530,7 +499,6 @@ export default function PizarraPage() {
         </div>
       </div>
 
-      {/* Table */}
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loading}>Cargando pizarra...</div>
@@ -539,10 +507,7 @@ export default function PizarraPage() {
             <thead>
               <tr>
                 {HEADERS.map((h, i) => (
-                  <th key={i} style={{
-                    ...styles.th,
-                    textAlign: h === 'PROPIEDAD' ? 'left' : 'center'
-                  }}>{h}</th>
+                  <th key={i} style={{ ...styles.th, textAlign: h === 'PROPIEDAD' ? 'left' : 'center' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -568,44 +533,19 @@ export default function PizarraPage() {
         )}
       </div>
 
-      {/* Totals row */}
       <div style={styles.totalsRow}>
         <span style={styles.totalsLabel}>TOTAL</span>
         <span style={styles.totalsItem}>
           Total por colocar: <strong>{formatCLP(totals.totalCLP)}</strong>
           {!uf && totals.totalCLP === 0 && <span style={styles.ufNote}> (valores en UF excluidos — cargando UF...)</span>}
         </span>
-        <span style={styles.totalsItem}>
-          OP: <strong style={{ color: '#FF8C00' }}>{totals.opCount}</strong>
-        </span>
-        <span style={styles.totalsItem}>
-          Propiedades: <strong>{filtered.length}</strong>
-        </span>
+        <span style={styles.totalsItem}>OP: <strong style={{ color: '#FF8C00' }}>{totals.opCount}</strong></span>
+        <span style={styles.totalsItem}>Propiedades: <strong>{filtered.length}</strong></span>
       </div>
 
-      {rentingRow && (
-        <RentModal
-          row={rentingRow}
-          onConfirm={handleRentedConfirm}
-          onCancel={() => setRentingRow(null)}
-        />
-      )}
-
-      {urlModalRow && (
-        <UrlPublicacionModal
-          row={urlModalRow}
-          onSave={handleSaveUrl}
-          onClose={() => setUrlModalRow(null)}
-        />
-      )}
-
-      {disponibilidadRow && (
-        <DisponibilidadSidebar
-          row={disponibilidadRow}
-          currentUser={profile}
-          onClose={() => setDisponibilidadRow(null)}
-        />
-      )}
+      {rentingRow && <RentModal row={rentingRow} onConfirm={handleRentedConfirm} onCancel={() => setRentingRow(null)} />}
+      {urlModalRow && <UrlPublicacionModal row={urlModalRow} onSave={handleSaveUrl} onClose={() => setUrlModalRow(null)} />}
+      {disponibilidadRow && <DisponibilidadSidebar row={disponibilidadRow} currentUser={profile} onClose={() => setDisponibilidadRow(null)} />}
     </div>
   );
 }
@@ -630,18 +570,18 @@ const styles = {
   tdProp: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left' },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle' },
   tdActions: { padding: '4px 6px', borderBottom: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' },
-  actionBtnGray:  { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
-  actionBtnGreen: { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#34a853' },
-  actionBtnBlue:  { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#1a73e8' },
-  actionBtnPurple:{ background: '#f3e8fd', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#9334e6' },
-  actionBtnRed:   { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
-  urlBtn: { border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, display: 'inline-flex' },
-  urlBtnActive: { background: '#e6f4ea', color: '#34a853' },
-  urlBtnInactive: { background: '#f1f3f4', color: '#9aa0a6' },
-  empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
-  loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
-  totalsRow: { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
+  actionBtnGray:   { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
+  actionBtnGreen:  { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#34a853' },
+  actionBtnBlue:   { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#1a73e8' },
+  actionBtnPurple: { background: '#f3e8fd', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#9334e6' },
+  actionBtnRed:    { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
+  urlBtn:          { border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, display: 'inline-flex' },
+  urlBtnActive:    { background: '#e6f4ea', color: '#34a853' },
+  urlBtnInactive:  { background: '#f1f3f4', color: '#9aa0a6' },
+  empty:    { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  loading:  { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  totalsRow:   { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
   totalsLabel: { fontSize: 14, fontWeight: 700, color: '#5f6368', letterSpacing: 0.8 },
-  totalsItem: { fontSize: 17, color: '#3c4043' },
-  ufNote: { fontSize: 11, color: '#9aa0a6', fontStyle: 'italic' },
+  totalsItem:  { fontSize: 17, color: '#3c4043' },
+  ufNote:      { fontSize: 11, color: '#9aa0a6', fontStyle: 'italic' },
 };
