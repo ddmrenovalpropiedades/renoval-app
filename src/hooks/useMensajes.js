@@ -8,6 +8,7 @@ export function useMensajes(currentUser) {
   const [loading, setLoading]               = useState(true);
   const [loadingMensajes, setLoadingMensajes] = useState(false);
   const [filtroEstado, setFiltroEstado]     = useState('todas');
+  const [sendError, setSendError]           = useState(null);
 
   const isAdmin = currentUser?.isOwner === true;
 
@@ -16,7 +17,7 @@ export function useMensajes(currentUser) {
     setLoading(true);
     let query = supabase
       .from('wa_conversaciones')
-      .select('*, wa_mensajes(message_text, created_at, direction)')
+      .select('*, app_users(full_name), wa_mensajes(message_text, created_at, direction)')
       .order('updated_at', { ascending: false });
 
     if (!isAdmin && currentUser?.id) {
@@ -36,7 +37,20 @@ export function useMensajes(currentUser) {
     fetchConversaciones();
   }, [fetchConversaciones]);
 
-  // ── Realtime ───────────────────────────────────────────────────────────────
+  // ── Cargar hilo de mensajes ────────────────────────────────────────────────
+  const fetchMensajes = useCallback(async (id) => {
+    if (!id) return;
+    setLoadingMensajes(true);
+    const { data } = await supabase
+      .from('wa_mensajes')
+      .select('*')
+      .eq('conversacion_id', id)
+      .order('created_at', { ascending: true });
+    setMensajes(data || []);
+    setLoadingMensajes(false);
+  }, []);
+
+  // ── Realtime: nuevos mensajes y cambios de estado ─────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel('wa_cambios')
@@ -63,37 +77,48 @@ export function useMensajes(currentUser) {
     return () => supabase.removeChannel(channel);
   }, [selectedId, fetchConversaciones]);
 
-  // ── Cargar hilo ────────────────────────────────────────────────────────────
   const selectConversacion = useCallback(async (id) => {
     setSelectedId(id);
-    setLoadingMensajes(true);
-    const { data } = await supabase
-      .from('wa_mensajes')
-      .select('*')
-      .eq('conversacion_id', id)
-      .order('created_at', { ascending: true });
-    setMensajes(data || []);
-    setLoadingMensajes(false);
-  }, []);
+    setSendError(null);
+    await fetchMensajes(id);
+  }, [fetchMensajes]);
 
   // ── Enviar mensaje ─────────────────────────────────────────────────────────
   const enviarMensaje = useCallback(async (texto) => {
     const conv = conversaciones.find(c => c.id === selectedId);
-    if (!conv) return;
+    if (!conv) return false;
 
-    const res = await fetch('/api/send-whatsapp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversacion_id: selectedId,
-        to:              conv.phone_number,
-        text:            texto,
-        agent_id:        currentUser?.id,
-      }),
-    });
+    setSendError(null);
 
-    return res.ok;
-  }, [selectedId, conversaciones, currentUser?.id]);
+    try {
+      const res = await fetch('/api/send-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversacion_id: selectedId,
+          to:              conv.phone_number,
+          text:            texto,
+          agent_id:        currentUser?.id,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setSendError(data?.error || `Error al enviar (status ${res.status})`);
+        return false;
+      }
+
+      // Refrescar hilo y lista directamente (no depender solo de Realtime)
+      await fetchMensajes(selectedId);
+      await fetchConversaciones();
+      return true;
+
+    } catch (err) {
+      setSendError(err.message || 'Error de red al enviar');
+      return false;
+    }
+  }, [selectedId, conversaciones, currentUser?.id, fetchMensajes, fetchConversaciones]);
 
   // ── Cerrar conversación ────────────────────────────────────────────────────
   const cerrarConversacion = useCallback(async () => {
@@ -121,6 +146,7 @@ export function useMensajes(currentUser) {
     loadingMensajes,
     filtroEstado,
     setFiltroEstado,
+    sendError,
     selectConversacion,
     enviarMensaje,
     cerrarConversacion,
