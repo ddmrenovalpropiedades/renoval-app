@@ -16,14 +16,14 @@ import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
 
 const NAV_ITEMS = [
-  { id: 'cartera',    label: 'Cartera',                icon: Building2,     ownerOnly: false },
+  { id: 'mensajes',   label: 'Mensajes',               icon: MessageCircle, ownerOnly: false },
   { id: 'pizarra',    label: 'Pizarra',                icon: LayoutGrid,    ownerOnly: false },
   { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,     ownerOnly: false },
+  { id: 'servicios',  label: 'Saldos',                 icon: Zap,           ownerOnly: false },
+  { id: 'contratos',  label: 'Contratos',              icon: FileText,      ownerOnly: false },
   { id: 'tareas',     label: 'Tareas Pendientes',      icon: CheckSquare,   ownerOnly: false },
   { id: 'pagos',      label: 'Pagos',                  icon: CreditCard,    ownerOnly: true  },
-  { id: 'servicios',  label: 'Saldos',                 icon: Zap,           ownerOnly: false },
-  { id: 'mensajes',   label: 'Mensajes',               icon: MessageCircle, ownerOnly: false },
-  { id: 'contratos',  label: 'Contratos',              icon: FileText,      ownerOnly: false },
+  { id: 'cartera',    label: 'Cartera',                icon: Building2,     ownerOnly: false },
   { id: 'usuarios',   label: 'Usuarios',               icon: Users,         ownerOnly: true  },
 ];
 
