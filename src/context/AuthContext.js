@@ -13,8 +13,9 @@ export const AuthProvider = ({ children }) => {
       if (session?.user) {
         setUser(session.user);
         buildProfile(session.user);
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -24,23 +25,34 @@ export const AuthProvider = ({ children }) => {
       } else {
         setUser(null);
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const buildProfile = (u) => {
+  const buildProfile = async (u) => {
     const email = u.email;
+
+    // Obtener el id real de app_users (puede diferir del id de auth.users)
+    const { data: appUser } = await supabase
+      .from('app_users')
+      .select('id')
+      .eq('email', email)
+      .single();
+
     setProfile({
+      id: appUser?.id || null,
       email,
       name: u.user_metadata?.full_name || email,
       avatar: u.user_metadata?.avatar_url,
       initials: getUserInitials(email),
+      iniciales: getUserInitials(email), // alias, mismas siglas DD/FD/EA/FG
       role: getUserRole(email),
       isOwner: getUserRole(email) === 'owner',
     });
+    setLoading(false);
   };
 
   const signInWithGoogle = async () => {
