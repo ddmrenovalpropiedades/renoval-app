@@ -1,32 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import PropertyAutocomplete from '../components/PropertyAutocomplete';
-import { Plus, Check, X, Home, Trash2 } from 'lucide-react';
-
-// ─── Date picker dd/mm/yyyy ────────────────────────────────────────────────────
-function DatePicker({ value, onChange, style = {}, inputStyle = {} }) {
-  const ref = React.useRef(null);
-  const fmt = (iso) => {
-    if (!iso) return '';
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  };
-  const handleClick = () => {
-    if (ref.current) {
-      try { ref.current.showPicker(); } catch(e) { ref.current.click(); }
-    }
-  };
-  return (
-    <div onClick={handleClick} style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', ...style }}>
-      <span style={{ fontSize: 12, fontFamily: 'inherit', color: value ? 'inherit' : '#9aa0a6', userSelect: 'none', whiteSpace: 'nowrap' }}>
-        {value ? fmt(value) : 'dd/mm/aaaa'}
-      </span>
-      <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
-        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0, border: 'none', padding: 0, margin: 0 }} />
-    </div>
-  );
-}
-
+import { useAuth } from '../context/AuthContext';
+import { Plus, Check, X, Home, Trash2, Link2, Calendar } from 'lucide-react';
+import UrlPublicacionModal from '../components/pizarra/UrlPublicacionModal';
+import DisponibilidadSidebar from '../components/pizarra/DisponibilidadSidebar';
 
 // ── UF value ──────────────────────────────────────────────────
 const useUFValue = () => {
@@ -55,11 +32,13 @@ const daysDiff = (dateStr) => {
   return Math.floor((new Date() - date) / (1000 * 60 * 60 * 24));
 };
 
+
 const formatCLP = (n) => {
   if (!n && n !== 0) return '';
   return '$' + Math.round(n).toLocaleString('es-CL');
 };
 
+// Parse price: handles "$390.000", "390000", "30 UF", "UF 30"
 const parsePrice = (val) => {
   if (!val) return { amount: null, isUF: false };
   const str = String(val).trim();
@@ -70,74 +49,6 @@ const parsePrice = (val) => {
   }
   const n = parseFloat(str.replace(/[$.]/g, '').replace(',', '.'));
   return { amount: isNaN(n) ? null : n, isUF: false };
-};
-
-// Mapeo de iniciales a email
-const INITIALS_TO_EMAIL = {
-  'DD': 'ddm@renovalpropiedades.com',
-  'FD': 'fdm@renovalpropiedades.com',
-  'EA': 'edith@renovalpropiedades.com',
-  'FG': 'fernanda@renovalpropiedades.com',
-};
-
-// Crear tarea con subtareas en la tabla tasks (subtareas usan parent_id)
-const createAutoTasks = async (propiedad, e1, e2) => {
-  const CATEGORY = 'Publicar/Arrendar';
-
-  const createTaskWithSubtasks = async (initials, subtitlesList) => {
-    if (!initials) return;
-    const email = INITIALS_TO_EMAIL[initials];
-    if (!email) return;
-
-    // Insertar tarea principal
-    const { data: task, error } = await supabase
-      .from('tasks')
-      .insert({
-        owner_email: email,
-        title: `Arriendo ${propiedad}`,
-        category: CATEGORY,
-        completed: false,
-        position: -Date.now(),
-        recurrence: 'none',
-      })
-      .select()
-      .single();
-
-    if (error || !task) {
-      console.error('Error creando tarea automática:', error);
-      return;
-    }
-
-    // Insertar subtareas con parent_id apuntando a la tarea principal
-    for (let i = 0; i < subtitlesList.length; i++) {
-      await supabase.from('tasks').insert({
-        owner_email: email,
-        title: subtitlesList[i],
-        category: CATEGORY,
-        parent_id: task.id,
-        completed: false,
-        position: i,
-        recurrence: 'none',
-      });
-    }
-  };
-
-  // Subtareas para E1
-  await createTaskWithSubtasks(e1, [
-    'Notificar dueño',
-    'Carpeta antiguos',
-    'Definición precio',
-    'Publicar',
-    'Baja ControlProp',
-    'Respaldar publicación',
-  ]);
-
-  // Subtareas para E2
-  await createTaskWithSubtasks(e2, [
-    'Revisión situación depto',
-    'Agendar entrega',
-    'Acta de Entrega',
-  ]);
 };
 
 const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
@@ -153,111 +64,44 @@ const EMPTY_FORM = {
   propiedad: '', precio: '', promo: '', status: '', destaque: '',
   e1: '', e2: '', db: '', eb: '', comuna: '',
   fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
+  url_publicacion: '',
 };
 
-// Money input with CLP/UF toggle
-function MoneyInput({ value, onChange, uf, placeholder = '', alwaysVisible = false }) {
-  const parsed = parsePrice(value || '');
-  const [currency, setCurrency] = useState(parsed.isUF ? 'UF' : 'CLP');
+
+
+
+// Money input with cursor after $ and live thousands formatting
+function MoneyInput({ value, onChange, placeholder = '' }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
-
-  // Sync currency when value changes from outside (e.g. initial load)
-  React.useEffect(() => {
-    const p = parsePrice(value || '');
-    setCurrency(p.isUF ? 'UF' : 'CLP');
-  }, [value]);
-
   const { amount, isUF } = parsePrice(value || '');
-
-  const displayVal = value
-    ? (isUF ? `${amount} UF` : (amount ? formatCLP(amount) : value))
-    : '';
-
-  const clpEquiv = isUF && amount && uf
-    ? formatCLP(amount * uf)
-    : null;
-
-  const handleCurrencyChange = (newCurrency) => {
-    setCurrency(newCurrency);
-    // Clear the stored value when switching currency
-    onChange('');
-  };
+  const displayVal = value ? (isUF ? `${amount} UF` : (amount ? formatCLP(amount) : value)) : '';
 
   const handleChange = (e) => {
     const digits = e.target.value.replace(/[^0-9]/g, '');
     setRaw(digits);
   };
 
-  const handleUFChange = (e) => {
-    // Allow digits and one decimal
-    const v = e.target.value.replace(/[^0-9.,]/g, '').replace(',', '.');
-    setRaw(v);
-  };
-
-  const commitEdit = () => {
-    setEditing(false);
-    if (!raw) { onChange(''); return; }
-    if (currency === 'UF') {
-      onChange(`${raw} UF`);
-    } else {
-      onChange(raw);
-    }
-  };
-
   if (editing) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 110 }}>
-        {/* Currency toggle */}
-        <div style={{ display: 'flex', borderRadius: 5, overflow: 'hidden', border: '1px solid #dadce0', width: 'fit-content', alignSelf: 'center' }}>
-          {['CLP', 'UF'].map(c => (
-            <button key={c} type="button"
-              onMouseDown={e => { e.preventDefault(); handleCurrencyChange(c); }}
-              style={{
-                padding: '2px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer',
-                border: 'none', fontFamily: 'inherit',
-                background: currency === c ? '#1a73e8' : '#f1f3f4',
-                color: currency === c ? '#fff' : '#5f6368',
-              }}>{c}</button>
-          ))}
-        </div>
-        {/* Value input */}
-        <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff' }}>
-          {currency === 'CLP' && <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2, flexShrink: 0 }}>$</span>}
-          <input autoFocus
-            value={currency === 'CLP' ? (raw ? parseInt(raw || '0').toLocaleString('es-CL') : '') : raw}
-            onChange={currency === 'CLP' ? handleChange : handleUFChange}
-            onBlur={commitEdit}
-            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-            style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }}
-            placeholder={currency === 'UF' ? '0.00' : '0'} />
-          {currency === 'UF' && <span style={{ fontSize: 11, color: '#9aa0a6', marginLeft: 2, flexShrink: 0 }}>UF</span>}
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', minWidth: 80 }}>
+        <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2, flexShrink: 0 }}>$</span>
+        <input autoFocus value={raw ? parseInt(raw).toLocaleString('es-CL') : ''}
+          onChange={handleChange}
+          onBlur={() => { setEditing(false); onChange(raw || ''); }}
+          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+          style={{ border: 'none', outline: 'none', width: 90, fontSize: 12, fontFamily: 'inherit' }} />
       </div>
     );
   }
-
   return (
-    <div
-      onClick={() => {
-        setRaw(amount ? (isUF ? String(amount) : String(Math.round(amount))) : '');
-        setEditing(true);
-      }}
-      style={{ cursor: 'text', fontSize: 12, minWidth: 90, padding: '3px 6px', borderRadius: 6, textAlign: 'center', border: alwaysVisible ? '1px solid #dadce0' : 'none', background: alwaysVisible ? '#fff' : 'transparent' }}>
-      {displayVal
-        ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <span>{displayVal}</span>
-            {clpEquiv && (
-              <span style={{ fontSize: 10, color: '#5f6368', fontStyle: 'italic' }}>{clpEquiv}</span>
-            )}
-          </div>
-        )
-        : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0' }}>{alwaysVisible ? '$—' : '—'}</span>
-      }
+    <div onClick={() => { setRaw(amount ? String(Math.round(amount)) : ''); setEditing(true); }}
+      style={{ cursor: 'text', fontSize: 12, minWidth: 70, padding: '3px 4px', borderRadius: 4 }}>
+      {displayVal || <span style={{ color: '#dadce0' }}>—</span>}
     </div>
   );
 }
+
 
 // ── Rent Modal ────────────────────────────────────────────────
 function RentModal({ row, onConfirm, onCancel }) {
@@ -281,7 +125,8 @@ function RentModal({ row, onConfirm, onCancel }) {
         </div>
         <div style={rentStyles.field}>
           <label style={rentStyles.label}>Fecha de entrega *</label>
-          <DatePicker value={entrega} onChange={v => setEntrega(v)} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '6px 10px', background: '#fff' }} />
+          <input type="date" value={entrega} onChange={e => setEntrega(e.target.value)}
+            style={rentStyles.input} />
         </div>
         {hasPromo && (
           <div style={rentStyles.field}>
@@ -334,6 +179,7 @@ const rentStyles = {
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
+
 // Inline editable text cell
 function InlineEditCell({ value, onChange, placeholder = '' }) {
   const [editing, setEditing] = useState(false);
@@ -366,36 +212,8 @@ function InlineSelectCell({ value, options, onChange }) {
   );
 }
 
-// Encargado cell: badge con color + select nativo
-function EncargadoSelectCell({ value, options, onChange, alwaysVisible = false }) {
-  const [open, setOpen] = useState(false);
-  const EC = ENCARGADO_COLORS;
-  const color = EC[value] || '#9aa0a6';
-
-  if (open) {
-    return (
-      <select autoFocus value={value || ''}
-        onChange={e => { onChange(e.target.value); setOpen(false); }}
-        onBlur={() => setOpen(false)}
-        style={{ border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}>
-        <option value="">—</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    );
-  }
-
-  return (
-    <div onClick={() => setOpen(true)} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center', ...(alwaysVisible && !value ? { border: '1px solid #dadce0', borderRadius: 6, padding: '2px 8px', background: '#fff' } : {}) }}>
-      {value
-        ? <span style={{ display: 'inline-block', borderRadius: 20, padding: '2px 9px', fontSize: 11, fontWeight: 700, background: `${color}22`, color, border: `1px solid ${color}44` }}>{value}</span>
-        : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0', fontSize: 12 }}>{alwaysVisible ? 'Sel.' : '—'}</span>
-      }
-    </div>
-  );
-}
-
 // ── Property Row ──────────────────────────────────────────────
-function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf }) {
+function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf, currentUser, onOpenUrlModal, onOpenDisponibilidad }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [errors, setErrors] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -458,26 +276,26 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     return (
       <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
         <td style={styles.td}>
-          <PropertyAutocomplete
-            value={form.propiedad}
-            onChange={v => setForm(p => ({...p, propiedad: v.toUpperCase()}))}
-            hasError={!!errors.propiedad}
-          />
+          <input value={form.propiedad} onChange={e => setForm(p => ({...p, propiedad: e.target.value}))}
+            placeholder="Dirección *" style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
         </td>
-        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} uf={uf} alwaysVisible /></td>
-        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} uf={uf} alwaysVisible /></td>
-        <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value.toUpperCase()}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} /></td>
+        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} /></td>
+        <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
         <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e1||''} options={['DD','FD']} onChange={v=>setForm(p=>({...p,e1:v}))} alwaysVisible /></td>
-        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><EncargadoSelectCell value={form.e2||''} options={['EA','FG']} onChange={v=>setForm(p=>({...p,e2:v}))} alwaysVisible /></td>
+        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>DD</option><option>FD</option></select></td>
+        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>EA</option><option>FG</option></select></td>
         <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
         <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
-        <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value.toUpperCase()}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
-        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><DatePicker value={form.fecha_salida||''} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',background:'#fff'}} /></td>
+        <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
+        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none',appearance:'none',WebkitAppearance:'none',colorScheme:'light'}} onClick={e=>e.target.showPicker&&e.target.showPicker()} /></td>
         <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
         <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
         <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
         <td style={{...styles.tdCenter,...(errors.admin?{background:'#fce8e6'}:{})}}><select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Sí</option><option>No</option></select></td>
+        <td style={styles.tdCenter}>
+          <span style={{ color: '#dadce0', fontSize: 11 }}>—</span>
+        </td>
         <td style={styles.tdActions}>
           <button onClick={handleNewSave} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
           <button onClick={() => { if(onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
@@ -493,30 +311,31 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={{ ...styles.tdProp }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
           {showAlert && <UrgentDot />}
-          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} />
+          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} />
         </div>
       </td>
-      <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} uf={uf} /></td>
-      <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} uf={uf} /></td>
+      <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} /></td>
+      <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} /></td>
       <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
-        <InlineEditCell value={form.status} onChange={v => set('status', v.toUpperCase())} />
+        <InlineEditCell value={form.status} onChange={v => set('status', v)} />
       </td>
       <td style={styles.tdCenter}>
         <InlineSelectCell value={form.destaque} options={['OP']} onChange={v => set('destaque', v)}
           renderValue={v => v ? <span style={destaqueStyle(v)}>{v}</span> : null} />
       </td>
       <td style={styles.tdCenter}>
-        <EncargadoSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} />
+        <InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} />
       </td>
       <td style={styles.tdCenter}>
-        <EncargadoSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} />
+        <InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} />
       </td>
       <td style={styles.tdCenter}><InlineEditCell value={form.db} onChange={v => set('db', v)} /></td>
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
-      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v.toUpperCase())} /></td>
+      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
       <td style={styles.tdCenter}>
-        <DatePicker value={form.fecha_salida || ''} onChange={v => set('fecha_salida', v)}
-          style={{ ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}) }} />
+        <input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
+          style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}), WebkitAppearance: 'none', MozAppearance: 'none', colorScheme: 'light' }}
+          onClick={e => e.target.showPicker && e.target.showPicker()} />
       </td>
       <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
@@ -526,7 +345,20 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.tdCenter}>
         <InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => set('admin', v)} />
       </td>
+      <td style={styles.tdCenter}>
+        <button
+          onClick={() => onOpenUrlModal(row)}
+          style={{
+            ...styles.urlBtn,
+            ...(form.url_publicacion ? styles.urlBtnActive : styles.urlBtnInactive),
+          }}
+          title={form.url_publicacion ? 'URL cargada — click para ver/editar' : 'Sin URL — click para agregar'}
+        >
+          <Link2 size={13} />
+        </button>
+      </td>
       <td style={styles.tdActions}>
+        <button onClick={() => onOpenDisponibilidad(row)} style={styles.actionBtnPurple} title="Disponibilidad para visitas"><Calendar size={13} /></button>
         <button onClick={() => onRented(row)} style={styles.actionBtnBlue} title="Arrendar"><Home size={13} /></button>
         {confirmDelete ? (
           <>
@@ -541,14 +373,18 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
   );
 }
 
+
 // ── Main page ─────────────────────────────────────────────────
 const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
 
 export default function PizarraPage() {
+  const { profile } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addingNew, setAddingNew] = useState(false);
   const [rentingRow, setRentingRow] = useState(null);
+  const [urlModalRow, setUrlModalRow] = useState(null);
+  const [disponibilidadRow, setDisponibilidadRow] = useState(null);
   const [filterE, setFilterE] = useState([]);
   const uf = useUFValue();
 
@@ -570,6 +406,7 @@ export default function PizarraPage() {
 
   const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
 
+  // Totals
   const totals = useMemo(() => {
     let totalCLP = 0;
     let opCount = 0;
@@ -584,9 +421,11 @@ export default function PizarraPage() {
   }, [filtered, uf]);
 
   const handleSave = async (form) => {
+    // For inline edits: update local state only (field already saved to DB)
     if (form.id) {
       setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...form } : r));
     } else {
+      // New row insert
       const payload = {
         propiedad: form.propiedad.trim(),
         precio: form.precio || null, promo: form.promo || null,
@@ -598,11 +437,7 @@ export default function PizarraPage() {
       };
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
-      if (data) {
-        setRows(prev => [data, ...prev]);
-        // Crear tareas automáticas para E1 y E2
-        await createAutoTasks(form.propiedad.trim(), form.e1, form.e2);
-      }
+      if (data) setRows(prev => [data, ...prev]);
       setAddingNew(false);
     }
   };
@@ -612,10 +447,17 @@ export default function PizarraPage() {
     setRows(prev => prev.filter(r => r.id !== id));
   };
 
+  const handleSaveUrl = async (url) => {
+    if (!urlModalRow) return;
+    await supabase.from('pizarra').update({ url_publicacion: url }).eq('id', urlModalRow.id);
+    setRows(prev => prev.map(r => r.id === urlModalRow.id ? { ...r, url_publicacion: url } : r));
+  };
+
   const handleRentedConfirm = async ({ comision, entrega, meses }) => {
     const row = rentingRow;
     setRentingRow(null);
 
+    // Calculate fecha_gar = fecha_salida + 60 days (parse safely to avoid timezone shifts)
     let fechaGar = null;
     if (row.fecha_salida) {
       const parts = String(row.fecha_salida).split('T')[0].split('-');
@@ -624,11 +466,14 @@ export default function PizarraPage() {
       fechaGar = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
 
+    // Get current month
     const now = new Date();
     const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
+    // Ensure month exists
     await supabase.from('arrendadas_meses').upsert({ mes }, { onConflict: 'mes' });
 
+    // Insert into arrendadas
     await supabase.from('arrendadas').insert({
       mes,
       propiedad: row.propiedad,
@@ -648,16 +493,18 @@ export default function PizarraPage() {
       meses: meses || null,
     });
 
+    // Remove from pizarra
     await supabase.from('pizarra').delete().eq('id', row.id);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
 
   const handleRented = (row) => { setRentingRow(row); };
 
-  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','OROS','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN',''];
+  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','OROS','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN','URL',''];
 
   return (
     <div style={styles.container}>
+      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Pizarra</h1>
@@ -667,6 +514,7 @@ export default function PizarraPage() {
           </div>
         </div>
         <div style={styles.headerRight}>
+          {/* Encargado filters */}
           <div style={styles.filters}>
             {ENCARGADOS_ALL.map(e => (
               <button key={e} onClick={() => toggleFilter(e)} style={{
@@ -682,6 +530,7 @@ export default function PizarraPage() {
         </div>
       </div>
 
+      {/* Table */}
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loading}>Cargando pizarra...</div>
@@ -700,14 +549,18 @@ export default function PizarraPage() {
             <tbody>
               {addingNew && (
                 <PropertyRow row={EMPTY_FORM} onSave={handleSave} onDelete={() => {}} onRented={() => {}}
-                  isNew={true} onCancelNew={() => setAddingNew(false)} uf={uf} />
+                  isNew={true} onCancelNew={() => setAddingNew(false)} uf={uf}
+                  currentUser={profile} onOpenUrlModal={() => {}} onOpenDisponibilidad={() => {}} />
               )}
               {filtered.length === 0 && !addingNew ? (
-                <tr><td colSpan={16} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
+                <tr><td colSpan={17} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
               ) : (
                 filtered.map(row => (
                   <PropertyRow key={row.id} row={row} onSave={handleSave}
-                    onDelete={handleDelete} onRented={handleRented} uf={uf} />
+                    onDelete={handleDelete} onRented={handleRented} uf={uf}
+                    currentUser={profile}
+                    onOpenUrlModal={setUrlModalRow}
+                    onOpenDisponibilidad={setDisponibilidadRow} />
                 ))
               )}
             </tbody>
@@ -715,6 +568,7 @@ export default function PizarraPage() {
         )}
       </div>
 
+      {/* Totals row */}
       <div style={styles.totalsRow}>
         <span style={styles.totalsLabel}>TOTAL</span>
         <span style={styles.totalsItem}>
@@ -736,6 +590,22 @@ export default function PizarraPage() {
           onCancel={() => setRentingRow(null)}
         />
       )}
+
+      {urlModalRow && (
+        <UrlPublicacionModal
+          row={urlModalRow}
+          onSave={handleSaveUrl}
+          onClose={() => setUrlModalRow(null)}
+        />
+      )}
+
+      {disponibilidadRow && (
+        <DisponibilidadSidebar
+          row={disponibilidadRow}
+          currentUser={profile}
+          onClose={() => setDisponibilidadRow(null)}
+        />
+      )}
     </div>
   );
 }
@@ -755,6 +625,7 @@ const styles = {
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
+  thAviso: { padding: '10px 14px', minWidth: 80, background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap', textAlign: 'center' },
   td: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center' },
   tdProp: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left' },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle' },
@@ -762,7 +633,11 @@ const styles = {
   actionBtnGray:  { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
   actionBtnGreen: { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#34a853' },
   actionBtnBlue:  { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#1a73e8' },
+  actionBtnPurple:{ background: '#f3e8fd', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#9334e6' },
   actionBtnRed:   { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
+  urlBtn: { border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, display: 'inline-flex' },
+  urlBtnActive: { background: '#e6f4ea', color: '#34a853' },
+  urlBtnInactive: { background: '#f1f3f4', color: '#9aa0a6' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   totalsRow: { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
