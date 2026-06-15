@@ -3,6 +3,16 @@ import { supabase } from '../supabaseClient';
 import { X, Upload, ChevronLeft, ChevronRight, ImageIcon, Trash2 } from 'lucide-react';
 
 const MAX_SETS = 10;
+const SIDEBAR_WIDTH_NORMAL = 320;
+const SIDEBAR_WIDTH_EXPANDED = 532; // 500px de imagen + 16px de margen lateral por lado
+const MAX_EXPANDED_IMAGE_WIDTH = 500;
+const ACCEPTED_EXT_REGEX = /\.(jpe?g|gif|webp)$/i;
+
+const getFileExt = (filename) => {
+  const m = filename.toLowerCase().match(/\.(jpe?g|gif|webp)$/);
+  if (!m) return null;
+  return m[1] === 'jpeg' ? 'jpg' : m[1];
+};
 
 export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen = 0 }) {
   const [sets, setSets] = useState([]);
@@ -41,9 +51,11 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     const set = setsArr.find(s => s.id === setId);
     if (!set || !set.total_images) return [];
     const unlocked = progressMap[setId] || 1;
+    const exts = Array.isArray(set.image_extensions) ? set.image_extensions : [];
     const urls = [];
     for (let i = 1; i <= Math.min(unlocked, set.total_images); i++) {
-      const { data } = supabase.storage.from('gallery').getPublicUrl(`${setId}/${i}.jpg`);
+      const ext = exts[i - 1] || 'jpg';
+      const { data } = supabase.storage.from('gallery').getPublicUrl(`${setId}/${i}.${ext}`);
       urls.push(data.publicUrl);
     }
     return urls;
@@ -131,10 +143,10 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     if (!files.length) return;
     if (sets.length >= MAX_SETS && !activeSetId) { alert('Máximo de sets alcanzado (10)'); return; }
 
-    const jpgFiles = files.filter(f => f.name.toLowerCase().endsWith('.jpg') || f.name.toLowerCase().endsWith('.jpeg'));
-    if (!jpgFiles.length) { alert('Solo se aceptan archivos JPG'); return; }
+    const validFiles = files.filter(f => ACCEPTED_EXT_REGEX.test(f.name));
+    if (!validFiles.length) { alert('Solo se aceptan archivos JPG, GIF o WEBP'); return; }
 
-    jpgFiles.sort((a, b) => {
+    validFiles.sort((a, b) => {
       const na = parseInt(a.name.replace(/\D/g, '')) || 0;
       const nb = parseInt(b.name.replace(/\D/g, '')) || 0;
       return na - nb;
@@ -143,25 +155,36 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     setUploading(true);
     // Si showNewSet está activo, siempre crear un set nuevo (ignorar activeSetId)
     let setId = showNewSet ? null : activeSetId;
+    const isReplace = !!setId;
 
     if (!setId) {
       const name = newSetName.trim() || `Set ${sets.length + 1}`;
       const { data, error } = await supabase.from('gallery_sets')
-        .insert({ name, total_images: jpgFiles.length }).select().single();
+        .insert({ name, total_images: validFiles.length }).select().single();
       if (error || !data) { alert('Error creando set: ' + (error?.message || 'desconocido')); setUploading(false); return; }
       setId = data.id;
       await supabase.from('gallery_progress').insert({ set_id: setId, unlocked_count: 1 });
+    } else if (isReplace) {
+      // Limpiar archivos anteriores para evitar residuos con extensiones distintas
+      const { data: fileList } = await supabase.storage.from('gallery').list(setId);
+      if (fileList && fileList.length > 0) {
+        await supabase.storage.from('gallery').remove(fileList.map(f => `${setId}/${f.name}`));
+      }
     }
 
-    for (let i = 0; i < jpgFiles.length; i++) {
-      setUploadProgress(`Subiendo ${i + 1} de ${jpgFiles.length}...`);
+    const extensions = [];
+    for (let i = 0; i < validFiles.length; i++) {
+      setUploadProgress(`Subiendo ${i + 1} de ${validFiles.length}...`);
+      const file = validFiles[i];
+      const ext = getFileExt(file.name) || 'jpg';
+      extensions.push(ext);
       const { error: uploadError } = await supabase.storage
         .from('gallery')
-        .upload(`${setId}/${i + 1}.jpg`, jpgFiles[i], { upsert: true });
+        .upload(`${setId}/${i + 1}.${ext}`, file, { upsert: true, contentType: file.type || undefined });
       if (uploadError) console.error(`Error subiendo imagen ${i + 1}:`, uploadError.message);
     }
 
-    await supabase.from('gallery_sets').update({ total_images: jpgFiles.length }).eq('id', setId);
+    await supabase.from('gallery_sets').update({ total_images: validFiles.length, image_extensions: extensions }).eq('id', setId);
 
     const freshSets = await fetchSets();
     const freshProgress = await fetchProgress();
@@ -183,9 +206,11 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
   const activeSet = sets.find(s => s.id === activeSetId);
   const unlocked = activeSetId ? (progress[activeSetId] || 1) : 0;
   const total = activeSet?.total_images || 0;
+  const hasExpandedMedia = Array.isArray(activeSet?.image_extensions)
+    && activeSet.image_extensions.some(ext => ext === 'gif' || ext === 'webp');
 
   return (
-    <div style={styles.sidebar}>
+    <div style={{ ...styles.sidebar, width: hasExpandedMedia ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_NORMAL }}>
       {/* Header */}
       <div style={styles.header}>
         <span style={styles.title}>Galería</span>
@@ -218,7 +243,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
           <label style={styles.uploadBtn}>
             <Upload size={13} style={{ marginRight: 4 }} />
             {uploading ? uploadProgress : 'Cargar imágenes'}
-            <input type="file" accept=".jpg,.jpeg" multiple style={{ display: 'none' }}
+            <input type="file" accept=".jpg,.jpeg,.gif,.webp" multiple style={{ display: 'none' }}
               onChange={handleUpload} disabled={uploading} />
           </label>
         </div>
@@ -229,7 +254,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
         <label style={{ ...styles.uploadBtn, marginBottom: 8 }}>
           <Upload size={13} style={{ marginRight: 4 }} />
           {uploading ? uploadProgress : 'Reemplazar imágenes del set'}
-          <input type="file" accept=".jpg,.jpeg" multiple style={{ display: 'none' }}
+          <input type="file" accept=".jpg,.jpeg,.gif,.webp" multiple style={{ display: 'none' }}
             onChange={handleUpload} disabled={uploading} />
         </label>
       )}
@@ -244,7 +269,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
 
       {/* Imagen principal */}
       {images.length > 0 ? (
-        <div style={styles.mainImageWrapper}>
+        <div style={{ ...styles.mainImageWrapper, ...(hasExpandedMedia ? { padding: '10px 16px 0' } : {}) }}>
           {imageLoadErrors[mainIdx] ? (
             <div style={styles.imgError}>
               <ImageIcon size={32} color="#dadce0" />
@@ -257,7 +282,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
               key={images[mainIdx]}
               src={images[mainIdx]}
               alt={`${mainIdx + 1}`}
-              style={styles.mainImage}
+              style={hasExpandedMedia ? styles.mainImageExpanded : styles.mainImage}
               onError={() => setImageLoadErrors(prev => ({ ...prev, [mainIdx]: true }))}
             />
           )}
@@ -284,7 +309,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
 
       {/* Miniaturas — solo las desbloqueadas */}
       {images.length > 0 && (
-        <div style={styles.thumbGrid}>
+        <div style={{ ...styles.thumbGrid, ...(hasExpandedMedia ? { padding: '10px 16px 20px' } : {}) }}>
           {images.map((url, i) => (
             imageLoadErrors[i] ? (
               <div key={i} style={{ ...styles.thumbLocked, cursor: 'pointer', background: '#f8d7da' }}
@@ -316,7 +341,7 @@ export async function unlockNextGalleryImage(setId) {
 }
 
 const styles = {
-  sidebar: { width: 320, background: '#fff', borderLeft: '1px solid #e8eaed', display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', fontFamily: "'Google Sans','Segoe UI',sans-serif" },
+  sidebar: { background: '#fff', borderLeft: '1px solid #e8eaed', display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', fontFamily: "'Google Sans','Segoe UI',sans-serif", transition: 'width 0.25s ease' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid #e8eaed', flexShrink: 0 },
   title: { fontSize: 16, fontWeight: 700, color: '#202124' },
   closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#5f6368' },
@@ -332,6 +357,7 @@ const styles = {
   progressText: { position: 'absolute', left: 0, right: 0, top: 0, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', zIndex: 1 },
   mainImageWrapper: { padding: '10px 14px 0', flexShrink: 0 },
   mainImage: { width: '100%', borderRadius: 8, display: 'block', maxHeight: 400, objectFit: 'contain', background: '#f8f9fa' },
+  mainImageExpanded: { maxWidth: MAX_EXPANDED_IMAGE_WIDTH, width: 'auto', height: 'auto', borderRadius: 8, display: 'block', margin: '0 auto', background: '#f8f9fa' },
   imgError: { width: '100%', height: 200, borderRadius: 8, background: '#f8f9fa', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
   mainNav: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 6 },
   navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#5f6368' },
