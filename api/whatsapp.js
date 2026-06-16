@@ -10,6 +10,54 @@ const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN;
 const VERIFY_TOKEN    = process.env.WHATSAPP_VERIFY_TOKEN;
 
+// ─── Extraer URL de un texto ──────────────────────────────────────────────────
+function extractUrl(text) {
+  if (!text) return null;
+  const match = text.match(/https?:\/\/[^\s]+/i);
+  return match ? match[0] : null;
+}
+
+// ─── Buscar propiedad por URL y obtener agent_id de e2 ───────────────────────
+async function findPropiedadByUrl(url) {
+  if (!url) return null;
+
+  // Normalizar URL: quitar trailing slash y query params para mayor tolerancia
+  const urlNorm = url.split('?')[0].replace(/\/$/, '').toLowerCase();
+
+  const { data: propiedades } = await supabase
+    .from('pizarra')
+    .select('id, propiedad, e2, url_publicacion')
+    .not('url_publicacion', 'is', null);
+
+  if (!propiedades || propiedades.length === 0) return null;
+
+  const match = propiedades.find(p => {
+    if (!p.url_publicacion) return false;
+    const pNorm = p.url_publicacion.split('?')[0].replace(/\/$/, '').toLowerCase();
+    return pNorm === urlNorm;
+  });
+
+  if (!match) return null;
+
+  // Obtener agent_id del encargado e2
+  let agentId = null;
+  if (match.e2) {
+    const { data: agente } = await supabase
+      .from('app_users')
+      .select('id')
+      .eq('iniciales', match.e2)
+      .single();
+    agentId = agente?.id || null;
+  }
+
+  return {
+    propiedadId: match.id,
+    propiedad:   match.propiedad,
+    e2:          match.e2,
+    agentId,
+  };
+}
+
 // ─── Enviar mensaje de texto simple ───────────────────────────────────────────
 async function sendTextMessage(to, text) {
   const res = await fetch(
@@ -69,7 +117,8 @@ async function sendMenuMessage(to) {
 }
 
 // ─── Obtener o crear conversación ─────────────────────────────────────────────
-async function getOrCreateConversacion(phoneNumber, contactName) {
+async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch) {
+  // Buscar conversación activa
   const { data: existing } = await supabase
     .from('wa_conversaciones')
     .select('*')
@@ -81,12 +130,15 @@ async function getOrCreateConversacion(phoneNumber, contactName) {
 
   if (existing) return existing;
 
+  // Crear nueva conversación con propiedad y agente si hubo match
   const { data: nueva, error } = await supabase
     .from('wa_conversaciones')
     .insert({
-      phone_number: phoneNumber,
-      contact_name: contactName || null,
-      estado: 'bot_activo',
+      phone_number:  phoneNumber,
+      contact_name:  contactName || null,
+      estado:        'bot_activo',
+      propiedad_id:  propiedadMatch?.propiedadId || null,
+      agent_id:      propiedadMatch?.agentId || null,
     })
     .select()
     .single();
@@ -139,7 +191,6 @@ module.exports = async function handler(req, res) {
     const mode      = req.query['hub.mode'];
     const token     = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
-
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       return res.status(200).send(challenge);
     }
@@ -170,12 +221,6 @@ module.exports = async function handler(req, res) {
       const wamid       = message.id;
       const contactName = value?.contacts?.[0]?.profile?.name || null;
 
-      console.log('INBOUND from:', from, 'type:', message.type, 'wamid:', wamid);
-
-      // Obtener o crear conversación
-      const conversacion = await getOrCreateConversacion(from, contactName);
-      const convId       = conversacion.id;
-
       // ── Determinar texto del mensaje entrante ─────────────────────────────
       let inboundText    = null;
       let inboundType    = message.type;
@@ -189,7 +234,35 @@ module.exports = async function handler(req, res) {
         inboundText    = reply?.title || '';
       }
 
-      console.log('selectedOption:', selectedOption, 'estado:', conversacion.estado);
+      console.log('INBOUND from:', from, 'type:', inboundType, 'text:', inboundText);
+
+      // ── Matching de URL (solo en mensajes de texto nuevos) ────────────────
+      let propiedadMatch = null;
+      if (message.type === 'text' && inboundText) {
+        const url = extractUrl(inboundText);
+        if (url) {
+          propiedadMatch = await findPropiedadByUrl(url);
+          if (propiedadMatch) {
+            console.log('URL match found:', propiedadMatch.propiedad, '→ agente:', propiedadMatch.e2);
+          }
+        }
+      }
+
+      // ── Obtener o crear conversación ──────────────────────────────────────
+      const conversacion = await getOrCreateConversacion(from, contactName, propiedadMatch);
+      const convId       = conversacion.id;
+
+      // Si la conversación ya existía pero ahora encontramos match de URL,
+      // actualizar propiedad y agente si aún no estaban asignados
+      if (propiedadMatch && !conversacion.propiedad_id) {
+        await supabase
+          .from('wa_conversaciones')
+          .update({
+            propiedad_id: propiedadMatch.propiedadId,
+            agent_id:     propiedadMatch.agentId || conversacion.agent_id,
+          })
+          .eq('id', convId);
+      }
 
       // Guardar mensaje entrante
       await saveMessage({
@@ -203,7 +276,7 @@ module.exports = async function handler(req, res) {
       // ── Lógica del bot ────────────────────────────────────────────────────
       const estado = conversacion.estado;
 
-      // Si ya tiene agente asignado, no responde el bot
+      // Si ya tiene agente asignado y está activo, no responde el bot
       if (estado === 'con_agente') {
         return res.status(200).end();
       }
@@ -241,6 +314,8 @@ module.exports = async function handler(req, res) {
 
       // ── Respuestas a opciones del menú ────────────────────────────────────
       if (selectedOption === 'AGENDAR_VISITA') {
+        // Fase 3.4: mostrar bloques disponibles de la propiedad
+        // Por ahora placeholder hasta implementar 3.4
         const outText  = '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!';
         const outWamid = await sendTextMessage(from, outText);
         await saveMessage({
