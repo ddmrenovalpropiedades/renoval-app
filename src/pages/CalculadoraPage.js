@@ -5,30 +5,20 @@ const fmt = (val) =>
     ? ''
     : '$' + Math.round(val).toLocaleString('es-CL');
 
-const parseNum = (str) => {
-  const clean = str.replace(/\./g, '').replace(',', '.');
-  const n = parseFloat(clean);
-  return isNaN(n) ? '' : n;
-};
-
 export default function CalculadoraPage() {
   // Tabla 1
   const [arriendo, setArriendo] = useState('');
   const [diaLlegada, setDiaLlegada] = useState('');
   const [diasMes, setDiasMes] = useState('');
 
-  // Tabla 2 — editables con override
+  // Tabla 2
   const [contratoDigital, setContratoDigital] = useState(17000);
   const [garantia, setGarantia] = useState('');
-  const [comisionOverride, setComisionOverride] = useState(null); // null = usar default
+  const [comisionOverride, setComisionOverride] = useState(null);
 
-  const [contratoInput, setContratoInput] = useState('17.000');
-  const [comisionInput, setComisionInput] = useState('');
-
-  // Cálculos
-  const arriendoNum = parseNum(String(arriendo));
-  const diaLlegadaNum = parseNum(String(diaLlegada));
-  const diasMesNum = parseNum(String(diasMes));
+  const arriendoNum = arriendo !== '' ? parseFloat(arriendo) : '';
+  const diaLlegadaNum = diaLlegada !== '' ? parseFloat(diaLlegada) : '';
+  const diasMesNum = diasMes !== '' ? parseFloat(diasMes) : '';
 
   const proporcional =
     arriendoNum !== '' && diaLlegadaNum !== '' && diasMesNum !== '' && diasMesNum > 0
@@ -41,7 +31,7 @@ export default function CalculadoraPage() {
   const comisionFinal =
     comisionOverride !== null ? comisionOverride : comisionDefault;
 
-  const garantiaNum = parseNum(String(garantia));
+  const garantiaNum = garantia !== '' ? parseFloat(garantia) : '';
 
   const total =
     proporcional !== '' &&
@@ -51,253 +41,240 @@ export default function CalculadoraPage() {
       ? proporcional + contratoDigital + garantiaNum + comisionFinal
       : '';
 
-  // Sincronizar input de comisión cuando cambia arriendo (si no hay override)
+  // Reset override de comisión si cambia arriendo
   useEffect(() => {
-    if (comisionOverride === null && comisionDefault !== '') {
-      setComisionInput(Math.round(comisionDefault).toLocaleString('es-CL'));
-    }
-  }, [comisionDefault, comisionOverride]);
+    setComisionOverride(null);
+  }, [arriendo]);
 
-  const handleDiasChange = (setter, val) => {
+  const handleDiaChange = (setter, val) => {
+    if (val === '') { setter(''); return; }
     const n = parseInt(val);
-    if (val === '' || (n >= 1 && n <= 31)) setter(val);
+    if (!isNaN(n) && n >= 1 && n <= 31) setter(String(n));
   };
 
   const handleComisionChange = (val) => {
-    setComisionInput(val);
-    const n = parseNum(val);
-    if (n !== '') setComisionOverride(n);
-    else setComisionOverride(null);
+    if (val === '') { setComisionOverride(null); return; }
+    const n = parseFloat(val);
+    if (!isNaN(n)) setComisionOverride(n);
   };
 
-  const handleContratoChange = (val) => {
-    setContratoInput(val);
-    const n = parseNum(val);
-    if (n !== '') setContratoDigital(n);
-  };
-
-  const styles = {
-    page: {
-      padding: '32px',
-      maxWidth: '560px',
-      fontFamily: 'Inter, sans-serif',
-      color: '#1a1a1a',
-    },
-    title: {
-      fontSize: '20px',
-      fontWeight: '700',
-      marginBottom: '28px',
-      color: '#111',
-      letterSpacing: '-0.3px',
-    },
-    sectionTitle: {
-      fontSize: '13px',
-      fontWeight: '700',
-      letterSpacing: '0.5px',
-      textTransform: 'uppercase',
-      color: '#555',
-      marginBottom: '10px',
-      marginTop: '28px',
-    },
-    table: {
-      width: '100%',
-      borderCollapse: 'collapse',
-      border: '1px solid #d0d0d0',
-      marginBottom: '8px',
-    },
-    tdLabel: {
-      padding: '9px 12px',
-      fontSize: '13px',
-      borderBottom: '1px solid #e0e0e0',
-      borderRight: '1px solid #e0e0e0',
-      width: '55%',
-      color: '#333',
-      fontWeight: '500',
-    },
-    tdValue: {
-      padding: '4px 8px',
-      fontSize: '13px',
-      borderBottom: '1px solid #e0e0e0',
-      width: '45%',
-    },
-    tdLabelYellow: {
-      padding: '9px 12px',
-      fontSize: '13px',
-      borderRight: '1px solid #b8a800',
-      width: '55%',
-      fontWeight: '700',
-      backgroundColor: '#FFE500',
-      color: '#1a1a1a',
-    },
-    tdValueYellow: {
-      padding: '9px 12px',
-      fontSize: '13px',
-      fontWeight: '700',
-      backgroundColor: '#FFE500',
-      color: '#1a1a1a',
-      textAlign: 'right',
-    },
-    tdLabelTotal: {
-      padding: '10px 12px',
-      fontSize: '14px',
-      borderRight: '1px solid #1a3a1a',
-      width: '55%',
-      fontWeight: '800',
-      backgroundColor: '#1B5E20',
-      color: '#fff',
-    },
-    tdValueTotal: {
-      padding: '10px 12px',
-      fontSize: '14px',
-      fontWeight: '800',
-      backgroundColor: '#1B5E20',
-      color: '#fff',
-      textAlign: 'right',
-    },
-    input: {
-      width: '100%',
-      border: 'none',
-      outline: 'none',
-      fontSize: '13px',
-      background: 'transparent',
-      textAlign: 'right',
-      padding: '4px',
-      color: '#1a1a1a',
-      boxSizing: 'border-box',
-    },
-    readonlyValue: {
-      padding: '4px 12px',
-      fontSize: '13px',
-      textAlign: 'right',
-      color: '#444',
-    },
-  };
+  const s = styles;
 
   return (
-    <div style={styles.page}>
-      <div style={styles.title}>Calculadora de Arriendo</div>
+    <div style={s.page}>
+      <h1 style={s.pageTitle}>Calculadora de Arriendo</h1>
 
-      {/* TABLA 1 */}
-      <div style={styles.sectionTitle}>Proporcional días de ocupación</div>
-      <table style={styles.table}>
+      {/* ── TABLA 1 ── */}
+      <p style={s.sectionLabel}>PROPORCIONAL DÍAS DE OCUPACIÓN</p>
+      <table style={s.table}>
         <tbody>
           <tr>
-            <td style={styles.tdLabel}>Arriendo</td>
-            <td style={styles.tdValue}>
+            <td style={s.tdLabel}>Arriendo</td>
+            <td style={s.tdInput}>
               <input
-                style={styles.input}
+                style={s.input}
                 type="number"
                 min="0"
                 value={arriendo}
-                onChange={(e) => setArriendo(e.target.value)}
+                onChange={e => setArriendo(e.target.value)}
                 placeholder="0"
               />
             </td>
           </tr>
           <tr>
-            <td style={styles.tdLabel}>Día Llegada</td>
-            <td style={styles.tdValue}>
+            <td style={s.tdLabel}>Día Llegada</td>
+            <td style={s.tdInput}>
               <input
-                style={styles.input}
+                style={s.input}
                 type="number"
                 min="1"
                 max="31"
                 value={diaLlegada}
-                onChange={(e) => handleDiasChange(setDiaLlegada, e.target.value)}
+                onChange={e => handleDiaChange(setDiaLlegada, e.target.value)}
                 placeholder="1"
               />
             </td>
           </tr>
-          <tr>
-            <td style={{ ...styles.tdLabel, borderBottom: 'none' }}>Días del mes</td>
-            <td style={{ ...styles.tdValue, borderBottom: 'none' }}>
+          <tr style={{ borderBottom: 'none' }}>
+            <td style={{ ...s.tdLabel, borderBottom: 'none' }}>Días del mes</td>
+            <td style={{ ...s.tdInput, borderBottom: 'none' }}>
               <input
-                style={styles.input}
+                style={s.input}
                 type="number"
                 min="1"
                 max="31"
                 value={diasMes}
-                onChange={(e) => handleDiasChange(setDiasMes, e.target.value)}
+                onChange={e => handleDiaChange(setDiasMes, e.target.value)}
                 placeholder="31"
               />
             </td>
           </tr>
         </tbody>
       </table>
-      <table style={{ ...styles.table, border: '1px solid #b8a800' }}>
+
+      <table style={{ ...s.table, marginTop: 8, border: '1px solid #c8a800' }}>
         <tbody>
           <tr>
-            <td style={styles.tdLabelYellow}>Proporcional</td>
-            <td style={styles.tdValueYellow}>
-              {proporcional !== '' ? fmt(proporcional) : '—'}
-            </td>
+            <td style={s.tdYellowLabel}>PROPORCIONAL</td>
+            <td style={s.tdYellowValue}>{proporcional !== '' ? fmt(proporcional) : '—'}</td>
           </tr>
         </tbody>
       </table>
 
-      {/* TABLA 2 */}
-      <div style={styles.sectionTitle}>Monto total</div>
-      <table style={styles.table}>
+      {/* ── TABLA 2 ── */}
+      <p style={{ ...s.sectionLabel, marginTop: 32 }}>MONTO TOTAL</p>
+      <table style={s.table}>
         <tbody>
           <tr>
-            <td style={styles.tdLabel}>Proporcional</td>
-            <td style={styles.tdValue}>
-              <div style={styles.readonlyValue}>
-                {proporcional !== '' ? fmt(proporcional) : '—'}
-              </div>
+            <td style={s.tdLabel}>Proporcional</td>
+            <td style={{ ...s.tdInput, textAlign: 'right', paddingRight: 12, color: '#444' }}>
+              {proporcional !== '' ? fmt(proporcional) : '—'}
             </td>
           </tr>
           <tr>
-            <td style={styles.tdLabel}>Contrato Digital</td>
-            <td style={styles.tdValue}>
+            <td style={s.tdLabel}>Contrato Digital</td>
+            <td style={s.tdInput}>
               <input
-                style={styles.input}
+                style={s.input}
                 type="number"
+                min="0"
                 value={contratoDigital}
-                onChange={(e) => handleContratoChange(e.target.value)}
+                onChange={e => setContratoDigital(e.target.value === '' ? '' : parseFloat(e.target.value))}
                 placeholder="17000"
               />
             </td>
           </tr>
           <tr>
-            <td style={styles.tdLabel}>Garantía</td>
-            <td style={styles.tdValue}>
+            <td style={s.tdLabel}>Garantía</td>
+            <td style={s.tdInput}>
               <input
-                style={styles.input}
+                style={s.input}
                 type="number"
                 min="0"
                 value={garantia}
-                onChange={(e) => setGarantia(e.target.value)}
+                onChange={e => setGarantia(e.target.value)}
                 placeholder="0"
               />
             </td>
           </tr>
           <tr>
-            <td style={{ ...styles.tdLabel, borderBottom: 'none' }}>
-              Comisión Corretaje + IVA
-            </td>
-            <td style={{ ...styles.tdValue, borderBottom: 'none' }}>
+            <td style={{ ...s.tdLabel, borderBottom: 'none' }}>Comisión Corretaje + IVA</td>
+            <td style={{ ...s.tdInput, borderBottom: 'none' }}>
               <input
-                style={styles.input}
+                style={s.input}
                 type="number"
-                value={comisionOverride !== null ? comisionOverride : (comisionDefault !== '' ? Math.round(comisionDefault) : '')}
-                onChange={(e) => handleComisionChange(e.target.value)}
+                min="0"
+                value={
+                  comisionOverride !== null
+                    ? comisionOverride
+                    : comisionDefault !== ''
+                    ? Math.round(comisionDefault)
+                    : ''
+                }
+                onChange={e => handleComisionChange(e.target.value)}
                 placeholder="0"
               />
             </td>
           </tr>
         </tbody>
       </table>
-      <table style={{ ...styles.table, border: '1px solid #1B5E20' }}>
+
+      <table style={{ ...s.table, marginTop: 8, border: '1px solid #1B5E20' }}>
         <tbody>
           <tr>
-            <td style={styles.tdLabelTotal}>Total</td>
-            <td style={styles.tdValueTotal}>
-              {total !== '' ? fmt(total) : '—'}
-            </td>
+            <td style={s.tdGreenLabel}>TOTAL</td>
+            <td style={s.tdGreenValue}>{total !== '' ? fmt(total) : '—'}</td>
           </tr>
         </tbody>
       </table>
     </div>
   );
 }
+
+const styles = {
+  page: {
+    padding: '32px',
+    maxWidth: 560,
+    fontFamily: "'Google Sans', 'Segoe UI', sans-serif",
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: '#202124',
+    marginBottom: 28,
+    marginTop: 0,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: '0.6px',
+    color: '#5f6368',
+    marginBottom: 8,
+    marginTop: 0,
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    border: '1px solid #d0d0d0',
+  },
+  tdLabel: {
+    padding: '9px 12px',
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#333',
+    borderBottom: '1px solid #e0e0e0',
+    borderRight: '1px solid #e0e0e0',
+    width: '58%',
+  },
+  tdInput: {
+    padding: '2px 6px',
+    fontSize: 13,
+    borderBottom: '1px solid #e0e0e0',
+    width: '42%',
+  },
+  input: {
+    width: '100%',
+    border: 'none',
+    outline: 'none',
+    fontSize: 13,
+    background: 'transparent',
+    textAlign: 'right',
+    padding: '6px',
+    color: '#1a1a1a',
+    boxSizing: 'border-box',
+  },
+  tdYellowLabel: {
+    padding: '10px 12px',
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#1a1a1a',
+    backgroundColor: '#FFE500',
+    borderRight: '1px solid #c8a800',
+    width: '58%',
+  },
+  tdYellowValue: {
+    padding: '10px 12px',
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#1a1a1a',
+    backgroundColor: '#FFE500',
+    textAlign: 'right',
+  },
+  tdGreenLabel: {
+    padding: '10px 12px',
+    fontSize: 14,
+    fontWeight: 800,
+    color: '#fff',
+    backgroundColor: '#1B5E20',
+    borderRight: '1px solid #1B5E20',
+    width: '58%',
+  },
+  tdGreenValue: {
+    padding: '10px 12px',
+    fontSize: 14,
+    fontWeight: 800,
+    color: '#fff',
+    backgroundColor: '#1B5E20',
+    textAlign: 'right',
+  },
+};
