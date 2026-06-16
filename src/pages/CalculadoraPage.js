@@ -20,8 +20,8 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 
 function MensajeModal({ onClose, datos }) {
   const {
-    arriendoInput, fechaLlegada, garantiaOpc, garantiaOtro,
-    comisionOpc, comisionOtro, proporcional, garantia, comision,
+    arriendoInput, fechaLlegada, garantiaOpc,
+    comisionOpc, proporcional, garantia, comision,
     contratoInput, total,
   } = datos;
 
@@ -439,8 +439,8 @@ export default function CalculadoraPage() {
         <MensajeModal
           onClose={() => setShowModal(false)}
           datos={{
-            arriendoInput, fechaLlegada, garantiaOpc, garantiaOtro,
-            comisionOpc, comisionOtro, proporcional, garantia, comision,
+            arriendoInput, fechaLlegada, garantiaOpc,
+            comisionOpc, proporcional, garantia, comision,
             contratoInput, total,
           }}
         />
