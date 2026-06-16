@@ -10,6 +10,7 @@ export default async function handler(req, res) {
     'ddm@renovalpropiedades.com':      process.env.GOOGLE_REFRESH_TOKEN,
     'fdm@renovalpropiedades.com':      process.env.GOOGLE_REFRESH_TOKEN_FDM,
     'edith@renovalpropiedades.com':    process.env.GOOGLE_REFRESH_TOKEN_EDITH,
+    'fernanda@renovalpropiedades.com': process.env.GOOGLE_REFRESH_TOKEN_FERNANDA,
   };
 
   const refreshToken = refreshTokenMap[userEmail];
