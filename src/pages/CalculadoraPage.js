@@ -1,192 +1,277 @@
 import React, { useState, useEffect } from 'react';
 
-const fmt = (val) =>
-  val === '' || isNaN(val)
-    ? ''
-    : '$' + Math.round(val).toLocaleString('es-CL');
+const formatCLP = (val) => {
+  if (val === '' || val === null || val === undefined || isNaN(val)) return '';
+  return Math.round(val).toLocaleString('es-CL');
+};
+
+const parseCLP = (str) => {
+  if (!str) return '';
+  const clean = String(str).replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(clean);
+  return isNaN(n) ? '' : n;
+};
+
+const diasEnMes = (fecha) => {
+  if (!fecha) return null;
+  const [y, m] = fecha.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+};
+
+const diaDelMes = (fecha) => {
+  if (!fecha) return null;
+  return parseInt(fecha.split('-')[2], 10);
+};
 
 export default function CalculadoraPage() {
-  // Tabla 1
   const [arriendo, setArriendo] = useState('');
-  const [diaLlegada, setDiaLlegada] = useState('');
-  const [diasMes, setDiasMes] = useState('');
+  const [arriendoInput, setArriendoInput] = useState('');
+  const [fechaLlegada, setFechaLlegada] = useState('');
+  const [garantiaOpc, setGarantiaOpc] = useState('');
+  const [garantiaOtro, setGarantiaOtroInput] = useState('');
+  const [garantiaOtroVal, setGarantiaOtroVal] = useState('');
+  const [comisionOpc, setComisionOpc] = useState('');
+  const [comisionOtro, setComisionOtroInput] = useState('');
+  const [comisionOtroVal, setComisionOtroVal] = useState('');
+  const [contratoInput, setContratoInput] = useState('17.000');
+  const [contratoVal, setContratoVal] = useState(17000);
 
-  // Tabla 2
-  const [contratoDigital, setContratoDigital] = useState(17000);
-  const [garantia, setGarantia] = useState('');
-  const [comisionOverride, setComisionOverride] = useState(null);
-
-  const arriendoNum = arriendo !== '' ? parseFloat(arriendo) : '';
-  const diaLlegadaNum = diaLlegada !== '' ? parseFloat(diaLlegada) : '';
-  const diasMesNum = diasMes !== '' ? parseFloat(diasMes) : '';
-
+  // Proporcional
+  const arriendoNum = parseCLP(arriendoInput);
+  const totalDias = diasEnMes(fechaLlegada);
+  const diaLlegada = diaDelMes(fechaLlegada);
   const proporcional =
-    arriendoNum !== '' && diaLlegadaNum !== '' && diasMesNum !== '' && diasMesNum > 0
-      ? ((diasMesNum - diaLlegadaNum + 1) / diasMesNum) * arriendoNum
+    arriendoNum !== '' && totalDias && diaLlegada
+      ? ((totalDias - diaLlegada + 1) / totalDias) * arriendoNum
       : '';
 
-  const comisionDefault =
-    arriendoNum !== '' ? (arriendoNum / 2) * 1.19 : '';
+  // Garantía
+  let garantia = '';
+  if (garantiaOpc === 'un_mes' && arriendoNum !== '') garantia = arriendoNum;
+  else if (garantiaOpc === 'mes_medio' && arriendoNum !== '') garantia = arriendoNum * 1.5;
+  else if (garantiaOpc === 'dos_meses' && arriendoNum !== '') garantia = arriendoNum * 2;
+  else if (garantiaOpc === 'otro') garantia = garantiaOtroVal;
 
-  const comisionFinal =
-    comisionOverride !== null ? comisionOverride : comisionDefault;
+  // Comisión
+  let comision = '';
+  if (comisionOpc === 'mitad' && arriendoNum !== '') comision = (arriendoNum / 2) * 1.19;
+  else if (comisionOpc === 'otro') comision = comisionOtroVal;
 
-  const garantiaNum = garantia !== '' ? parseFloat(garantia) : '';
-
+  // Total
   const total =
-    proporcional !== '' &&
-    contratoDigital !== '' &&
-    garantiaNum !== '' &&
-    comisionFinal !== ''
-      ? proporcional + contratoDigital + garantiaNum + comisionFinal
+    proporcional !== '' && contratoVal !== '' && garantia !== '' && comision !== ''
+      ? proporcional + contratoVal + Number(garantia) + Number(comision)
       : '';
 
-  // Reset override de comisión si cambia arriendo
-  useEffect(() => {
-    setComisionOverride(null);
-  }, [arriendo]);
-
-  const handleDiaChange = (setter, val) => {
-    if (val === '') { setter(''); return; }
-    const n = parseInt(val);
-    if (!isNaN(n) && n >= 1 && n <= 31) setter(String(n));
+  const handleArriendoChange = (e) => {
+    const raw = e.target.value.replace(/\./g, '');
+    const n = parseFloat(raw);
+    if (raw === '' || isNaN(n)) {
+      setArriendoInput('');
+      setArriendo('');
+    } else {
+      setArriendo(n);
+      setArriendoInput(Math.round(n).toLocaleString('es-CL'));
+    }
   };
 
-  const handleComisionChange = (val) => {
-    if (val === '') { setComisionOverride(null); return; }
-    const n = parseFloat(val);
-    if (!isNaN(n)) setComisionOverride(n);
+  const handleArriendoRaw = (e) => {
+    setArriendoInput(e.target.value.replace(/\./g, '').replace(/[^0-9]/g, ''));
+  };
+
+  const handleArriendoFocus = (e) => {
+    setArriendoInput(String(parseCLP(arriendoInput) || ''));
+  };
+
+  const handleArriendoBlur = () => {
+    const n = parseFloat(arriendoInput.replace(/\./g, ''));
+    if (!isNaN(n)) setArriendoInput(Math.round(n).toLocaleString('es-CL'));
+  };
+
+  const handleContratoFocus = () => {
+    setContratoInput(String(contratoVal));
+  };
+
+  const handleContratoBlur = () => {
+    const n = parseFloat(contratoInput.replace(/\./g, ''));
+    if (!isNaN(n)) {
+      setContratoVal(n);
+      setContratoInput(Math.round(n).toLocaleString('es-CL'));
+    } else {
+      setContratoInput('17.000');
+      setContratoVal(17000);
+    }
+  };
+
+  const handleGarantiaOtroFocus = () => {
+    setGarantiaOtroInput(String(garantiaOtroVal || ''));
+  };
+
+  const handleGarantiaOtroBlur = () => {
+    const n = parseFloat(garantiaOtro.replace(/\./g, ''));
+    if (!isNaN(n)) {
+      setGarantiaOtroVal(n);
+      setGarantiaOtroInput(Math.round(n).toLocaleString('es-CL'));
+    }
+  };
+
+  const handleComisionOtroFocus = () => {
+    setComisionOtroInput(String(comisionOtroVal || ''));
+  };
+
+  const handleComisionOtroBlur = () => {
+    const n = parseFloat(comisionOtro.replace(/\./g, ''));
+    if (!isNaN(n)) {
+      setComisionOtroVal(n);
+      setComisionOtroInput(Math.round(n).toLocaleString('es-CL'));
+    }
   };
 
   const s = styles;
 
+  const ResultRow = ({ label, value, highlight }) => (
+    <div style={{ ...s.resultRow, ...(highlight ? s.resultRowHighlight : {}) }}>
+      <span style={highlight ? s.resultLabelHL : s.resultLabel}>{label}</span>
+      <span style={highlight ? s.resultValueHL : s.resultValue}>
+        {value !== '' && value !== null && value !== undefined
+          ? '$' + formatCLP(value)
+          : <span style={s.empty}>—</span>}
+      </span>
+    </div>
+  );
+
   return (
     <div style={s.page}>
-      <h1 style={s.pageTitle}>Calculadora de Arriendo</h1>
+      <h1 style={s.title}>Calculadora de arriendo</h1>
 
-      {/* ── TABLA 1 ── */}
-      <p style={s.sectionLabel}>PROPORCIONAL DÍAS DE OCUPACIÓN</p>
-      <table style={s.table}>
-        <tbody>
-          <tr>
-            <td style={s.tdLabel}>Arriendo</td>
-            <td style={s.tdInput}>
+      <div style={s.layout}>
+        {/* ── INPUTS ── */}
+        <div style={s.card}>
+          <p style={s.cardTitle}>Datos de entrada</p>
+
+          <div style={s.field}>
+            <label style={s.label}>Arriendo</label>
+            <div style={s.inputWrap}>
+              <span style={s.prefix}>$</span>
               <input
                 style={s.input}
-                type="number"
-                min="0"
-                value={arriendo}
-                onChange={e => setArriendo(e.target.value)}
+                type="text"
+                inputMode="numeric"
+                value={arriendoInput}
+                onChange={e => {
+                  const raw = e.target.value.replace(/[^0-9]/g, '');
+                  setArriendoInput(raw);
+                }}
+                onBlur={handleArriendoBlur}
+                onFocus={handleArriendoFocus}
                 placeholder="0"
               />
-            </td>
-          </tr>
-          <tr>
-            <td style={s.tdLabel}>Día Llegada</td>
-            <td style={s.tdInput}>
-              <input
-                style={s.input}
-                type="number"
-                min="1"
-                max="31"
-                value={diaLlegada}
-                onChange={e => handleDiaChange(setDiaLlegada, e.target.value)}
-                placeholder="1"
-              />
-            </td>
-          </tr>
-          <tr style={{ borderBottom: 'none' }}>
-            <td style={{ ...s.tdLabel, borderBottom: 'none' }}>Días del mes</td>
-            <td style={{ ...s.tdInput, borderBottom: 'none' }}>
-              <input
-                style={s.input}
-                type="number"
-                min="1"
-                max="31"
-                value={diasMes}
-                onChange={e => handleDiaChange(setDiasMes, e.target.value)}
-                placeholder="31"
-              />
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
 
-      <table style={{ ...s.table, marginTop: 8, border: '1px solid #c8a800' }}>
-        <tbody>
-          <tr>
-            <td style={s.tdYellowLabel}>PROPORCIONAL</td>
-            <td style={s.tdYellowValue}>{proporcional !== '' ? fmt(proporcional) : '—'}</td>
-          </tr>
-        </tbody>
-      </table>
+          <div style={s.field}>
+            <label style={s.label}>Fecha de llegada</label>
+            <input
+              style={{ ...s.input, paddingLeft: 12 }}
+              type="date"
+              value={fechaLlegada}
+              onChange={e => setFechaLlegada(e.target.value)}
+            />
+          </div>
 
-      {/* ── TABLA 2 ── */}
-      <p style={{ ...s.sectionLabel, marginTop: 32 }}>MONTO TOTAL</p>
-      <table style={s.table}>
-        <tbody>
-          <tr>
-            <td style={s.tdLabel}>Proporcional</td>
-            <td style={{ ...s.tdInput, textAlign: 'right', paddingRight: 12, color: '#444' }}>
-              {proporcional !== '' ? fmt(proporcional) : '—'}
-            </td>
-          </tr>
-          <tr>
-            <td style={s.tdLabel}>Contrato Digital</td>
-            <td style={s.tdInput}>
-              <input
-                style={s.input}
-                type="number"
-                min="0"
-                value={contratoDigital}
-                onChange={e => setContratoDigital(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                placeholder="17000"
-              />
-            </td>
-          </tr>
-          <tr>
-            <td style={s.tdLabel}>Garantía</td>
-            <td style={s.tdInput}>
-              <input
-                style={s.input}
-                type="number"
-                min="0"
-                value={garantia}
-                onChange={e => setGarantia(e.target.value)}
-                placeholder="0"
-              />
-            </td>
-          </tr>
-          <tr>
-            <td style={{ ...s.tdLabel, borderBottom: 'none' }}>Comisión Corretaje + IVA</td>
-            <td style={{ ...s.tdInput, borderBottom: 'none' }}>
-              <input
-                style={s.input}
-                type="number"
-                min="0"
-                value={
-                  comisionOverride !== null
-                    ? comisionOverride
-                    : comisionDefault !== ''
-                    ? Math.round(comisionDefault)
-                    : ''
-                }
-                onChange={e => handleComisionChange(e.target.value)}
-                placeholder="0"
-              />
-            </td>
-          </tr>
-        </tbody>
-      </table>
+          <div style={s.field}>
+            <label style={s.label}>Garantía</label>
+            <select
+              style={s.select}
+              value={garantiaOpc}
+              onChange={e => { setGarantiaOpc(e.target.value); setGarantiaOtroInput(''); setGarantiaOtroVal(''); }}
+            >
+              <option value="">Seleccionar...</option>
+              <option value="un_mes">Un mes</option>
+              <option value="mes_medio">Mes y medio</option>
+              <option value="dos_meses">2 meses</option>
+              <option value="otro">Otro</option>
+            </select>
+            {garantiaOpc === 'otro' && (
+              <div style={{ ...s.inputWrap, marginTop: 8 }}>
+                <span style={s.prefix}>$</span>
+                <input
+                  style={s.input}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Monto manual"
+                  value={garantiaOtro}
+                  onChange={e => setGarantiaOtroInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  onFocus={handleGarantiaOtroFocus}
+                  onBlur={handleGarantiaOtroBlur}
+                />
+              </div>
+            )}
+          </div>
 
-      <table style={{ ...s.table, marginTop: 8, border: '1px solid #1B5E20' }}>
-        <tbody>
-          <tr>
-            <td style={s.tdGreenLabel}>TOTAL</td>
-            <td style={s.tdGreenValue}>{total !== '' ? fmt(total) : '—'}</td>
-          </tr>
-        </tbody>
-      </table>
+          <div style={s.field}>
+            <label style={s.label}>Comisión corretaje</label>
+            <select
+              style={s.select}
+              value={comisionOpc}
+              onChange={e => { setComisionOpc(e.target.value); setComisionOtroInput(''); setComisionOtroVal(''); }}
+            >
+              <option value="">Seleccionar...</option>
+              <option value="mitad">Mitad de arriendo</option>
+              <option value="otro">Otro</option>
+            </select>
+            {comisionOpc === 'otro' && (
+              <div style={{ ...s.inputWrap, marginTop: 8 }}>
+                <span style={s.prefix}>$</span>
+                <input
+                  style={s.input}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Monto manual"
+                  value={comisionOtro}
+                  onChange={e => setComisionOtroInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  onFocus={handleComisionOtroFocus}
+                  onBlur={handleComisionOtroBlur}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── RESULTADOS ── */}
+        <div style={s.card}>
+          <p style={s.cardTitle}>Resumen</p>
+
+          <ResultRow label="Arriendo proporcional" value={proporcional} />
+          <div style={s.resultSubtext}>
+            {fechaLlegada && totalDias && diaLlegada
+              ? `${totalDias - diaLlegada + 1} días de ${totalDias} del mes`
+              : ''}
+          </div>
+
+          <div style={s.resultRow}>
+            <span style={s.resultLabel}>Contrato digital</span>
+            <div style={s.inlineEdit}>
+              <span style={s.prefix2}>$</span>
+              <input
+                style={s.inlineInput}
+                type="text"
+                inputMode="numeric"
+                value={contratoInput}
+                onChange={e => setContratoInput(e.target.value.replace(/[^0-9]/g, ''))}
+                onFocus={handleContratoFocus}
+                onBlur={handleContratoBlur}
+              />
+            </div>
+          </div>
+
+          <ResultRow label="Garantía" value={garantia} />
+          <ResultRow label="Comisión corretaje + IVA" value={comision} />
+
+          <div style={s.divider} />
+          <ResultRow label="Total" value={total} highlight />
+        </div>
+      </div>
     </div>
   );
 }
@@ -194,87 +279,165 @@ export default function CalculadoraPage() {
 const styles = {
   page: {
     padding: '32px',
-    maxWidth: 560,
+    maxWidth: 860,
     fontFamily: "'Google Sans', 'Segoe UI', sans-serif",
   },
-  pageTitle: {
+  title: {
     fontSize: 22,
     fontWeight: 700,
     color: '#202124',
     marginBottom: 28,
     marginTop: 0,
   },
-  sectionLabel: {
+  layout: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 24,
+    alignItems: 'start',
+  },
+  card: {
+    background: '#fff',
+    border: '1px solid #e8eaed',
+    borderRadius: 12,
+    padding: '20px 24px',
+  },
+  cardTitle: {
     fontSize: 12,
     fontWeight: 700,
     letterSpacing: '0.6px',
+    textTransform: 'uppercase',
     color: '#5f6368',
-    marginBottom: 8,
-    marginTop: 0,
+    margin: '0 0 20px 0',
   },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    border: '1px solid #d0d0d0',
+  field: {
+    marginBottom: 18,
   },
-  tdLabel: {
-    padding: '9px 12px',
+  label: {
+    display: 'block',
     fontSize: 13,
     fontWeight: 500,
-    color: '#333',
-    borderBottom: '1px solid #e0e0e0',
-    borderRight: '1px solid #e0e0e0',
-    width: '58%',
+    color: '#3c4043',
+    marginBottom: 6,
   },
-  tdInput: {
-    padding: '2px 6px',
+  inputWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    border: '1px solid #dadce0',
+    borderRadius: 8,
+    overflow: 'hidden',
+    background: '#fff',
+  },
+  prefix: {
+    padding: '0 10px',
     fontSize: 13,
-    borderBottom: '1px solid #e0e0e0',
-    width: '42%',
+    color: '#5f6368',
+    background: '#f8f9fa',
+    borderRight: '1px solid #dadce0',
+    alignSelf: 'stretch',
+    display: 'flex',
+    alignItems: 'center',
   },
   input: {
-    width: '100%',
+    flex: 1,
     border: 'none',
     outline: 'none',
     fontSize: 13,
+    padding: '9px 12px',
+    color: '#202124',
     background: 'transparent',
-    textAlign: 'right',
-    padding: '6px',
-    color: '#1a1a1a',
+    width: '100%',
     boxSizing: 'border-box',
-  },
-  tdYellowLabel: {
-    padding: '10px 12px',
-    fontSize: 13,
-    fontWeight: 700,
-    color: '#1a1a1a',
-    backgroundColor: '#FFE500',
-    borderRight: '1px solid #c8a800',
-    width: '58%',
-  },
-  tdYellowValue: {
-    padding: '10px 12px',
-    fontSize: 13,
-    fontWeight: 700,
-    color: '#1a1a1a',
-    backgroundColor: '#FFE500',
     textAlign: 'right',
   },
-  tdGreenLabel: {
-    padding: '10px 12px',
-    fontSize: 14,
-    fontWeight: 800,
-    color: '#fff',
-    backgroundColor: '#1B5E20',
-    borderRight: '1px solid #1B5E20',
-    width: '58%',
+  select: {
+    width: '100%',
+    border: '1px solid #dadce0',
+    borderRadius: 8,
+    padding: '9px 12px',
+    fontSize: 13,
+    color: '#202124',
+    background: '#fff',
+    outline: 'none',
+    cursor: 'pointer',
   },
-  tdGreenValue: {
-    padding: '10px 12px',
+  resultRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 0',
+    borderBottom: '1px solid #f1f3f4',
+  },
+  resultRowHighlight: {
+    background: '#1B5E20',
+    borderRadius: 8,
+    padding: '12px 14px',
+    marginTop: 4,
+    border: 'none',
+  },
+  resultLabel: {
+    fontSize: 13,
+    color: '#3c4043',
+    fontWeight: 500,
+  },
+  resultLabelHL: {
     fontSize: 14,
-    fontWeight: 800,
     color: '#fff',
-    backgroundColor: '#1B5E20',
+    fontWeight: 700,
+  },
+  resultValue: {
+    fontSize: 13,
+    color: '#202124',
+    fontWeight: 600,
     textAlign: 'right',
+  },
+  resultValueHL: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: 700,
+    textAlign: 'right',
+  },
+  resultSubtext: {
+    fontSize: 11,
+    color: '#5f6368',
+    marginTop: -6,
+    marginBottom: 4,
+    paddingLeft: 2,
+  },
+  empty: {
+    color: '#bdc1c6',
+    fontWeight: 400,
+  },
+  divider: {
+    borderTop: '1px solid #e8eaed',
+    margin: '12px 0 4px',
+  },
+  inlineEdit: {
+    display: 'flex',
+    alignItems: 'center',
+    border: '1px solid #dadce0',
+    borderRadius: 6,
+    overflow: 'hidden',
+    background: '#fff',
+  },
+  prefix2: {
+    padding: '0 6px',
+    fontSize: 12,
+    color: '#5f6368',
+    background: '#f8f9fa',
+    borderRight: '1px solid #dadce0',
+    alignSelf: 'stretch',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  inlineInput: {
+    border: 'none',
+    outline: 'none',
+    fontSize: 13,
+    padding: '5px 8px',
+    color: '#202124',
+    background: 'transparent',
+    width: 90,
+    textAlign: 'right',
+    fontWeight: 600,
   },
 };
