@@ -136,8 +136,8 @@ function MensajeModal({ onClose, datos }) {
                 <label style={s.label}>Reajuste</label>
                 <select style={s.select} value={reajuste} onChange={e => setReajuste(e.target.value)}>
                   <option value="">Seleccionar...</option>
-                  <option value="reajuste anual por IPC">Reajuste anual por IPC</option>
-                  <option value="reajuste semestral por IPC">Reajuste semestral por IPC</option>
+                  <option value="anual por IPC">Anual por IPC</option>
+                  <option value="semestral por IPC">Semestral por IPC</option>
                   <option value="Sin reajuste">Sin reajuste</option>
                   <option value="otro">Otro</option>
                 </select>
@@ -208,7 +208,22 @@ function MensajeModal({ onClose, datos }) {
           ) : (
             <>
               <div style={s.textArea}>
-                <pre style={s.pre}>{textoGenerado}</pre>
+                {textoGenerado.split('\n').map((line, i) => (
+                  <p key={i} style={{ margin: '2px 0', fontSize: 13, lineHeight: 1.7, fontFamily: 'inherit', minHeight: line === '' ? 10 : 'auto' }}>
+                    {line.split(/(\*[^*]+\*)/).map((part, j) => {
+                      if (part.startsWith('*') && part.endsWith('*')) {
+                        const inner = part.slice(1, -1);
+                        const isXXX = inner === 'XXXXX';
+                        return (
+                          <strong key={j} style={isXXX ? { background: '#FFF9C4', padding: '0 3px', borderRadius: 3 } : {}}>
+                            {inner}
+                          </strong>
+                        );
+                      }
+                      return part;
+                    })}
+                  </p>
+                ))}
               </div>
               <div style={s.bottomRow}>
                 <button onClick={() => setGenerado(false)} style={s.backBtn}>Volver</button>
