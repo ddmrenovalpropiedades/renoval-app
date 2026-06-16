@@ -6,6 +6,7 @@ const EMAILS_WITH_ACCESS = [
   'ddm@renovalpropiedades.com',
   'fdm@renovalpropiedades.com',
   'edith@renovalpropiedades.com',
+  'fernanda@renovalpropiedades.com',
 ];
 const STORAGE_KEY = 'planningEmailSummary';
 const STORAGE_DATE_KEY = 'planningEmailDate';
