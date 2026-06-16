@@ -1,15 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 const formatCLP = (val) => {
   if (val === '' || val === null || val === undefined || isNaN(val)) return '';
   return Math.round(val).toLocaleString('es-CL');
-};
-
-const parseCLP = (str) => {
-  if (!str) return '';
-  const clean = String(str).replace(/\./g, '').replace(',', '.');
-  const n = parseFloat(clean);
-  return isNaN(n) ? '' : n;
 };
 
 const diasEnMes = (fecha) => {
@@ -24,7 +17,6 @@ const diaDelMes = (fecha) => {
 };
 
 export default function CalculadoraPage() {
-  const [arriendo, setArriendo] = useState('');
   const [arriendoInput, setArriendoInput] = useState('');
   const [fechaLlegada, setFechaLlegada] = useState('');
   const [garantiaOpc, setGarantiaOpc] = useState('');
@@ -36,8 +28,8 @@ export default function CalculadoraPage() {
   const [contratoInput, setContratoInput] = useState('17.000');
   const [contratoVal, setContratoVal] = useState(17000);
 
-  // Proporcional
-  const arriendoNum = parseCLP(arriendoInput);
+  const arriendoNum = arriendoInput ? parseFloat(arriendoInput.replace(/\./g, '')) : '';
+
   const totalDias = diasEnMes(fechaLlegada);
   const diaLlegada = diaDelMes(fechaLlegada);
   const proporcional =
@@ -45,42 +37,23 @@ export default function CalculadoraPage() {
       ? ((totalDias - diaLlegada + 1) / totalDias) * arriendoNum
       : '';
 
-  // Garantía
   let garantia = '';
   if (garantiaOpc === 'un_mes' && arriendoNum !== '') garantia = arriendoNum;
   else if (garantiaOpc === 'mes_medio' && arriendoNum !== '') garantia = arriendoNum * 1.5;
   else if (garantiaOpc === 'dos_meses' && arriendoNum !== '') garantia = arriendoNum * 2;
   else if (garantiaOpc === 'otro') garantia = garantiaOtroVal;
 
-  // Comisión
   let comision = '';
   if (comisionOpc === 'mitad' && arriendoNum !== '') comision = (arriendoNum / 2) * 1.19;
   else if (comisionOpc === 'otro') comision = comisionOtroVal;
 
-  // Total
   const total =
     proporcional !== '' && contratoVal !== '' && garantia !== '' && comision !== ''
       ? proporcional + contratoVal + Number(garantia) + Number(comision)
       : '';
 
-  const handleArriendoChange = (e) => {
-    const raw = e.target.value.replace(/\./g, '');
-    const n = parseFloat(raw);
-    if (raw === '' || isNaN(n)) {
-      setArriendoInput('');
-      setArriendo('');
-    } else {
-      setArriendo(n);
-      setArriendoInput(Math.round(n).toLocaleString('es-CL'));
-    }
-  };
-
-  const handleArriendoRaw = (e) => {
-    setArriendoInput(e.target.value.replace(/\./g, '').replace(/[^0-9]/g, ''));
-  };
-
-  const handleArriendoFocus = (e) => {
-    setArriendoInput(String(parseCLP(arriendoInput) || ''));
+  const handleArriendoFocus = () => {
+    setArriendoInput(arriendoInput.replace(/\./g, ''));
   };
 
   const handleArriendoBlur = () => {
@@ -145,7 +118,7 @@ export default function CalculadoraPage() {
       <h1 style={s.title}>Calculadora de arriendo</h1>
 
       <div style={s.layout}>
-        {/* ── INPUTS ── */}
+        {/* INPUTS */}
         <div style={s.card}>
           <p style={s.cardTitle}>Datos de entrada</p>
 
@@ -158,12 +131,9 @@ export default function CalculadoraPage() {
                 type="text"
                 inputMode="numeric"
                 value={arriendoInput}
-                onChange={e => {
-                  const raw = e.target.value.replace(/[^0-9]/g, '');
-                  setArriendoInput(raw);
-                }}
-                onBlur={handleArriendoBlur}
+                onChange={e => setArriendoInput(e.target.value.replace(/[^0-9]/g, ''))}
                 onFocus={handleArriendoFocus}
+                onBlur={handleArriendoBlur}
                 placeholder="0"
               />
             </div>
@@ -172,7 +142,7 @@ export default function CalculadoraPage() {
           <div style={s.field}>
             <label style={s.label}>Fecha de llegada</label>
             <input
-              style={{ ...s.input, paddingLeft: 12 }}
+              style={{ ...s.input, paddingLeft: 12, border: '1px solid #dadce0', borderRadius: 8 }}
               type="date"
               value={fechaLlegada}
               onChange={e => setFechaLlegada(e.target.value)}
@@ -184,7 +154,11 @@ export default function CalculadoraPage() {
             <select
               style={s.select}
               value={garantiaOpc}
-              onChange={e => { setGarantiaOpc(e.target.value); setGarantiaOtroInput(''); setGarantiaOtroVal(''); }}
+              onChange={e => {
+                setGarantiaOpc(e.target.value);
+                setGarantiaOtroInput('');
+                setGarantiaOtroVal('');
+              }}
             >
               <option value="">Seleccionar...</option>
               <option value="un_mes">Un mes</option>
@@ -214,7 +188,11 @@ export default function CalculadoraPage() {
             <select
               style={s.select}
               value={comisionOpc}
-              onChange={e => { setComisionOpc(e.target.value); setComisionOtroInput(''); setComisionOtroVal(''); }}
+              onChange={e => {
+                setComisionOpc(e.target.value);
+                setComisionOtroInput('');
+                setComisionOtroVal('');
+              }}
             >
               <option value="">Seleccionar...</option>
               <option value="mitad">Mitad de arriendo</option>
@@ -238,16 +216,16 @@ export default function CalculadoraPage() {
           </div>
         </div>
 
-        {/* ── RESULTADOS ── */}
+        {/* RESULTADOS */}
         <div style={s.card}>
           <p style={s.cardTitle}>Resumen</p>
 
           <ResultRow label="Arriendo proporcional" value={proporcional} />
-          <div style={s.resultSubtext}>
-            {fechaLlegada && totalDias && diaLlegada
-              ? `${totalDias - diaLlegada + 1} días de ${totalDias} del mes`
-              : ''}
-          </div>
+          {fechaLlegada && totalDias && diaLlegada && (
+            <div style={s.resultSubtext}>
+              {totalDias - diaLlegada + 1} días de {totalDias} del mes
+            </div>
+          )}
 
           <div style={s.resultRow}>
             <span style={s.resultLabel}>Contrato digital</span>
