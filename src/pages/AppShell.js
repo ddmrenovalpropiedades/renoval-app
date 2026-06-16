@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutGrid, CheckSquare, FileText,
   Zap, Users, LogOut, ChevronLeft, ChevronRight,
-  Building2, MessageCircle, CreditCard
+  Building2, MessageCircle, CreditCard, Calculator
 } from 'lucide-react';
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
@@ -14,6 +14,7 @@ import ContratosPage from './ContratosPage';
 import SaldosPage from './SaldosPage';
 import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
+import CalculadoraPage from './CalculadoraPage';
 
 const NAV_ITEMS_TOP = [
   { id: 'mensajes',   label: 'Mensajes',               icon: MessageCircle, ownerOnly: false },
@@ -25,9 +26,10 @@ const NAV_ITEMS_TOP = [
 ];
 
 const NAV_ITEMS_BOTTOM = [
-  { id: 'pagos',      label: 'Pagos',    icon: CreditCard, ownerOnly: true },
-  { id: 'cartera',    label: 'Cartera',  icon: Building2,  ownerOnly: false },
-  { id: 'usuarios',   label: 'Usuarios', icon: Users,      ownerOnly: true },
+  { id: 'pagos',       label: 'Pagos',        icon: CreditCard,  ownerOnly: true  },
+  { id: 'cartera',     label: 'Cartera',      icon: Building2,   ownerOnly: false },
+  { id: 'usuarios',    label: 'Usuarios',     icon: Users,       ownerOnly: true  },
+  { id: 'calculadora', label: 'Calculadora',  icon: Calculator,  ownerOnly: false },
 ];
 
 export default function AppShell() {
@@ -159,6 +161,8 @@ function ModuleRenderer({ module, profile }) {
       return <MensajesPage currentUser={profile} />;
     case 'usuarios':
       return <UserManagement />;
+    case 'calculadora':
+      return <CalculadoraPage />;
     default:
       return <ComingSoon module={module} />;
   }
