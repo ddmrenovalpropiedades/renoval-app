@@ -24,12 +24,6 @@ const parseISO = (ddmmyyyy) => {
   return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
 };
 
-// Formatea ISO a dd/mm/yyyy para mostrar
-const formatDDMMYYYY = (iso) => {
-  if (!iso) return '';
-  return new Date(iso + 'T12:00:00').toLocaleDateString('es-CL');
-};
-
 export default function CalculadoraPage() {
   const [arriendoInput, setArriendoInput] = useState('');
   const [fechaInput, setFechaInput] = useState('');       // texto dd/mm/yyyy
