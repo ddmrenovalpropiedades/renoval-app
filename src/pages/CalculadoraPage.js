@@ -94,7 +94,7 @@ function MensajeModal({ onClose, datos }) {
 
   const garantiaLabel = {
     un_mes: 'Un mes', mes_medio: 'Mes y medio',
-    dos_meses: '2 meses', otro: 'Otro',
+    dos_meses: '2 meses', otro: 'Garantía',
   }[garantiaOpc] || '';
 
   // Comisión: si fue "otro" en el input, aparece como XXXXX amarillo
@@ -335,7 +335,7 @@ export default function CalculadoraPage() {
 
   let comision = '';
   if (comisionOpc === 'mitad' && arriendoNum !== '') comision = (arriendoNum / 2) * 1.19;
-  else if (comisionOpc === 'otro') comision = comisionOtroVal;
+  else if (comisionOpc === 'otro') comision = comisionOtroVal !== '' ? comisionOtroVal * 1.19 : '';
 
   const total =
     proporcional !== '' && contratoVal !== '' && garantia !== '' && comision !== ''
