@@ -99,7 +99,6 @@ function MensajeModal({ onClose, datos }) {
 
   // Comisión: si fue "otro" en el input, aparece como XXXXX amarillo
   const comisionEsOtro = comisionOpc === 'otro';
-  const comisionLabel = comisionEsOtro ? null : 'mitad de arriendo';
 
   const fechaFormateada = fechaLlegada
     ? new Date(fechaLlegada + 'T12:00:00').toLocaleDateString('es-CL')
@@ -338,7 +337,7 @@ export default function CalculadoraPage() {
   };
 
   const focusToRaw = (raw, setter) => {
-    const clean = raw.replace(/[$\.]/g, '').replace(/[^0-9]/g, '');
+    const clean = raw.replace(/[$,.]/g, '').replace(/[^0-9]/g, '');
     setter(clean);
   };
 
