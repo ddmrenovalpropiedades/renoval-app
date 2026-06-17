@@ -118,45 +118,57 @@ function MensajeModal({ onClose, datos }) {
     const y = (t) => `§${t}§`;
     const est = formalidad === 'formal' ? 'está' : 'estás';
     const comisionPart = comisionEsOtro
-      ? `$${formatCLP(comision)}, ${y('XXXXX')}`
-      : `$${formatCLP(comision)}, ${b('mitad de arriendo')}`;
+      ? `${b('$' + formatCLP(comision))}, ${y('XXXXX')}`
+      : `${b('$' + formatCLP(comision))}, ${b('mitad de arriendo')}`;
     const reajustePart = reajusteEsOtro
       ? (reajusteTexto ? b(reajusteTexto) : y('XXXXX'))
       : b(reajusteTexto);
 
     let txt = `Hola ${nombre},\n\n`;
-    txt += `Como ${est}? Despues de realizar la revision de antecedentes hay aprobacion para que arrienden la propiedad.\n\n`;
+    txt += `¿Cómo ${est}? Después de realizar la revisión de antecedentes hay aprobación para que arrienden la propiedad.\n\n`;
     txt += `Tal y como fue conversado, el detalle del monto total a cancelar se calcula sumando los siguientes montos:\n\n`;
     txt += `${b('MONTO TOTAL')}\n\n`;
-    txt += `-${garantiaLabel} de garantia: ${b('$' + formatCLP(garantia))}\n`;
-    txt += `-Comision de corretaje + IVA: ${comisionPart}\n`;
-    txt += `-Arriendo proporcional del mes, cuyo calculo dependera de la fecha de llegada a la propiedad (definida en principio para el ${fechaFormateada}, monto de ${b('$' + formatCLP(proporcional))})\n`;
+    txt += `-${garantiaLabel} de garantía: ${b('$' + formatCLP(garantia))}\n`;
+    txt += `-Comisión de corretaje + IVA: ${comisionPart}\n`;
+    txt += `-Arriendo proporcional del mes, cuyo cálculo dependerá de la fecha de llegada a la propiedad (definida en principio para el ${b(fechaFormateada)}), monto de ${b('$' + formatCLP(proporcional))}\n`;
     txt += `-Contrato digital notariado ${b('$' + contratoInput)}\n\n`;
-    txt += `Considerando estos valores preliminares, el monto total seria de ${b('$' + formatCLP(total))}.\n\n`;
+    txt += `Considerando estos valores preliminares, el monto total sería de ${b('$' + formatCLP(total))}.\n\n`;
     txt += `${b('FORMA DE PAGO')}\n\n`;
-    txt += `Para que ustedes se queden de manera efectiva con el arriendo, se debe pagar primero la reserva, cuyo monto equivale a un mes de arriendo, en este caso, de ${b('$' + arriendoInput)}. Este monto es un adelanto del monto total, no un monto adicional a pagarse. El saldo restante del monto total se debe transferir el dia de la entrega de la propiedad, previo a la entrega de llaves.\n\n`;
-    txt += `La cuenta a la que se debe transferir la reserva y el saldo del monto total el dia de la entrega es:\n\n`;
-    txt += `Cuenta corriente Banco Santander\nN 975947211\nRenoval Gestion Inmobiliaria\nRut 77.023.552-9\nfdm@renovalpropiedades.com\n\n`;
-    txt += `En caso de que, posterior al pago de la reserva, se desista del arriendo de la propiedad y cualquiera sea el motivo, se descontara de la devolucion de la misma un monto equivalente al arriendo proporcional de los dias en que se dejo de publicar y mostrar la propiedad (dia en que se pago la reserva y se dio de baja la publicidad). El monto minimo a descontar, no obstante lo anterior, es de la mitad del valor de la reserva.\n\n`;
+    txt += `Para que ustedes se queden de manera efectiva con el arriendo, se debe pagar primero la reserva, cuyo monto equivale a un mes de arriendo, en este caso, de ${b('$' + arriendoInput)}. Este monto es un adelanto del monto total, no un monto adicional a pagarse. El saldo restante del monto total se debe transferir el día de la entrega de la propiedad, previo a la entrega de llaves.\n\n`;
+    txt += `La cuenta a la que se debe transferir la reserva y el saldo del monto total el día de la entrega es:\n\n`;
+    txt += `Cuenta corriente Banco Santander\nN° 27624332\nRenoval Gestión Inmobiliaria Limitada\nRUT 78.299.346-1\nfdm@renovalpropiedades.com\n\n`;
+    txt += `En caso de que, posterior al pago de la reserva, se desista del arriendo de la propiedad y cualquiera sea el motivo, se descontará de la devolución de la misma un monto equivalente al arriendo proporcional de los días en que se dejó de publicar y mostrar la propiedad (día en que se pagó la reserva y se dio de baja la publicidad). El monto mínimo a descontar, no obstante lo anterior, es de la mitad del valor de la reserva.\n\n`;
     txt += `${b('CONDICIONES DEL ARRIENDO')}\n\n`;
     txt += `Canon de arriendo: ${b('$' + arriendoInput)}\n`;
     txt += `Reajuste: ${reajustePart}\n`;
-    if (tienePromocion === 'si' && promoTexto) txt += `Promocion: ${b(promoTexto)}\n`;
-    txt += `\nSe adjunta borrador de contrato, para hacer una revision preliminar de las clausulas principales del mismo (este no es el contrato definitivo).\n\n`;
-    txt += `En caso de arrendar la propiedad, es responsabilidad del arrendatario coordinar la mudanza y solicitar el reglamento de copropiedad a la administracion del edificio.\n\n`;
+    if (tienePromocion === 'si' && promoTexto) txt += `Promoción: ${b(promoTexto)}\n`;
+    txt += `\nSe adjunta borrador de contrato, para hacer una revisión preliminar de las cláusulas principales del mismo (este no es el contrato definitivo).\n\n`;
+    txt += `En caso de arrendar la propiedad, es responsabilidad del arrendatario coordinar la mudanza y solicitar el reglamento de copropiedad a la administración del edificio.\n\n`;
     txt += `Saludos cordiales`;
     return txt;
   };
 
   const textoGenerado = generado ? generarTexto() : '';
 
-  // Copia el HTML del div renderizado como texto plano con bold preservado
+  // Copia como HTML rich text para que Gmail reciba bold real
   const handleCopiar = () => {
-    // Texto para portapapeles: reemplaza *x* → x y §x§ → x (sin formato, texto limpio)
-    // Para WhatsApp: *bold* ya funciona. §amarillo§ lo dejamos como el texto puro.
-    const textoClipboard = textoGenerado
-      .replace(/§([^§]+)§/g, '$1'); // quita marcas de amarillo, deja el texto
-    navigator.clipboard.writeText(textoClipboard).then(() => {
+    const htmlLines = textoGenerado.split('\n').map(line => {
+      if (line === '') return '<br>';
+      const partes = line.split(/(\*[^*]+\*|§[^§]+§)/);
+      const html = partes.map(part => {
+        if (part.startsWith('*') && part.endsWith('*'))
+          return `<b>${part.slice(1, -1)}</b>`;
+        if (part.startsWith('§') && part.endsWith('§'))
+          return `<b style="background:#FFF9C4">${part.slice(1, -1)}</b>`;
+        return part.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }).join('');
+      return `<p style="margin:0;line-height:1.7">${html}</p>`;
+    }).join('');
+
+    const htmlBlob = new Blob([`<html><body>${htmlLines}</body></html>`], { type: 'text/html' });
+    const textBlob = new Blob([textoGenerado.replace(/\*([^*]+)\*/g,'$1').replace(/§([^§]+)§/g,'$1')], { type: 'text/plain' });
+    const item = new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob });
+    navigator.clipboard.write([item]).then(() => {
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     });
