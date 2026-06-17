@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutGrid, CheckSquare, FileText,
-  Zap, Users, LogOut, ChevronLeft, ChevronRight,
+  Zap, Users, LogOut,
   Building2, MessageCircle, CreditCard, Calculator
 } from 'lucide-react';
 import UserManagement from '../components/UserManagement';
@@ -27,32 +27,34 @@ const NAV_ITEMS_TOP = [
 
 const NAV_ITEMS_BOTTOM = [
   { id: 'pagos',       label: 'Pagos',        icon: CreditCard,  ownerOnly: true  },
+  { id: 'calculadora', label: 'Calculadora',  icon: Calculator,  ownerOnly: false },
   { id: 'cartera',     label: 'Cartera',      icon: Building2,   ownerOnly: false },
   { id: 'usuarios',    label: 'Usuarios',     icon: Users,       ownerOnly: true  },
-  { id: 'calculadora', label: 'Calculadora',  icon: Calculator,  ownerOnly: false },
 ];
 
 export default function AppShell() {
   const { profile, signOut } = useAuth();
   const [activeModule, setActiveModule] = useState('pizarra');
-  const [collapsed, setCollapsed] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
   const visibleNavTop    = NAV_ITEMS_TOP.filter(item => !item.ownerOnly || profile?.isOwner);
   const visibleNavBottom = NAV_ITEMS_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner);
 
+  const collapsed = !hovered;
   const fullWidth = activeModule === 'mensajes';
 
   return (
     <div style={styles.root}>
       {/* Sidebar */}
-      <aside style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}>
+      <aside
+        style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
         {/* Header */}
         <div style={styles.sidebarHeader}>
           <div style={styles.logoMark}>R</div>
           {!collapsed && <span style={styles.brandName}>Renoval</span>}
-          <button style={styles.collapseBtn} onClick={() => setCollapsed(!collapsed)}>
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
         </div>
 
         {/* Nav */}
@@ -81,7 +83,6 @@ export default function AppShell() {
             );
           })}
 
-          {/* Espaciador + separador para el grupo inferior */}
           <div style={styles.navSpacer} />
           <div style={styles.navDivider} />
 
@@ -228,17 +229,6 @@ const styles = {
     color: '#202124',
     flex: 1,
     whiteSpace: 'nowrap',
-  },
-  collapseBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: 4,
-    borderRadius: 4,
-    display: 'flex',
-    alignItems: 'center',
-    color: '#5f6368',
-    marginLeft: 'auto',
   },
   nav: {
     flex: 1,
