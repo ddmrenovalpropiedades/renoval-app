@@ -128,7 +128,7 @@ function MensajeModal({ onClose, datos }) {
     txt += `¿Cómo ${est}? Después de realizar la revisión de antecedentes hay aprobación para que arrienden la propiedad.\n\n`;
     txt += `Tal y como fue conversado, el detalle del monto total a cancelar se calcula sumando los siguientes montos:\n\n`;
     txt += `${b('MONTO TOTAL')}\n\n`;
-    txt += `-${garantiaLabel} de garantía: ${b('$' + formatCLP(garantia))}\n`;
+    txt += `-${garantiaOpc === 'otro' ? 'Garantía' : garantiaLabel + ' de garantía'}: ${b('$' + formatCLP(garantia))}\n`;
     txt += `-Comisión de corretaje + IVA: ${comisionPart}\n`;
     txt += `-Arriendo proporcional del mes, cuyo cálculo dependerá de la fecha de llegada a la propiedad (definida en principio para el ${b(fechaFormateada)}), monto de ${b('$' + formatCLP(proporcional))}\n`;
     txt += `-Contrato digital notariado ${b('$' + contratoInput)}\n\n`;
