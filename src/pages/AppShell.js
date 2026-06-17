@@ -32,6 +32,31 @@ const NAV_ITEMS_BOTTOM = [
   { id: 'usuarios',    label: 'Usuarios',     icon: Users,       ownerOnly: true  },
 ];
 
+function NavButton({ item, active, collapsed, onClick }) {
+  const [hov, setHov] = useState(false);
+  const Icon = item.icon;
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      title={collapsed ? item.label : ''}
+      style={{
+        ...styles.navItem,
+        ...(active ? styles.navItemActive : hov ? styles.navItemHover : {}),
+        justifyContent: collapsed ? 'center' : 'flex-start',
+      }}
+    >
+      <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : hov ? '#3c4043' : '#5f6368', transition: 'color 0.15s' }} />
+      {!collapsed && (
+        <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : hov ? '#202124' : '#3c4043', transition: 'color 0.15s' }}>
+          {item.label}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export default function AppShell() {
   const { profile, signOut } = useAuth();
   const [activeModule, setActiveModule] = useState('pizarra');
@@ -198,7 +223,7 @@ const styles = {
     borderRight: '1px solid #e8eaed',
     display: 'flex',
     flexDirection: 'column',
-    transition: 'width 0.2s ease',
+    transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
     overflow: 'hidden',
     flexShrink: 0,
   },
