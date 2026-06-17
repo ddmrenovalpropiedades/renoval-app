@@ -32,30 +32,6 @@ const NAV_ITEMS_BOTTOM = [
   { id: 'usuarios',    label: 'Usuarios',     icon: Users,       ownerOnly: true  },
 ];
 
-function NavButton({ item, active, collapsed, onClick }) {
-  const [hov, setHov] = useState(false);
-  const Icon = item.icon;
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      title={collapsed ? item.label : ''}
-      style={{
-        ...styles.navItem,
-        ...(active ? styles.navItemActive : hov ? styles.navItemHover : {}),
-        justifyContent: collapsed ? 'center' : 'flex-start',
-      }}
-    >
-      <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : hov ? '#3c4043' : '#5f6368', transition: 'color 0.15s' }} />
-      {!collapsed && (
-        <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : hov ? '#202124' : '#3c4043', transition: 'color 0.15s' }}>
-          {item.label}
-        </span>
-      )}
-    </button>
-  );
-}
 
 export default function AppShell() {
   const { profile, signOut } = useAuth();
@@ -84,56 +60,28 @@ export default function AppShell() {
 
         {/* Nav */}
         <nav style={styles.nav}>
-          {visibleNavTop.map(item => {
-            const Icon = item.icon;
-            const active = activeModule === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveModule(item.id)}
-                style={{
-                  ...styles.navItem,
-                  ...(active ? styles.navItemActive : {}),
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                }}
-                title={collapsed ? item.label : ''}
-              >
-                <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : '#5f6368' }} />
-                {!collapsed && (
-                  <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : '#3c4043' }}>
-                    {item.label}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {visibleNavTop.map(item => (
+            <NavButton
+              key={item.id}
+              item={item}
+              active={activeModule === item.id}
+              collapsed={collapsed}
+              onClick={() => setActiveModule(item.id)}
+            />
+          ))}
 
           <div style={styles.navSpacer} />
           <div style={styles.navDivider} />
 
-          {visibleNavBottom.map(item => {
-            const Icon = item.icon;
-            const active = activeModule === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveModule(item.id)}
-                style={{
-                  ...styles.navItem,
-                  ...(active ? styles.navItemActive : {}),
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                }}
-                title={collapsed ? item.label : ''}
-              >
-                <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : '#5f6368' }} />
-                {!collapsed && (
-                  <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : '#3c4043' }}>
-                    {item.label}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {visibleNavBottom.map(item => (
+            <NavButton
+              key={item.id}
+              item={item}
+              active={activeModule === item.id}
+              collapsed={collapsed}
+              onClick={() => setActiveModule(item.id)}
+            />
+          ))}
         </nav>
 
         {/* User area */}
@@ -285,6 +233,9 @@ const styles = {
   navItemActive: {
     background: '#e8f0fe',
   },
+  navItemHover: {
+    background: '#f1f3f4',
+  },
   navLabel: {
     fontSize: 14,
     fontWeight: 500,
@@ -357,3 +308,28 @@ const styles = {
     margin: 0,
   },
 };
+
+function NavButton({ item, active, collapsed, onClick }) {
+  const [hov, setHov] = useState(false);
+  const Icon = item.icon;
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      title={collapsed ? item.label : ''}
+      style={{
+        ...styles.navItem,
+        ...(active ? styles.navItemActive : hov ? styles.navItemHover : {}),
+        justifyContent: collapsed ? 'center' : 'flex-start',
+      }}
+    >
+      <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : hov ? '#3c4043' : '#5f6368', transition: 'color 0.15s' }} />
+      {!collapsed && (
+        <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : hov ? '#202124' : '#3c4043', transition: 'color 0.15s' }}>
+          {item.label}
+        </span>
+      )}
+    </button>
+  );
+}
