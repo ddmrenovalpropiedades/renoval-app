@@ -149,6 +149,7 @@ export default function PropertiesPage() {
       await supabase.from('properties').update(form).eq('id', editingProp.id);
     } else {
       await supabase.from('properties').insert(form);
+      await supabase.from('property_attributes').insert({ propiedad: form.propiedad });
     }
     await fetchProperties();
     setEditingProp(null);
