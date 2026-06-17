@@ -306,7 +306,7 @@ export default function CalculadoraPage() {
   const [contratoVal, setContratoVal] = useState(17000);
   const [showModal, setShowModal] = useState(false);
 
-  const arriendoNum = arriendoRaw ? parseFloat(arriendoRaw.replace(/\./g, '')) : '';
+  const arriendoNum = arriendoRaw ? parseFloat(arriendoRaw.replace(/[$,.]/g, '')) : '';
   const totalDias = diasEnMes(fechaLlegada);
   const diaLlegada = diaDelMes(fechaLlegada);
 
@@ -426,7 +426,7 @@ export default function CalculadoraPage() {
                   onChange={v => setGarantiaOtroRaw(v)}
                   onFocus={() => focusToRaw(garantiaOtroRaw, setGarantiaOtroRaw)}
                   onBlur={() => {
-                    const n = parseFloat(garantiaOtroRaw.replace(/\./g, ''));
+                    const n = parseFloat(garantiaOtroRaw.replace(/[$,.]/g, ''));
                     if (!isNaN(n)) { setGarantiaOtroVal(n); setGarantiaOtroRaw('$' + Math.round(n).toLocaleString('es-CL')); }
                   }}
                   placeholder="Monto manual"
@@ -452,7 +452,7 @@ export default function CalculadoraPage() {
                   onChange={v => setComisionOtroRaw(v)}
                   onFocus={() => focusToRaw(comisionOtroRaw, setComisionOtroRaw)}
                   onBlur={() => {
-                    const n = parseFloat(comisionOtroRaw.replace(/\./g, ''));
+                    const n = parseFloat(comisionOtroRaw.replace(/[$,.]/g, ''));
                     if (!isNaN(n)) { setComisionOtroVal(n); setComisionOtroRaw('$' + Math.round(n).toLocaleString('es-CL')); }
                   }}
                   placeholder="Monto manual"
@@ -483,7 +483,7 @@ export default function CalculadoraPage() {
                 onChange={v => setContratoRaw(v)}
                 onFocus={() => focusToRaw(contratoRaw, setContratoRaw)}
                 onBlur={() => {
-                  const n = parseFloat(contratoRaw.replace(/\./g, ''));
+                  const n = parseFloat(contratoRaw.replace(/[$,.]/g, ''));
                   if (!isNaN(n)) { setContratoVal(n); setContratoRaw('$' + Math.round(n).toLocaleString('es-CL')); }
                   else { setContratoRaw('$17.000'); setContratoVal(17000); }
                 }}
