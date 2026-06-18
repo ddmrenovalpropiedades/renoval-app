@@ -286,6 +286,9 @@ const handleSave = async (form) => {
                         <button onClick={() => handleEdit(prop)} style={styles.editBtn} title="Editar">
                           <Edit2 size={14} color="#5f6368" />
                         </button>
+                        <button onClick={() => handleDelete(prop)} style={styles.editBtn} title="Eliminar">
+                          <Trash2 size={14} color="#ea4335" />
+                        </button>
                       </td>
                     )}
                   </tr>
