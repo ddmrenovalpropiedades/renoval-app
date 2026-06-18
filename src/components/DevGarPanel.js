@@ -1,239 +1,158 @@
-import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import {
-  LayoutGrid, CheckSquare, FileText,
-  Zap, Users, LogOut,
-  Building2, MessageCircle, CreditCard, Calculator
-} from 'lucide-react';
-import UserManagement from '../components/UserManagement';
-import TasksPage from './TasksPage';
-import PropertiesPage from './PropertiesPage';
-import PizarraPage from './PizarraPage';
-import ArrendadasPage from './ArrendadasPage';
-import ContratosPage from './ContratosPage';
-import SaldosPage from './SaldosPage';
-import PagosPage from './PagosPage';
-import MensajesPage from './MensajesPage';
-import CalculadoraPage from './CalculadoraPage';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
+import { X, Trash2, Edit2, Check } from 'lucide-react';
 
-const NAV_ITEMS_TOP = [
-  { id: 'mensajes',   label: 'Mensajes',               icon: MessageCircle, ownerOnly: false },
-  { id: 'pizarra',    label: 'Pizarra',                icon: LayoutGrid,    ownerOnly: false },
-  { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,     ownerOnly: false },
-  { id: 'servicios',  label: 'Saldos',                 icon: Zap,           ownerOnly: false },
-  { id: 'contratos',  label: 'Contratos',              icon: FileText,      ownerOnly: false },
-  { id: 'tareas',     label: 'Tareas Pendientes',      icon: CheckSquare,   ownerOnly: false },
-];
+const formatDate = (iso) => {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+};
 
-const NAV_ITEMS_BOTTOM = [
-  { id: 'pagos',       label: 'Pagos',        icon: CreditCard,  ownerOnly: true  },
-  { id: 'calculadora', label: 'Calculadora',  icon: Calculator,  ownerOnly: false },
-  { id: 'cartera',     label: 'Cartera',      icon: Building2,   ownerOnly: false },
-  { id: 'usuarios',    label: 'Usuarios',     icon: Users,       ownerOnly: true  },
-];
+export default function DevGarPanel({ onClose }) {
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [editDate, setEditDate] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
-export default function AppShell() {
-  const { profile, signOut } = useAuth();
-  const [activeModule, setActiveModule] = useState('pizarra');
-  const [hovered, setHovered] = useState(false);
+  useEffect(() => {
+    fetchDevGar();
+  }, []);
 
-  const visibleNavTop    = NAV_ITEMS_TOP.filter(item => !item.ownerOnly || profile?.isOwner);
-  const visibleNavBottom = NAV_ITEMS_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner);
-
-  const collapsed = !hovered;
-  const fullWidth = activeModule === 'mensajes';
-
-  return (
-    <div style={styles.root}>
-      {/* Sidebar — position absolute para superponerse al contenido */}
-      <aside
-        style={{
-          ...styles.sidebar,
-          width: collapsed ? 64 : 240,
-        }}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-      >
-        <div style={styles.sidebarHeader}>
-          <div style={styles.logoMark}>R</div>
-          {!collapsed && <span style={styles.brandName}>Renoval</span>}
-        </div>
-
-        <nav style={styles.nav}>
-          {visibleNavTop.map(item => (
-            <NavButton
-              key={item.id}
-              item={item}
-              active={activeModule === item.id}
-              collapsed={collapsed}
-              onClick={() => setActiveModule(item.id)}
-            />
-          ))}
-          <div style={styles.navSpacer} />
-          <div style={styles.navDivider} />
-          {visibleNavBottom.map(item => (
-            <NavButton
-              key={item.id}
-              item={item}
-              active={activeModule === item.id}
-              collapsed={collapsed}
-              onClick={() => setActiveModule(item.id)}
-            />
-          ))}
-        </nav>
-
-        <div style={styles.userArea}>
-          {profile?.avatar && !collapsed && (
-            <img src={profile.avatar} alt="" style={styles.avatar} />
-          )}
-          {!collapsed && (
-            <div style={styles.userInfo}>
-              <span style={styles.userName}>{profile?.initials}</span>
-              <span style={styles.userRole}>
-                {profile?.isOwner ? 'Propietario' : 'Colaborador'}
-              </span>
-            </div>
-          )}
-          <button onClick={signOut} style={styles.signOutBtn} title="Cerrar sesión">
-            <LogOut size={16} color="#5f6368" />
-          </button>
-        </div>
-      </aside>
-
-      {/* Main content — ocupa todo el ancho, el sidebar se superpone */}
-      <main style={{
-        ...styles.main,
-        paddingLeft: collapsed ? 64 + 32 : 32,
-        paddingRight: 32,
-        paddingTop: fullWidth ? 0 : 32,
-        paddingBottom: fullWidth ? 0 : 32,
-        overflow: fullWidth ? 'hidden' : 'auto',
-      }}>
-        <ModuleRenderer module={activeModule} profile={profile} />
-      </main>
-    </div>
-  );
-}
-
-function ModuleRenderer({ module, profile }) {
-  switch (module) {
-    case 'pizarra':      return <PizarraPage />;
-    case 'arrendadas':   return <ArrendadasPage />;
-    case 'contratos':    return <ContratosPage />;
-    case 'cartera':      return <PropertiesPage />;
-    case 'servicios':    return <SaldosPage />;
-    case 'tareas':       return <TasksPage />;
-    case 'pagos':        return <PagosPage />;
-    case 'mensajes':     return <MensajesPage currentUser={profile} />;
-    case 'usuarios':     return <UserManagement />;
-    case 'calculadora':  return <CalculadoraPage />;
-    default:             return <ComingSoon module={module} />;
-  }
-}
-
-function ComingSoon({ module }) {
-  const labels = {
-    pizarra: 'Pizarra', arrendadas: 'Propiedades Arrendadas',
-    tareas: 'Tareas Pendientes', pagos: 'Pagos', servicios: 'Saldos',
+  const fetchDevGar = async () => {
+    setLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('tasks')
+      .select('*')
+      .ilike('title', 'Dev Gar%')
+      .gt('next_occurrence', today)
+      .order('next_occurrence', { ascending: true });
+    setTasks(data || []);
+    setLoading(false);
   };
+
+  const handleSaveDate = async (id) => {
+    if (!editDate) return;
+    await supabase.from('tasks').update({ next_occurrence: editDate }).eq('id', id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, next_occurrence: editDate } : t));
+    setEditingId(null);
+    setEditDate('');
+  };
+
+  const handleDelete = async (id) => {
+    if (confirmDelete !== id) { setConfirmDelete(id); return; }
+    await supabase.from('tasks').delete().eq('id', id);
+    setTasks(prev => prev.filter(t => t.id !== id));
+    setConfirmDelete(null);
+  };
+
+  const s = styles;
+
   return (
-    <div style={styles.comingSoon}>
-      <div style={styles.comingSoonIcon}>🚧</div>
-      <h2 style={styles.comingSoonTitle}>{labels[module] || module}</h2>
-      <p style={styles.comingSoonText}>Este módulo está en construcción.</p>
+    <div style={s.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={s.panel}>
+        <div style={s.header}>
+          <div>
+            <span style={s.title}>Tareas Dev Gar programadas</span>
+            <div style={s.subtitle}>Devolución de garantía pendiente de notificar</div>
+          </div>
+          <button onClick={onClose} style={s.closeBtn}><X size={18} color="#5f6368" /></button>
+        </div>
+
+        <div style={s.body}>
+          {loading ? (
+            <div style={s.empty}>Cargando...</div>
+          ) : tasks.length === 0 ? (
+            <div style={s.empty}>No hay tareas Dev Gar programadas.</div>
+          ) : (
+            tasks.map(task => (
+              <div key={task.id} style={s.card}>
+                <div style={s.cardTitle}>{task.title}</div>
+                <div style={s.cardMeta}>
+                  <span style={s.ownerBadge}>{task.owner_email?.split('@')[0]}</span>
+                  <span style={s.category}>{task.category}</span>
+                </div>
+
+                <div style={s.dateRow}>
+                  <span style={s.dateLabel}>Fecha programada:</span>
+                  {editingId === task.id ? (
+                    <div style={s.editRow}>
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={e => setEditDate(e.target.value)}
+                        style={s.dateInput}
+                        autoFocus
+                      />
+                      <button onClick={() => handleSaveDate(task.id)} style={s.saveBtn}>
+                        <Check size={13} />
+                      </button>
+                      <button onClick={() => setEditingId(null)} style={s.cancelBtn}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={s.editRow}>
+                      <span style={s.dateValue}>{formatDate(task.next_occurrence)}</span>
+                      <button
+                        onClick={() => { setEditingId(task.id); setEditDate(task.next_occurrence); }}
+                        style={s.editBtn}
+                        title="Editar fecha"
+                      >
+                        <Edit2 size={13} color="#5f6368" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div style={s.actions}>
+                  {confirmDelete === task.id ? (
+                    <>
+                      <span style={s.confirmText}>¿Eliminar esta tarea?</span>
+                      <button onClick={() => handleDelete(task.id)} style={s.deleteBtnConfirm}>Sí, eliminar</button>
+                      <button onClick={() => setConfirmDelete(null)} style={s.cancelBtnSm}>Cancelar</button>
+                    </>
+                  ) : (
+                    <button onClick={() => handleDelete(task.id)} style={s.deleteBtn}>
+                      <Trash2 size={13} style={{ marginRight: 4 }} /> Eliminar
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
 const styles = {
-  root: {
-    display: 'flex',
-    height: '100vh',
-    background: '#f8f9fa',
-    fontFamily: "'Google Sans', 'Segoe UI', sans-serif",
-    position: 'relative',
-  },
-  sidebar: {
-    background: '#fff',
-    borderRight: '1px solid #e8eaed',
-    display: 'flex',
-    flexDirection: 'column',
-    transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-    overflow: 'hidden',
-    flexShrink: 0,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    height: '100vh',
-    zIndex: 100,
-    boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
-  },
-  sidebarHeader: {
-    display: 'flex', alignItems: 'center',
-    padding: '16px 12px', borderBottom: '1px solid #e8eaed',
-    gap: 10, minHeight: 60,
-  },
-  logoMark: {
-    width: 32, height: 32, borderRadius: 8,
-    background: 'linear-gradient(135deg, #1a73e8, #0d47a1)',
-    color: '#fff', fontSize: 16, fontWeight: 700,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  brandName: { fontSize: 17, fontWeight: 700, color: '#202124', flex: 1, whiteSpace: 'nowrap' },
-  nav: { flex: 1, padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 2 },
-  navSpacer: { flex: 1 },
-  navDivider: { borderTop: '1px solid #e8eaed', margin: '8px 4px' },
-  navItem: {
-    display: 'flex', alignItems: 'center', gap: 12,
-    padding: '10px 12px', borderRadius: 8, border: 'none',
-    background: 'none', cursor: 'pointer', width: '100%',
-    transition: 'background 0.15s', textAlign: 'left',
-  },
-  navItemActive: { background: '#e8f0fe' },
-  navItemHover:  { background: '#f1f3f4' },
-  navLabel: { fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap' },
-  userArea: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    padding: '12px 12px', borderTop: '1px solid #e8eaed',
-  },
-  avatar: { width: 32, height: 32, borderRadius: '50%', flexShrink: 0 },
-  userInfo: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  userName: { fontSize: 13, fontWeight: 600, color: '#202124', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  userRole: { fontSize: 11, color: '#5f6368' },
-  signOutBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'flex', alignItems: 'center', flexShrink: 0 },
-  main: {
-    flex: 1,
-    width: '100%',
-    transition: 'padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxSizing: 'border-box',
-  },
-  comingSoon: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 },
-  comingSoonIcon: { fontSize: 48 },
-  comingSoonTitle: { fontSize: 22, fontWeight: 600, color: '#202124', margin: 0 },
-  comingSoonText: { fontSize: 14, color: '#5f6368', margin: 0 },
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: 2000 },
+  panel: { background: '#fff', width: 420, height: '100vh', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.15)', fontFamily: "'Google Sans','Segoe UI',sans-serif" },
+  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: '1px solid #e8eaed', flexShrink: 0 },
+  title: { fontSize: 16, fontWeight: 700, color: '#202124', display: 'block' },
+  subtitle: { fontSize: 12, color: '#5f6368', marginTop: 2 },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex', flexShrink: 0 },
+  body: { flex: 1, overflowY: 'auto', padding: '16px 24px' },
+  empty: { padding: 32, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  card: { background: '#f8f9fa', border: '1px solid #e8eaed', borderRadius: 10, padding: '14px 16px', marginBottom: 12 },
+  cardTitle: { fontSize: 14, fontWeight: 600, color: '#202124', marginBottom: 6 },
+  cardMeta: { display: 'flex', gap: 8, marginBottom: 10 },
+  ownerBadge: { fontSize: 11, fontWeight: 700, background: '#e8f0fe', color: '#1a73e8', borderRadius: 20, padding: '2px 8px' },
+  category: { fontSize: 11, color: '#5f6368', background: '#f1f3f4', borderRadius: 20, padding: '2px 8px' },
+  dateRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 },
+  dateLabel: { fontSize: 12, color: '#5f6368', fontWeight: 500, flexShrink: 0 },
+  editRow: { display: 'flex', alignItems: 'center', gap: 6 },
+  dateValue: { fontSize: 13, fontWeight: 600, color: '#202124' },
+  dateInput: { border: '1px solid #1a73e8', borderRadius: 6, padding: '4px 8px', fontSize: 12, outline: 'none', fontFamily: 'inherit' },
+  saveBtn: { background: '#e6f4ea', border: 'none', borderRadius: 6, padding: '4px 6px', cursor: 'pointer', color: '#34a853', display: 'flex' },
+  cancelBtn: { background: 'none', border: 'none', borderRadius: 6, padding: '4px 6px', cursor: 'pointer', color: '#5f6368', display: 'flex' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 5, display: 'flex' },
+  actions: { display: 'flex', alignItems: 'center', gap: 8 },
+  deleteBtn: { display: 'flex', alignItems: 'center', padding: '5px 10px', background: 'none', border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, color: '#ea4335', cursor: 'pointer', fontFamily: 'inherit' },
+  deleteBtnConfirm: { padding: '5px 12px', background: '#ea4335', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelBtnSm: { padding: '5px 10px', background: 'none', border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+  confirmText: { fontSize: 12, color: '#ea4335', fontWeight: 500 },
 };
-
-function NavButton({ item, active, collapsed, onClick }) {
-  const [hov, setHov] = useState(false);
-  const Icon = item.icon;
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      title={collapsed ? item.label : ''}
-      style={{
-        ...styles.navItem,
-        ...(active ? styles.navItemActive : hov ? styles.navItemHover : {}),
-        justifyContent: collapsed ? 'center' : 'flex-start',
-      }}
-    >
-      <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : hov ? '#3c4043' : '#5f6368', transition: 'color 0.15s' }} />
-      {!collapsed && (
-        <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : hov ? '#202124' : '#3c4043', transition: 'color 0.15s' }}>
-          {item.label}
-        </span>
-      )}
-    </button>
-  );
-}
