@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Search, Edit2, X, Check, Users } from 'lucide-react';
+import { Plus, Search, Edit2, X, Check, Users, Trash2 } from 'lucide-react';
 import PropertyAttributesTab from '../components/PropertyAttributesTab';
 
 const ENCARGADOS = ['DD', 'FD', 'EA', 'FG', 'AM'];
@@ -144,7 +144,7 @@ export default function PropertiesPage() {
     setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
   };
 
-  const handleSave = async (form) => {
+const handleSave = async (form) => {
     if (editingProp) {
       await supabase.from('properties').update(form).eq('id', editingProp.id);
     } else {
