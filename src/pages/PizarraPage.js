@@ -12,7 +12,6 @@ const ENCARGADO_EMAIL = {
   FG: 'fernanda@renovalpropiedades.com',
 };
 
-// ── UF value ──────────────────────────────────────────────────
 const useUFValue = () => {
   const [uf, setUf] = useState(null);
   useEffect(() => {
@@ -28,12 +27,10 @@ const useUFValue = () => {
   return uf;
 };
 
-// ── Helpers ───────────────────────────────────────────────────
 const daysDiff = (dateStr) => {
   if (!dateStr) return null;
   const [y, m, d] = dateStr.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  return Math.floor((new Date() - date) / (1000 * 60 * 60 * 24));
+  return Math.floor((new Date() - new Date(y, m - 1, d)) / (1000 * 60 * 60 * 24));
 };
 
 const formatCLP = (n) => {
@@ -41,12 +38,17 @@ const formatCLP = (n) => {
   return '$' + Math.round(n).toLocaleString('es-CL');
 };
 
+const formatDateCL = (iso) => {
+  if (!iso) return '';
+  return new Date(iso + 'T12:00:00').toLocaleDateString('es-CL');
+};
+
 const parsePrice = (val) => {
   if (!val) return { amount: null, isUF: false };
   const str = String(val).trim();
-  const ufMatch = str.match(/(\d+[.,]?\d*)\s*UF|UF\s*(\d+[.,]?\d*)/i);
+  const ufMatch = str.match(/^UF\s*([\d.,]+)$/i);
   if (ufMatch) {
-    const n = parseFloat((ufMatch[1] || ufMatch[2]).replace(',', '.'));
+    const n = parseFloat(ufMatch[1].replace(',', '.'));
     return { amount: n, isUF: true };
   }
   const n = parseFloat(str.replace(/[$.]/g, '').replace(',', '.'));
@@ -59,134 +61,125 @@ const UrgentDot = () => (
   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#ea4335', color: '#fff', fontSize: 10, fontWeight: 900, flexShrink: 0, marginRight: 4 }}>!</span>
 );
 
-const destaqueStyle = (val) => val === 'OP'
-  ? { background: '#FF8C00', color: '#fff', fontWeight: 700, borderRadius: 4, padding: '2px 8px', fontSize: 11 }
-  : {};
-
 const EMPTY_FORM = {
-  propiedad: '', precio: '', promo: '', status: '', destaque: '',
-  e1: '', e2: '', db: '', eb: '', comuna: '',
-  fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
-  url_publicacion: '',
+  propiedad: '', precio: '', promo: '', status: '', e1: '', e2: '', db: '', eb: '', comuna: '',
+  fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '', url_publicacion: '',
 };
 
 // ── Auto task creation ────────────────────────────────────────
 async function createAutoTasks(trigger, propiedad, e1, e2, tipo, fechaEntrega) {
   const { data: templates } = await supabase
-    .from('task_templates')
-    .select('*')
-    .eq('trigger', trigger)
-    .eq('active', true)
+    .from('task_templates').select('*').eq('trigger', trigger).eq('active', true)
     .order('position', { ascending: true });
-
   if (!templates || templates.length === 0) return;
-
   const tipoNorm = (tipo || '').toLowerCase().trim();
   const esNuevo = tipoNorm === 'nuevo';
-
   for (const tpl of templates) {
-    // Filtrar por condition
     if (trigger === 'pizarra_nueva_propiedad') {
-      if (esNuevo && tpl.condition === 'renovacion') continue;
-      if (esNuevo && tpl.condition === 'renovacion_dev_gar') continue;
+      if (esNuevo && (tpl.condition === 'renovacion' || tpl.condition === 'renovacion_dev_gar')) continue;
       if (!esNuevo && tpl.condition === 'nuevo') continue;
     }
-
-    const assigneeEmail = tpl.assignee_role === 'e1'
-      ? ENCARGADO_EMAIL[e1]
-      : ENCARGADO_EMAIL[e2];
+    const assigneeEmail = tpl.assignee_role === 'e1' ? ENCARGADO_EMAIL[e1] : ENCARGADO_EMAIL[e2];
     if (!assigneeEmail) continue;
-
     const taskTitle = tpl.task_title.replace('{{propiedad}}', propiedad);
-
-    // Tarea Dev Gar: programada con next_occurrence
     if (tpl.condition === 'renovacion_dev_gar') {
       if (!fechaEntrega) continue;
       const base = new Date(fechaEntrega + 'T12:00:00');
-      base.setDate(base.getDate() + 52); // 1 mes + 3 semanas
+      base.setDate(base.getDate() + 52);
       const nextOcc = base.toISOString().split('T')[0];
       await supabase.from('tasks').insert({
-        owner_email: assigneeEmail,
-        title: taskTitle,
-        category: 'Publicar/Arrendar',
-        completed: false,
-        recurrence: 'none',
-        next_occurrence: nextOcc,
-        position: -Date.now(),
+        owner_email: assigneeEmail, title: taskTitle, category: 'Publicar/Arrendar',
+        completed: false, recurrence: 'none', next_occurrence: nextOcc, position: -Date.now(),
         notes: `Dev Gar programada para ${nextOcc}`,
       });
       continue;
     }
-
-    const category = trigger === 'pizarra_nueva_propiedad'
-      ? 'Publicar/Arrendar'
-      : 'Llegada arrendatario';
-
+    const category = trigger === 'pizarra_nueva_propiedad' ? 'Publicar/Arrendar' : 'Llegada arrendatario';
     const { data: parentTask } = await supabase.from('tasks').insert({
-      owner_email: assigneeEmail,
-      title: taskTitle,
-      category,
-      completed: false,
-      recurrence: 'none',
-      position: -Date.now(),
+      owner_email: assigneeEmail, title: taskTitle, category,
+      completed: false, recurrence: 'none', position: -Date.now(),
     }).select().single();
-
     if (!parentTask) continue;
-
     const subtasks = tpl.subtasks || [];
     for (let i = 0; i < subtasks.length; i++) {
       await supabase.from('tasks').insert({
-        owner_email: assigneeEmail,
-        title: subtasks[i],
-        category,
-        parent_id: parentTask.id,
-        completed: false,
-        position: i,
-        // Metadata para efectos secundarios
-        notes: null,
+        owner_email: assigneeEmail, title: subtasks[i], category,
+        parent_id: parentTask.id, completed: false, position: i,
       });
     }
   }
 }
 
-// ── MoneyInput ────────────────────────────────────────────────
-function MoneyInput({ value, onChange }) {
+// ── PriceInput: selector UF/CLP + monto ──────────────────────
+function PriceInput({ value, onChange, uf }) {
   const [editing, setEditing] = useState(false);
+  const [currency, setCurrency] = useState('CLP');
   const [raw, setRaw] = useState('');
   const { amount, isUF } = parsePrice(value || '');
-  const displayVal = value ? (isUF ? `${amount} UF` : (amount ? formatCLP(amount) : value)) : '';
 
-  const handleChange = (e) => {
-    const digits = e.target.value.replace(/[^0-9]/g, '');
-    setRaw(digits);
-  };
+  const displayMain = value
+    ? isUF ? `UF ${amount}` : (amount ? formatCLP(amount) : value)
+    : '';
+  const displaySub = isUF && uf && amount ? formatCLP(amount * uf) : '';
 
   if (editing) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', minWidth: 80 }}>
-        <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2, flexShrink: 0 }}>$</span>
-        <input autoFocus value={raw ? parseInt(raw).toLocaleString('es-CL') : ''}
-          onChange={handleChange}
-          onBlur={() => { setEditing(false); onChange(raw || ''); }}
-          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-          style={{ border: 'none', outline: 'none', width: 90, fontSize: 12, fontFamily: 'inherit' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff' }}>
+          <select value={currency} onChange={e => setCurrency(e.target.value)}
+            style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '3px 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed' }}>
+            <option value="CLP">$</option>
+            <option value="UF">UF</option>
+          </select>
+          <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
+            onBlur={() => {
+              setEditing(false);
+              if (raw) {
+                const val = currency === 'UF' ? `UF ${raw}` : raw;
+                onChange(val);
+              }
+            }}
+            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+            style={{ border: 'none', outline: 'none', width: 70, fontSize: 12, padding: '3px 5px', fontFamily: 'inherit' }} />
+        </div>
       </div>
     );
   }
+
   return (
-    <div onClick={() => { setRaw(amount ? String(Math.round(amount)) : ''); setEditing(true); }}
-      style={{ cursor: 'text', fontSize: 12, minWidth: 70, padding: '3px 4px', borderRadius: 4 }}>
-      {displayVal || <span style={{ color: '#dadce0' }}>—</span>}
+    <div onClick={() => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount ? String(amount) : ''); setEditing(true); }}
+      style={{ cursor: 'text', fontSize: 12, padding: '2px 4px', borderRadius: 4, minWidth: 60 }}>
+      {displayMain ? (
+        <div>
+          <div>{displayMain}</div>
+          {displaySub && <div style={{ fontSize: 10, color: '#5f6368', marginTop: 1 }}>{displaySub}</div>}
+        </div>
+      ) : <span style={{ color: '#dadce0' }}>—</span>}
+    </div>
+  );
+}
+
+// ── DateCellDisplay ───────────────────────────────────────────
+function DateCellInput({ value, onChange, hasError }) {
+  const ref = React.useRef(null);
+  return (
+    <div onClick={() => ref.current && ref.current.showPicker && ref.current.showPicker()}
+      style={{ cursor: 'pointer', fontSize: 11, color: value ? 'inherit' : '#9aa0a6', position: 'relative',
+        ...(hasError ? { background: '#fce8e6', borderRadius: 4, padding: '1px 3px' } : {}) }}>
+      {value ? formatDateCL(value) : <span style={{ color: hasError ? '#ea4335' : '#dadce0' }}>dd/mm/aaaa *</span>}
+      <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
     </div>
   );
 }
 
 // ── RentModal ─────────────────────────────────────────────────
-function RentModal({ row, onConfirm, onCancel }) {
+function RentModal({ row, onConfirm, onCancel, uf }) {
   const [comision, setComision] = useState('');
   const [entrega, setEntrega] = useState('');
   const [meses, setMeses] = useState('');
   const hasPromo = !!(row.promo && String(row.promo).trim());
+  const ref = React.useRef(null);
 
   return (
     <div style={rentStyles.overlay} onClick={e => e.target === e.currentTarget && onCancel()}>
@@ -196,15 +189,19 @@ function RentModal({ row, onConfirm, onCancel }) {
         <div style={rentStyles.field}>
           <label style={rentStyles.label}>Comisión *</label>
           <div style={{ ...rentStyles.input, display: 'flex', alignItems: 'center', padding: '9px 12px' }}>
-            <span style={{ color: '#9aa0a6', marginRight: 4, flexShrink: 0 }}>$</span>
+            <span style={{ color: '#9aa0a6', marginRight: 4 }}>$</span>
             <input value={comision} onChange={e => setComision(e.target.value.replace(/[^0-9.]/g, ''))}
               autoFocus style={{ border: 'none', outline: 'none', flex: 1, fontSize: 14, fontFamily: 'inherit' }} />
           </div>
         </div>
         <div style={rentStyles.field}>
-          <label style={rentStyles.label}>Fecha de entrega *</label>
-          <input type="date" value={entrega} onChange={e => setEntrega(e.target.value)}
-            style={rentStyles.input} />
+          <label style={rentStyles.label}>Fecha de entrega * <span style={{ fontSize: 11, color: '#9aa0a6' }}>(dd/mm/aaaa)</span></label>
+          <div onClick={() => ref.current && ref.current.showPicker && ref.current.showPicker()}
+            style={{ ...rentStyles.input, cursor: 'pointer', display: 'flex', alignItems: 'center', position: 'relative', color: entrega ? '#202124' : '#9aa0a6' }}>
+            {entrega ? formatDateCL(entrega) : 'Seleccionar fecha...'}
+            <input ref={ref} type="date" value={entrega} onChange={e => setEntrega(e.target.value)}
+              style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
+          </div>
         </div>
         {hasPromo && (
           <div style={rentStyles.field}>
@@ -215,24 +212,15 @@ function RentModal({ row, onConfirm, onCancel }) {
                 return (
                   <button key={m} type="button" onClick={() => {
                     const list = meses.split(',').map(s=>s.trim()).filter(Boolean);
-                    const updated = selected ? list.filter(x=>x!==m) : [...list, m];
-                    setMeses(updated.join(', '));
-                  }} style={{
-                    padding: '4px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                    border: selected ? '1px solid #1a73e8' : '1px solid #dadce0',
-                    background: selected ? '#e8f0fe' : '#fff',
-                    color: selected ? '#1a73e8' : '#5f6368',
-                    fontWeight: selected ? 700 : 400,
-                  }}>{m}</button>
+                    setMeses((selected ? list.filter(x=>x!==m) : [...list,m]).join(', '));
+                  }} style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: selected ? '1px solid #1a73e8' : '1px solid #dadce0', background: selected ? '#e8f0fe' : '#fff', color: selected ? '#1a73e8' : '#5f6368', fontWeight: selected ? 700 : 400 }}>{m}</button>
                 );
               })}
             </div>
-            {meses && <div style={{ fontSize: 11, color: '#5f6368', marginTop: 6 }}>Seleccionados: {meses}</div>}
           </div>
         )}
         <div style={rentStyles.actions}>
-          <button
-            onClick={() => comision && entrega && onConfirm({ comision, entrega, meses: hasPromo ? meses : '' })}
+          <button onClick={() => comision && entrega && onConfirm({ comision, entrega, meses: hasPromo ? meses : '' })}
             disabled={!comision || !entrega}
             style={{ ...rentStyles.confirmBtn, ...(!comision || !entrega ? { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' } : {}) }}>
             Confirmar arriendo
@@ -246,67 +234,56 @@ function RentModal({ row, onConfirm, onCancel }) {
 
 const rentStyles = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 },
-  modal: { background: '#fff', borderRadius: 16, padding: 28, width: 400, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif" },
+  modal: { background: '#fff', borderRadius: 16, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif" },
   title: { fontSize: 18, fontWeight: 700, color: '#202124', margin: '0 0 6px' },
   prop: { fontSize: 13, color: '#5f6368', margin: '0 0 20px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8 },
   field: { marginBottom: 14 },
   label: { fontSize: 12, fontWeight: 600, color: '#5f6368', display: 'block', marginBottom: 6 },
-  input: { width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit' },
+  input: { width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' },
   actions: { display: 'flex', gap: 8, marginTop: 20 },
   confirmBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
 // ── InlineEditCell ─────────────────────────────────────────────
-function InlineEditCell({ value, onChange, placeholder = '' }) {
+function InlineEditCell({ value, onChange }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState(value || '');
-  if (editing) {
-    return (
-      <input autoFocus value={raw}
-        onChange={e => setRaw(e.target.value)}
-        onBlur={() => { setEditing(false); if (raw !== value) onChange(raw); }}
-        onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-        style={{ border: '1px solid #1a73e8', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
-    );
-  }
+  if (editing) return (
+    <input autoFocus value={raw} onChange={e => setRaw(e.target.value)}
+      onBlur={() => { setEditing(false); if (raw !== value) onChange(raw); }}
+      onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+      style={{ border: '1px solid #1a73e8', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+  );
   return (
     <div onClick={() => { setRaw(value || ''); setEditing(true); }}
-      style={{ cursor: 'text', fontSize: 12, minHeight: 22, padding: '1px 2px', borderRadius: 4 }}>
-      {value || <span style={{ color: '#dadce0' }}>{placeholder || '—'}</span>}
+      style={{ cursor: 'text', fontSize: 12, minHeight: 22, padding: '1px 2px' }}>
+      {value || <span style={{ color: '#dadce0' }}>—</span>}
     </div>
   );
 }
 
-// ── InlineSelectCell ───────────────────────────────────────────
 function InlineSelectCell({ value, options, onChange }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}
-      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textAlign: 'center' }}>
+      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', textAlign: 'center' }}>
       <option value="">—</option>
-      {options.map(o => <option key={o} value={o} style={{ color: '#202124' }}>{o}</option>)}
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
     </select>
   );
 }
 
 // ── PropertyRow ───────────────────────────────────────────────
-function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelNew, uf, currentUser, onOpenUrlModal, onOpenDisponibilidad }) {
+function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [errors, setErrors] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  useEffect(() => {
-    setForm(prev => ({ ...prev, ...row }));
-  }, [row]);
+  useEffect(() => { setForm(prev => ({ ...prev, ...row })); }, [row]);
 
   const set = (k, v) => {
     setForm(prev => ({ ...prev, [k]: v }));
-    if (!isNew) saveField(k, v);
-  };
-
-  const saveField = async (k, v) => {
-    await supabase.from('pizarra').update({ [k]: v || null }).eq('id', row.id);
-    onSave({ ...row, [k]: v });
+    if (!isNew) supabase.from('pizarra').update({ [k]: v || null }).eq('id', row.id).then(() => onSave({ ...row, [k]: v }));
   };
 
   const validate = () => {
@@ -327,79 +304,90 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
     if (onCancelNew) onCancelNew();
   };
 
-  const handleDelete = async () => {
-    if (!confirmDelete) { setConfirmDelete(true); return; }
-    await onDelete(row.id);
-  };
-
   const days = daysDiff(form.fecha_salida);
   const isOverdue = days !== null && days >= 60;
-  const needsAviso = form.aviso !== 'Listo';
-  const showAlert = isOverdue || needsAviso;
+  const showAlert = isOverdue || form.aviso !== 'Listo';
 
   const AvisoCell = ({ field }) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <select value={form[field] || ''} onChange={e => set(field, e.target.value)}
-        style={{
-          border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11,
-          fontWeight: 600, cursor: 'pointer', background: 'transparent',
-          color: form[field] === 'Listo' ? '#34a853' : form[field] === 'Aún no' ? '#fff' : '#202124',
-          ...(form[field] === 'Aún no' ? { background: '#ea4335', borderRadius: 4, padding: '2px 4px' } : {}),
-        }}>
-        <option value="" style={{ color: '#202124', background: '#fff' }}>—</option>
-        {['Aún no', 'Listo'].map(o => <option key={o} value={o} style={{ color: '#202124', background: '#fff', fontWeight: 400 }}>{o}</option>)}
-      </select>
-    </div>
+    <select value={form[field] || ''} onChange={e => set(field, e.target.value)}
+      style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: form[field] === 'Listo' ? '#34a853' : form[field] === 'Aún no' ? '#fff' : '#202124', ...(form[field] === 'Aún no' ? { background: '#ea4335', borderRadius: 4, padding: '2px 4px' } : {}) }}>
+      <option value="" style={{ color: '#202124', background: '#fff' }}>—</option>
+      {['Aún no','Listo'].map(o => <option key={o} value={o} style={{ color: '#202124', background: '#fff' }}>{o}</option>)}
+    </select>
   );
 
-  if (isNew) {
-    return (
-      <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
-        <td style={styles.td}>
-          <input value={form.propiedad} onChange={e => setForm(p => ({...p, propiedad: e.target.value}))}
-            placeholder="Dirección *" style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
-        </td>
-        <td style={styles.tdCenter}><MoneyInput value={form.precio} onChange={v => setForm(p=>({...p,precio:v}))} /></td>
-        <td style={styles.tdCenter}><MoneyInput value={form.promo} onChange={v => setForm(p=>({...p,promo:v}))} /></td>
-        <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:80}} /></td>
-        <td style={styles.tdCenter}><select value={form.destaque||''} onChange={e=>setForm(p=>({...p,destaque:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option value="OP">OP</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e1?{background:'#fce8e6'}:{})}}><select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>DD</option><option>FD</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.e2?{background:'#fce8e6'}:{})}}><select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>EA</option><option>FG</option></select></td>
-        <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
-        <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:50}} /></td>
-        <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:90}} /></td>
-        <td style={{...styles.tdCenter,...(errors.fecha_salida?{background:'#fce8e6'}:{})}}><input type="date" value={form.fecha_salida||''} onChange={e=>setForm(p=>({...p,fecha_salida:e.target.value}))} style={{border:errors.fecha_salida?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:11,outline:'none',appearance:'none',WebkitAppearance:'none',colorScheme:'light'}} onClick={e=>e.target.showPicker&&e.target.showPicker()} /></td>
-        <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
-        <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
-        <td style={{...styles.tdCenter,...(errors.tipo?{background:'#fce8e6'}:{})}}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></td>
-        <td style={{...styles.tdCenter,...(errors.admin?{background:'#fce8e6'}:{})}}><select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}><option value="">—</option><option>Sí</option><option>No</option></select></td>
-        <td style={styles.tdCenter}><span style={{ color: '#dadce0', fontSize: 11 }}>—</span></td>
-        <td style={styles.tdActions}>
-          <button onClick={handleNewSave} style={styles.actionBtnGreen} title="Guardar"><Check size={14} /></button>
-          <button onClick={() => { if(onCancelNew) onCancelNew(); }} style={styles.actionBtnGray} title="Cancelar"><X size={14} /></button>
-        </td>
-      </tr>
-    );
-  }
+  const reqStyle = (field) => errors[field] ? { background: '#fce8e6' } : {};
+
+  if (isNew) return (
+    <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
+      <td style={{ ...styles.td, ...reqStyle('propiedad') }}>
+        <input value={form.propiedad} onChange={e => setForm(p=>({...p,propiedad:e.target.value}))}
+          placeholder="Dirección *" style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+      </td>
+      <td style={styles.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} /></td>
+      <td style={styles.tdCenter}><PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} /></td>
+      <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:70}} /></td>
+      <td style={{...styles.tdCenter,...reqStyle('e1')}}>
+        <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:errors.e1?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+          <option value="">—*</option><option>DD</option><option>FD</option>
+        </select>
+      </td>
+      <td style={{...styles.tdCenter,...reqStyle('e2')}}>
+        <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:errors.e2?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+          <option value="">—*</option><option>EA</option><option>FG</option>
+        </select>
+      </td>
+      <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
+      <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
+      <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:80}} /></td>
+      <td style={{...styles.tdCenter,...reqStyle('fecha_salida')}}>
+        <DateCellInput value={form.fecha_salida} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} hasError={!!errors.fecha_salida} />
+      </td>
+      <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
+      <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
+      <td style={{...styles.tdCenter,...reqStyle('tipo')}}>
+        <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:errors.tipo?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+          <option value="">—*</option><option>Nuevo</option><option>Renovación</option>
+        </select>
+      </td>
+      <td style={{...styles.tdCenter,...reqStyle('admin')}}>
+        <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:errors.admin?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+          <option value="">—*</option><option>Sí</option><option>No</option>
+        </select>
+      </td>
+      <td style={styles.tdCenter}><span style={{ color: '#dadce0', fontSize: 11 }}>—</span></td>
+      <td style={styles.tdActions}>
+        <button onClick={handleNewSave} style={styles.actionBtnGreen}><Check size={14} /></button>
+        <button onClick={onCancelNew} style={styles.actionBtnGray}><X size={14} /></button>
+      </td>
+    </tr>
+  );
+
+  const { amount, isUF } = parsePrice(form.precio || '');
+  const precioDisplay = form.precio ? (isUF ? `UF ${amount}` : (amount ? formatCLP(amount) : form.precio)) : '';
+  const precioSub = isUF && uf && amount ? formatCLP(amount * uf) : '';
+  const { amount: promoAmt, isUF: promoIsUF } = parsePrice(form.promo || '');
+  const promoDisplay = form.promo ? (promoIsUF ? `UF ${promoAmt}` : (promoAmt ? formatCLP(promoAmt) : form.promo)) : '';
+  const promoSub = promoIsUF && uf && promoAmt ? formatCLP(promoAmt * uf) : '';
 
   return (
     <tr style={{ background: '#fff' }}
       onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
       onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-      <td style={{ ...styles.tdProp }}>
+      <td style={styles.tdProp}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
           {showAlert && <UrgentDot />}
           <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} />
         </div>
       </td>
-      <td style={styles.td}><MoneyInput value={form.precio} onChange={v => set('precio', v)} /></td>
-      <td style={styles.td}><MoneyInput value={form.promo} onChange={v => set('promo', v)} /></td>
+      <td style={styles.td}>
+        <PriceInput value={form.precio} onChange={v => set('precio', v)} uf={uf} />
+      </td>
+      <td style={styles.td}>
+        <PriceInput value={form.promo} onChange={v => set('promo', v)} uf={uf} />
+      </td>
       <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
         <InlineEditCell value={form.status} onChange={v => set('status', v)} />
-      </td>
-      <td style={styles.tdCenter}>
-        <InlineSelectCell value={form.destaque} options={['OP']} onChange={v => set('destaque', v)}
-          renderValue={v => v ? <span style={destaqueStyle(v)}>{v}</span> : null} />
       </td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} /></td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} /></td>
@@ -407,9 +395,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
       <td style={styles.tdCenter}>
-        <input type="date" value={form.fecha_salida || ''} onChange={e => set('fecha_salida', e.target.value)}
-          style={{ border: 'none', outline: 'none', fontSize: 11, background: 'transparent', cursor: 'pointer', ...(isOverdue ? { color: '#ea4335', fontWeight: 600 } : {}), WebkitAppearance: 'none', MozAppearance: 'none', colorScheme: 'light' }}
-          onClick={e => e.target.showPicker && e.target.showPicker()} />
+        <DateCellInput value={form.fecha_salida} onChange={v => set('fecha_salida', v)} hasError={false} />
       </td>
       <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
@@ -418,27 +404,26 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.tdCenter}>
         <button onClick={() => onOpenUrlModal(row)}
           style={{ ...styles.urlBtn, ...(form.url_publicacion ? styles.urlBtnActive : styles.urlBtnInactive) }}
-          title={form.url_publicacion ? 'URL cargada — click para editar' : 'Sin URL — click para agregar'}>
+          title={form.url_publicacion ? 'URL cargada' : 'Sin URL'}>
           <Link2 size={13} />
         </button>
       </td>
       <td style={styles.tdActions}>
-        <button onClick={() => onOpenDisponibilidad(row)} style={styles.actionBtnPurple} title="Disponibilidad para visitas"><Calendar size={13} /></button>
-        <button onClick={() => onRented(row)} style={styles.actionBtnBlue} title="Arrendar"><Home size={13} /></button>
+        <button onClick={() => onOpenDisponibilidad(row)} style={styles.actionBtnPurple}><Calendar size={13} /></button>
+        <button onClick={() => onRented(row)} style={styles.actionBtnBlue}><Home size={13} /></button>
         {confirmDelete ? (
           <>
-            <button onClick={handleDelete} style={styles.actionBtnRed} title="Confirmar"><Trash2 size={13} /></button>
-            <button onClick={() => setConfirmDelete(false)} style={styles.actionBtnGray} title="Cancelar"><X size={12} /></button>
+            <button onClick={async () => { if (!confirmDelete) { setConfirmDelete(true); return; } await onDelete(row.id); }} style={styles.actionBtnRed}><Trash2 size={13} /></button>
+            <button onClick={() => setConfirmDelete(false)} style={styles.actionBtnGray}><X size={12} /></button>
           </>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} style={styles.actionBtnGray} title="Eliminar"><Trash2 size={13} /></button>
+          <button onClick={() => setConfirmDelete(true)} style={styles.actionBtnGray}><Trash2 size={13} /></button>
         )}
       </td>
     </tr>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────
 const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
 
 export default function PizarraPage() {
@@ -455,8 +440,7 @@ export default function PizarraPage() {
   const fetchRows = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('pizarra').select('*')
-      .order('position', { ascending: true })
-      .order('created_at', { ascending: false });
+      .order('position', { ascending: true }).order('created_at', { ascending: false });
     setRows(data || []);
     setLoading(false);
   }, []);
@@ -464,14 +448,12 @@ export default function PizarraPage() {
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel('pizarra_realtime')
+    const channel = supabase.channel('pizarra_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pizarra' }, (payload) => {
         if (payload.eventType === 'INSERT') setRows(prev => [payload.new, ...prev]);
         else if (payload.eventType === 'UPDATE') setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
         else if (payload.eventType === 'DELETE') setRows(prev => prev.filter(r => r.id !== payload.old.id));
-      })
-      .subscribe();
+      }).subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
 
@@ -480,11 +462,8 @@ export default function PizarraPage() {
     return rows.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
   }, [rows, filterE]);
 
-  const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
-
   const totals = useMemo(() => {
-    let totalCLP = 0;
-    let opCount = 0;
+    let totalCLP = 0, opCount = 0;
     filtered.forEach(r => {
       if (r.destaque === 'OP') opCount++;
       const { amount, isUF } = parsePrice(r.precio);
@@ -498,10 +477,8 @@ export default function PizarraPage() {
       setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...form } : r));
     } else {
       const payload = {
-        propiedad: form.propiedad.trim(),
-        precio: form.precio || null, promo: form.promo || null,
-        status: form.status || null, destaque: form.destaque || null,
-        e1: form.e1 || null, e2: form.e2 || null,
+        propiedad: form.propiedad.trim(), precio: form.precio || null, promo: form.promo || null,
+        status: form.status || null, e1: form.e1 || null, e2: form.e2 || null,
         db: form.db || null, eb: form.eb || null, comuna: form.comuna || null,
         fecha_salida: form.fecha_salida || null, aviso: form.aviso || null,
         respaldo: form.respaldo || null, tipo: form.tipo || null, admin: form.admin || null,
@@ -510,15 +487,7 @@ export default function PizarraPage() {
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
       if (data) {
         setRows(prev => [data, ...prev]);
-        // Trigger tareas automáticas nueva propiedad
-        await createAutoTasks(
-          'pizarra_nueva_propiedad',
-          data.propiedad,
-          data.e1,
-          data.e2,
-          data.tipo,
-          data.fecha_salida
-        );
+        await createAutoTasks('pizarra_nueva_propiedad', data.propiedad, data.e1, data.e2, data.tipo, data.fecha_salida);
       }
       setAddingNew(false);
     }
@@ -546,7 +515,7 @@ export default function PizarraPage() {
       fechaGar = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
     const now = new Date();
-    const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const mes = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     await supabase.from('arrendadas_meses').upsert({ mes }, { onConflict: 'mes' });
     await supabase.from('arrendadas').insert({
       mes, propiedad: row.propiedad, arriendo: row.precio, comision,
@@ -555,22 +524,13 @@ export default function PizarraPage() {
       fecha_gar: fechaGar, dev_gar: 'Pendiente', cuentas: 'Pendiente',
       promocion: row.promo || null, meses: meses || null,
     });
-    // Trigger tareas automáticas propiedad arrendada
-    await createAutoTasks(
-      'pizarra_arrendada',
-      row.propiedad,
-      row.e1,
-      row.e2,
-      row.tipo,
-      entrega
-    );
+    await createAutoTasks('pizarra_arrendada', row.propiedad, row.e1, row.e2, row.tipo, entrega);
     await supabase.from('pizarra').delete().eq('id', row.id);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
 
-  const handleRented = (row) => { setRentingRow(row); };
-
-  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','OROS','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN','URL',''];
+  // HEADERS sin OROS
+  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN','URL',''];
 
   return (
     <div style={styles.container}>
@@ -585,7 +545,7 @@ export default function PizarraPage() {
         <div style={styles.headerRight}>
           <div style={styles.filters}>
             {ENCARGADOS_ALL.map(e => (
-              <button key={e} onClick={() => toggleFilter(e)} style={{
+              <button key={e} onClick={() => setFilterE(prev => prev.includes(e) ? prev.filter(x=>x!==e) : [...prev,e])} style={{
                 ...styles.filterBtn,
                 ...(filterE.includes(e) ? { background: `${ENCARGADO_COLORS[e]}22`, color: ENCARGADO_COLORS[e], borderColor: ENCARGADO_COLORS[e], fontWeight: 700 } : {})
               }}>{e}</button>
@@ -599,9 +559,7 @@ export default function PizarraPage() {
       </div>
 
       <div style={styles.tableWrapper}>
-        {loading ? (
-          <div style={styles.loading}>Cargando pizarra...</div>
-        ) : (
+        {loading ? <div style={styles.loading}>Cargando pizarra...</div> : (
           <table style={styles.table}>
             <thead>
               <tr>
@@ -614,19 +572,16 @@ export default function PizarraPage() {
               {addingNew && (
                 <PropertyRow row={EMPTY_FORM} onSave={handleSave} onDelete={() => {}} onRented={() => {}}
                   isNew={true} onCancelNew={() => setAddingNew(false)} uf={uf}
-                  currentUser={profile} onOpenUrlModal={() => {}} onOpenDisponibilidad={() => {}} />
+                  onOpenUrlModal={() => {}} onOpenDisponibilidad={() => {}} />
               )}
-              {filtered.length === 0 && !addingNew ? (
-                <tr><td colSpan={17} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
-              ) : (
-                filtered.map(row => (
-                  <PropertyRow key={row.id} row={row} onSave={handleSave}
-                    onDelete={handleDelete} onRented={handleRented} uf={uf}
-                    currentUser={profile}
-                    onOpenUrlModal={setUrlModalRow}
-                    onOpenDisponibilidad={setDisponibilidadRow} />
+              {filtered.length === 0 && !addingNew
+                ? <tr><td colSpan={16} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
+                : filtered.map(row => (
+                  <PropertyRow key={row.id} row={row} onSave={handleSave} onDelete={handleDelete}
+                    onRented={r => setRentingRow(r)} uf={uf}
+                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow} />
                 ))
-              )}
+              }
             </tbody>
           </table>
         )}
@@ -634,17 +589,13 @@ export default function PizarraPage() {
 
       <div style={styles.totalsRow}>
         <span style={styles.totalsLabel}>TOTAL</span>
-        <span style={styles.totalsItem}>
-          Total por colocar: <strong>{formatCLP(totals.totalCLP)}</strong>
-          {!uf && totals.totalCLP === 0 && <span style={styles.ufNote}> (valores en UF excluidos — cargando UF...)</span>}
-        </span>
-        <span style={styles.totalsItem}>OP: <strong style={{ color: '#FF8C00' }}>{totals.opCount}</strong></span>
+        <span style={styles.totalsItem}>Total por colocar: <strong>{formatCLP(totals.totalCLP)}</strong></span>
         <span style={styles.totalsItem}>Propiedades: <strong>{filtered.length}</strong></span>
       </div>
 
-      {rentingRow && <RentModal row={rentingRow} onConfirm={handleRentedConfirm} onCancel={() => setRentingRow(null)} />}
+      {rentingRow && <RentModal row={rentingRow} onConfirm={handleRentedConfirm} onCancel={() => setRentingRow(null)} uf={uf} />}
       {urlModalRow && <UrlPublicacionModal row={urlModalRow} onSave={handleSaveUrl} onClose={() => setUrlModalRow(null)} />}
-      {disponibilidadRow && <DisponibilidadSidebar row={disponibilidadRow} currentUser={profile} onClose={() => setDisponibilidadRow(null)} />}
+      {disponibilidadRow && <DisponibilidadSidebar row={disponibilidadRow} onClose={() => setDisponibilidadRow(null)} />}
     </div>
   );
 }
@@ -673,13 +624,12 @@ const styles = {
   actionBtnBlue:   { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#1a73e8' },
   actionBtnPurple: { background: '#f3e8fd', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#9334e6' },
   actionBtnRed:    { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
-  urlBtn:          { border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, display: 'inline-flex' },
-  urlBtnActive:    { background: '#e6f4ea', color: '#34a853' },
-  urlBtnInactive:  { background: '#f1f3f4', color: '#9aa0a6' },
-  empty:    { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
-  loading:  { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  urlBtn:         { border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, display: 'inline-flex' },
+  urlBtnActive:   { background: '#e6f4ea', color: '#34a853' },
+  urlBtnInactive: { background: '#f1f3f4', color: '#9aa0a6' },
+  empty:   { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   totalsRow:   { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
   totalsLabel: { fontSize: 14, fontWeight: 700, color: '#5f6368', letterSpacing: 0.8 },
   totalsItem:  { fontSize: 17, color: '#3c4043' },
-  ufNote:      { fontSize: 11, color: '#9aa0a6', fontStyle: 'italic' },
 };
