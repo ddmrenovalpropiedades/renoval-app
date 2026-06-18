@@ -17,7 +17,6 @@ export const formatLocalDate = (dateStr) => {
   return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
-// Insert a task bypassing RLS using the service role via API
 const insertMirrorTask = async (mirrorTask) => {
   try {
     const response = await fetch('/api/create-mirror-task', {
@@ -36,6 +35,70 @@ const insertMirrorTask = async (mirrorTask) => {
     return null;
   }
 };
+
+// ── Efectos secundarios al completar subtareas ────────────────
+async function handleSubtaskSideEffects(subtaskTitle, parentTask) {
+  const title = (subtaskTitle || '').trim();
+
+  // Extraer nombre de propiedad del título de la tarea padre (ej: "Arriendo Av. Providencia 123")
+  const propMatch = parentTask?.title?.match(/^(?:Arriendo|Dev Gar)\s+(.+)$/i);
+  const propiedad = propMatch ? propMatch[1].trim() : null;
+
+  // Notificar dueño → aviso = Listo en Pizarra
+  if (title === 'Notificar dueno' || title === 'Notificar dueño') {
+    if (propiedad) {
+      await supabase.from('pizarra')
+        .update({ aviso: 'Listo' })
+        .ilike('propiedad', propiedad);
+    }
+  }
+
+  // Respaldar publicacion → respaldo = Listo en Pizarra
+  if (title === 'Respaldar publicacion' || title === 'Respaldar publicación') {
+    if (propiedad) {
+      await supabase.from('pizarra')
+        .update({ respaldo: 'Listo' })
+        .ilike('propiedad', propiedad);
+    }
+  }
+
+  // Liquidacion → liquidacion = Listo en Arrendadas
+  if (title === 'Liquidacion' || title === 'Liquidación') {
+    if (propiedad) {
+      await supabase.from('arrendadas')
+        .update({ liquidacion: 'Listo' })
+        .ilike('propiedad', propiedad);
+    }
+  }
+
+  // Respaldo contrato carpeta → contrato = Listo en Arrendadas
+  if (title === 'Respaldo contrato carpeta') {
+    if (propiedad) {
+      await supabase.from('arrendadas')
+        .update({ contrato: 'Listo' })
+        .ilike('propiedad', propiedad);
+    }
+  }
+
+  // Pago cuentas → cuentas = Listo en Arrendadas
+  if (title === 'Pago cuentas') {
+    if (propiedad) {
+      await supabase.from('arrendadas')
+        .update({ cuentas: 'Listo' })
+        .ilike('propiedad', propiedad);
+    }
+  }
+}
+
+// ── Dev Gar completada → dev_gar = Listo en Arrendadas ───────
+async function handleDevGarSideEffect(taskTitle) {
+  const match = (taskTitle || '').match(/^Dev Gar\s+(.+)$/i);
+  if (!match) return;
+  const propiedad = match[1].trim();
+  await supabase.from('arrendadas')
+    .update({ dev_gar: 'Listo' })
+    .ilike('propiedad', propiedad);
+}
 
 export function useTasks(targetEmail = null) {
   const { user } = useAuth();
@@ -118,7 +181,6 @@ export function useTasks(targetEmail = null) {
     if (!error && data) {
       setTasks(prev => [data, ...prev]);
       if (taskData.category === 'Solicitudes' && taskData.assigned_to) {
-        // Use service role to bypass RLS when inserting for another user
         await insertMirrorTask({
           owner_email: taskData.assigned_to,
           title: taskData.title,
@@ -210,6 +272,11 @@ export function useTasks(targetEmail = null) {
       assigned_to: task.assigned_to,
     });
 
+    // Efecto secundario: Dev Gar completada
+    if (task.title && task.title.startsWith('Dev Gar ')) {
+      await handleDevGarSideEffect(task.title);
+    }
+
     if (task.recurrence && task.recurrence !== 'none') {
       const next = getNextOccurrence(task);
       await supabase.from('tasks').update({ next_occurrence: next }).eq('id', task.id);
@@ -262,6 +329,12 @@ export function useTasks(targetEmail = null) {
         }
       }
     }
+  };
+
+  // Nueva función: completar subtarea con efectos secundarios
+  const completeSubtask = async (subtask, parentTask) => {
+    await handleSubtaskSideEffects(subtask.title, parentTask);
+    await supabase.from('tasks').delete().eq('id', subtask.id);
   };
 
   const deleteTask = async (id) => {
@@ -359,7 +432,7 @@ export function useTasks(targetEmail = null) {
 
   return {
     tasks, tasksByCategory, dormantByCategory, loading,
-    fetchTasks, createTask, createSubtask,
+    fetchTasks, createTask, createSubtask, completeSubtask,
     updateTask, completeTask, deleteTask,
     reorderTasks, getSubtasks, getDisplayTitle, CATEGORIES,
   };
