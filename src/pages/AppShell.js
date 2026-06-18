@@ -32,7 +32,6 @@ const NAV_ITEMS_BOTTOM = [
   { id: 'usuarios',    label: 'Usuarios',     icon: Users,       ownerOnly: true  },
 ];
 
-
 export default function AppShell() {
   const { profile, signOut } = useAuth();
   const [activeModule, setActiveModule] = useState('pizarra');
@@ -46,19 +45,20 @@ export default function AppShell() {
 
   return (
     <div style={styles.root}>
-      {/* Sidebar */}
+      {/* Sidebar — position absolute para superponerse al contenido */}
       <aside
-        style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}
+        style={{
+          ...styles.sidebar,
+          width: collapsed ? 64 : 240,
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {/* Header */}
         <div style={styles.sidebarHeader}>
           <div style={styles.logoMark}>R</div>
           {!collapsed && <span style={styles.brandName}>Renoval</span>}
         </div>
 
-        {/* Nav */}
         <nav style={styles.nav}>
           {visibleNavTop.map(item => (
             <NavButton
@@ -69,10 +69,8 @@ export default function AppShell() {
               onClick={() => setActiveModule(item.id)}
             />
           ))}
-
           <div style={styles.navSpacer} />
           <div style={styles.navDivider} />
-
           {visibleNavBottom.map(item => (
             <NavButton
               key={item.id}
@@ -84,7 +82,6 @@ export default function AppShell() {
           ))}
         </nav>
 
-        {/* User area */}
         <div style={styles.userArea}>
           {profile?.avatar && !collapsed && (
             <img src={profile.avatar} alt="" style={styles.avatar} />
@@ -103,10 +100,13 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main content */}
+      {/* Main content — ocupa todo el ancho, el sidebar se superpone */}
       <main style={{
         ...styles.main,
-        padding: fullWidth ? 0 : 32,
+        paddingLeft: collapsed ? 64 + 32 : 32,
+        paddingRight: 32,
+        paddingTop: fullWidth ? 0 : 32,
+        paddingBottom: fullWidth ? 0 : 32,
         overflow: fullWidth ? 'hidden' : 'auto',
       }}>
         <ModuleRenderer module={activeModule} profile={profile} />
@@ -117,38 +117,24 @@ export default function AppShell() {
 
 function ModuleRenderer({ module, profile }) {
   switch (module) {
-    case 'pizarra':
-      return <PizarraPage />;
-    case 'arrendadas':
-      return <ArrendadasPage />;
-    case 'contratos':
-      return <ContratosPage />;
-    case 'cartera':
-      return <PropertiesPage />;
-    case 'servicios':
-      return <SaldosPage />;
-    case 'tareas':
-      return <TasksPage />;
-    case 'pagos':
-      return <PagosPage />;
-    case 'mensajes':
-      return <MensajesPage currentUser={profile} />;
-    case 'usuarios':
-      return <UserManagement />;
-    case 'calculadora':
-      return <CalculadoraPage />;
-    default:
-      return <ComingSoon module={module} />;
+    case 'pizarra':      return <PizarraPage />;
+    case 'arrendadas':   return <ArrendadasPage />;
+    case 'contratos':    return <ContratosPage />;
+    case 'cartera':      return <PropertiesPage />;
+    case 'servicios':    return <SaldosPage />;
+    case 'tareas':       return <TasksPage />;
+    case 'pagos':        return <PagosPage />;
+    case 'mensajes':     return <MensajesPage currentUser={profile} />;
+    case 'usuarios':     return <UserManagement />;
+    case 'calculadora':  return <CalculadoraPage />;
+    default:             return <ComingSoon module={module} />;
   }
 }
 
 function ComingSoon({ module }) {
   const labels = {
-    pizarra:    'Pizarra',
-    arrendadas: 'Propiedades Arrendadas',
-    tareas:     'Tareas Pendientes',
-    pagos:      'Pagos',
-    servicios:  'Saldos',
+    pizarra: 'Pizarra', arrendadas: 'Propiedades Arrendadas',
+    tareas: 'Tareas Pendientes', pagos: 'Pagos', servicios: 'Saldos',
   };
   return (
     <div style={styles.comingSoon}>
@@ -165,6 +151,7 @@ const styles = {
     height: '100vh',
     background: '#f8f9fa',
     fontFamily: "'Google Sans', 'Segoe UI', sans-serif",
+    position: 'relative',
   },
   sidebar: {
     background: '#fff',
@@ -174,139 +161,56 @@ const styles = {
     transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
     overflow: 'hidden',
     flexShrink: 0,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100vh',
+    zIndex: 100,
+    boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
   },
   sidebarHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '16px 12px',
-    borderBottom: '1px solid #e8eaed',
-    gap: 10,
-    minHeight: 60,
+    display: 'flex', alignItems: 'center',
+    padding: '16px 12px', borderBottom: '1px solid #e8eaed',
+    gap: 10, minHeight: 60,
   },
   logoMark: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 32, height: 32, borderRadius: 8,
     background: 'linear-gradient(135deg, #1a73e8, #0d47a1)',
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    color: '#fff', fontSize: 16, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  brandName: {
-    fontSize: 17,
-    fontWeight: 700,
-    color: '#202124',
-    flex: 1,
-    whiteSpace: 'nowrap',
-  },
-  nav: {
-    flex: 1,
-    padding: '8px 8px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 2,
-  },
-  navSpacer: {
-    flex: 1,
-  },
-  navDivider: {
-    borderTop: '1px solid #e8eaed',
-    margin: '8px 4px',
-  },
+  brandName: { fontSize: 17, fontWeight: 700, color: '#202124', flex: 1, whiteSpace: 'nowrap' },
+  nav: { flex: 1, padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 2 },
+  navSpacer: { flex: 1 },
+  navDivider: { borderTop: '1px solid #e8eaed', margin: '8px 4px' },
   navItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '10px 12px',
-    borderRadius: 8,
-    border: 'none',
-    background: 'none',
-    cursor: 'pointer',
-    width: '100%',
-    transition: 'background 0.15s',
-    textAlign: 'left',
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '10px 12px', borderRadius: 8, border: 'none',
+    background: 'none', cursor: 'pointer', width: '100%',
+    transition: 'background 0.15s', textAlign: 'left',
   },
-  navItemActive: {
-    background: '#e8f0fe',
-  },
-  navItemHover: {
-    background: '#f1f3f4',
-  },
-  navLabel: {
-    fontSize: 14,
-    fontWeight: 500,
-    whiteSpace: 'nowrap',
-  },
+  navItemActive: { background: '#e8f0fe' },
+  navItemHover:  { background: '#f1f3f4' },
+  navLabel: { fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap' },
   userArea: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '12px 12px',
-    borderTop: '1px solid #e8eaed',
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '12px 12px', borderTop: '1px solid #e8eaed',
   },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
-  userInfo: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  userName: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#202124',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  userRole: {
-    fontSize: 11,
-    color: '#5f6368',
-  },
-  signOutBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: 6,
-    borderRadius: 6,
-    display: 'flex',
-    alignItems: 'center',
-    flexShrink: 0,
-  },
+  avatar: { width: 32, height: 32, borderRadius: '50%', flexShrink: 0 },
+  userInfo: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  userName: { fontSize: 13, fontWeight: 600, color: '#202124', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  userRole: { fontSize: 11, color: '#5f6368' },
+  signOutBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'flex', alignItems: 'center', flexShrink: 0 },
   main: {
     flex: 1,
-    overflow: 'auto',
-    padding: 32,
+    width: '100%',
+    transition: 'padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxSizing: 'border-box',
   },
-  comingSoon: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    gap: 12,
-  },
+  comingSoon: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 },
   comingSoonIcon: { fontSize: 48 },
-  comingSoonTitle: {
-    fontSize: 22,
-    fontWeight: 600,
-    color: '#202124',
-    margin: 0,
-  },
-  comingSoonText: {
-    fontSize: 14,
-    color: '#5f6368',
-    margin: 0,
-  },
+  comingSoonTitle: { fontSize: 22, fontWeight: 600, color: '#202124', margin: 0 },
+  comingSoonText: { fontSize: 14, color: '#5f6368', margin: 0 },
 };
 
 function NavButton({ item, active, collapsed, onClick }) {
