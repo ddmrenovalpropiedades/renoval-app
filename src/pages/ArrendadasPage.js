@@ -3,69 +3,47 @@ import { supabase } from '../supabaseClient';
 import { ChevronLeft, ChevronRight, Save, Edit2, Trash2, Check, X } from 'lucide-react';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-
-const formatMes = (mes) => {
-  const [y, m] = mes.split('-');
-  return `${MESES_ES[parseInt(m) - 1]} ${y}`;
-};
-
+const formatMes = (mes) => { const [y, m] = mes.split('-'); return `${MESES_ES[parseInt(m) - 1]} ${y}`; };
 const formatCLP = (val) => {
   if (!val) return '';
   const n = parseFloat(String(val).replace(/[$.]/g, '').replace(',', '.'));
   if (isNaN(n)) return val;
   return '$' + Math.round(n).toLocaleString('es-CL');
 };
-
 const parseNumeric = (val) => {
   if (!val) return null;
   const n = parseFloat(String(val).replace(/[$.]/g, '').replace(',', '.'));
   return isNaN(n) ? null : n;
 };
+const formatDateCL = (iso) => {
+  if (!iso) return '';
+  return new Date(iso + 'T12:00:00').toLocaleDateString('es-CL');
+};
 
 const ESTADO_OPTIONS = ['Pendiente', 'Listo'];
 const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
-
 const BadgeE = ({ val }) => val ? (
   <span style={{ background: `${ENCARGADO_COLORS[val] || '#9aa0a6'}22`, color: ENCARGADO_COLORS[val] || '#9aa0a6', border: `1px solid ${ENCARGADO_COLORS[val] || '#9aa0a6'}44`, borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>{val}</span>
 ) : null;
 
 const EstadoCell = ({ value, onChange }) => (
-  <div style={{ position: 'relative' }}>
-    <select value={value || 'Pendiente'} onChange={e => onChange(e.target.value)}
-      style={{
-        border: 'none', outline: 'none', fontFamily: 'inherit',
-        fontSize: 11, fontWeight: 600, cursor: 'pointer',
-        background: 'transparent',
-        color: value === 'Listo' ? '#34a853' : '#ea4335',
-        WebkitAppearance: 'menulist',
-      }}>
-      {ESTADO_OPTIONS.map(o => <option key={o} value={o} style={{ color: '#202124', fontWeight: 400 }}>{o}</option>)}
-    </select>
-  </div>
+  <select value={value || 'Pendiente'} onChange={e => onChange(e.target.value)}
+    style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: value === 'Listo' ? '#34a853' : '#ea4335', WebkitAppearance: 'menulist' }}>
+    {ESTADO_OPTIONS.map(o => <option key={o} value={o} style={{ color: '#202124', fontWeight: 400 }}>{o}</option>)}
+  </select>
 );
 
-const E1_OPTS = ['DD','FD'];
-const E2_OPTS = ['EA','FG'];
-
-// Money input: shows $ prefix, cursor after $, live thousands
 function MoneyInput({ value, onChange, readOnly = false }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
   const displayVal = value ? formatCLP(value) : '';
   if (readOnly) return <span style={{ fontSize: 12 }}>{displayVal}</span>;
-
-  const handleChange = (e) => {
-    const digits = e.target.value.replace(/[^0-9]/g, '');
-    setRaw(digits);
-  };
-
   if (editing) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 4px', background: '#fff' }}>
         <span style={{ fontSize: 12, color: '#5f6368', marginRight: 1 }}>$</span>
-        <input autoFocus
-          value={raw ? parseInt(raw).toLocaleString('es-CL') : ''}
-          onChange={handleChange}
+        <input autoFocus value={raw ? parseInt(raw).toLocaleString('es-CL') : ''}
+          onChange={e => setRaw(e.target.value.replace(/[^0-9]/g, ''))}
           onBlur={() => { setEditing(false); if (raw) onChange(raw); }}
           onKeyDown={e => e.key === 'Enter' && e.target.blur()}
           style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }} />
@@ -82,6 +60,8 @@ function MoneyInput({ value, onChange, readOnly = false }) {
 
 const TIPO_OPTS = ['Nuevo','Renovación'];
 const ADMIN_OPTS = ['Sí','No'];
+const E1_OPTS = ['DD','FD'];
+const E2_OPTS = ['EA','FG'];
 
 function ArrendadaRow({ row, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
@@ -89,7 +69,6 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
   const [edits, setEdits] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const merged = { ...row, ...edits };
-
   const set = (k, v) => setEdits(prev => ({ ...prev, [k]: v }));
 
   const handleSave = async () => {
@@ -97,18 +76,15 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
     onUpdate(row.id, edits);
     setEdits({});
   };
-
   const handleEditSave = async () => {
     await supabase.from('arrendadas').update(form).eq('id', row.id);
     onUpdate(row.id, form);
     setEditing(false);
   };
-
   const handleEstado = async (k, v) => {
     await supabase.from('arrendadas').update({ [k]: v }).eq('id', row.id);
     onUpdate(row.id, { [k]: v });
   };
-
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return; }
     await onDelete(row.id);
@@ -145,8 +121,8 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
         <td style={styles.tdCenter}><InlineInput field="promocion" style={{ width: 70 }} /></td>
         <td style={styles.tdCenter}><InlineInput field="meses" /></td>
         <td style={styles.tdActions}>
-          <button onClick={handleEditSave} style={styles.actionBtnGreen} title="Guardar"><Check size={13} /></button>
-          <button onClick={() => setEditing(false)} style={styles.actionBtnGray} title="Cancelar"><X size={13} /></button>
+          <button onClick={handleEditSave} style={styles.actionBtnGreen}><Check size={13} /></button>
+          <button onClick={() => setEditing(false)} style={styles.actionBtnGray}><X size={13} /></button>
         </td>
       </tr>
     );
@@ -157,37 +133,32 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
       onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
       onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
       <td style={styles.td}>{row.propiedad}</td>
-      <td style={styles.tdCenter}><MoneyInput value={row.arriendo || ''} onChange={v => {}} readOnly /></td>
-      <td style={styles.tdCenter}>
-        <MoneyInput
-          value={edits.comision !== undefined ? edits.comision : (row.comision || '')}
-          onChange={v => set('comision', v)}
-        />
-      </td>
+      <td style={styles.tdCenter}><MoneyInput value={row.arriendo || ''} onChange={() => {}} readOnly /></td>
+      <td style={styles.tdCenter}><MoneyInput value={edits.comision !== undefined ? edits.comision : (row.comision || '')} onChange={v => set('comision', v)} /></td>
       <td style={styles.tdCenter}>{row.tipo}</td>
       <td style={styles.tdCenter}>{row.admin}</td>
       <td style={styles.tdCenter}><BadgeE val={row.e1} /></td>
       <td style={styles.tdCenter}><BadgeE val={row.e2} /></td>
-      <td style={styles.tdCenter}>{row.entrega ? new Date(row.entrega + 'T12:00:00').toLocaleDateString('es-CL') : ''}</td>
+      <td style={styles.tdCenter}>{formatDateCL(row.entrega)}</td>
       <td style={styles.tdCenter}><EstadoCell value={merged.contrato} onChange={v => handleEstado('contrato', v)} /></td>
       <td style={styles.tdCenter}><EstadoCell value={merged.liquidacion} onChange={v => handleEstado('liquidacion', v)} /></td>
-      <td style={styles.tdCenter}>{row.fecha_gar ? new Date(row.fecha_gar + 'T12:00:00').toLocaleDateString('es-CL') : ''}</td>
+      <td style={styles.tdCenter}>{formatDateCL(row.fecha_gar)}</td>
       <td style={styles.tdCenter}><EstadoCell value={merged.dev_gar} onChange={v => handleEstado('dev_gar', v)} /></td>
       <td style={styles.tdCenter}><EstadoCell value={merged.cuentas} onChange={v => handleEstado('cuentas', v)} /></td>
       <td style={styles.tdCenter}>{row.promocion ? formatCLP(row.promocion) : ''}</td>
       <td style={styles.tdCenter}>{row.meses}</td>
       <td style={styles.tdActions}>
         {Object.keys(edits).length > 0 && (
-          <button onClick={handleSave} style={styles.saveBtn} title="Guardar comisión"><Save size={13} /></button>
+          <button onClick={handleSave} style={styles.saveBtn}><Save size={13} /></button>
         )}
-        <button onClick={() => { setForm({...row}); setEditing(true); }} style={styles.actionBtnGray} title="Editar"><Edit2 size={13} /></button>
+        <button onClick={() => { setForm({...row}); setEditing(true); }} style={styles.actionBtnGray}><Edit2 size={13} /></button>
         {confirmDelete ? (
           <>
-            <button onClick={handleDelete} style={styles.actionBtnRed} title="Confirmar"><Trash2 size={13} /></button>
-            <button onClick={() => setConfirmDelete(false)} style={styles.actionBtnGray} title="Cancelar"><X size={12} /></button>
+            <button onClick={handleDelete} style={styles.actionBtnRed}><Trash2 size={13} /></button>
+            <button onClick={() => setConfirmDelete(false)} style={styles.actionBtnGray}><X size={12} /></button>
           </>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} style={styles.actionBtnGray} title="Eliminar"><Trash2 size={13} /></button>
+          <button onClick={() => setConfirmDelete(true)} style={styles.actionBtnGray}><Trash2 size={13} /></button>
         )}
       </td>
     </tr>
@@ -219,10 +190,27 @@ export default function ArrendadasPage() {
   useEffect(() => { fetchMeses(); }, [fetchMeses]);
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
+  // ── Realtime ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!currentMes) return;
+    const channel = supabase
+      .channel(`arrendadas_realtime_${currentMes}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'arrendadas', filter: `mes=eq.${currentMes}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setRows(prev => [...prev, payload.new]);
+        } else if (payload.eventType === 'UPDATE') {
+          setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
+        } else if (payload.eventType === 'DELETE') {
+          setRows(prev => prev.filter(r => r.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [currentMes]);
+
   const handleUpdate = (id, updates) => {
     setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
   };
-
   const handleDelete = async (id) => {
     await supabase.from('arrendadas').delete().eq('id', id);
     setRows(prev => prev.filter(r => r.id !== id));
@@ -231,37 +219,25 @@ export default function ArrendadasPage() {
   const mesIdx = meses.indexOf(currentMes);
   const canPrev = mesIdx < meses.length - 1;
   const canNext = mesIdx > 0;
-
-  // Total comisiones
-  const totalComisiones = rows.reduce((sum, r) => {
-    const n = parseNumeric(r.comision);
-    return sum + (n || 0);
-  }, 0);
+  const totalComisiones = rows.reduce((sum, r) => sum + (parseNumeric(r.comision) || 0), 0);
 
   const HEADERS = ['PROPIEDAD','ARRIENDO','COMISION','TIPO','ADMIN','E1','E2','ENTREGA','CONTRATO','LIQUIDACION','FECHA GAR','DEV GAR','CUENTAS','PROMOCION','MESES',''];
   const WIDE_HEADERS = ['CONTRATO','LIQUIDACION','DEV GAR','CUENTAS','ENTREGA','FECHA GAR'];
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Propiedades Arrendadas</h1>
-          <p style={styles.subtitle}>{rows.length} propiedades · {formatMes(currentMes || '2026-05')}</p>
+          <p style={styles.subtitle}>{rows.length} propiedades · {currentMes ? formatMes(currentMes) : ''}</p>
         </div>
-        {/* Month navigation */}
         <div style={styles.monthNav}>
-          <button onClick={() => setCurrentMes(meses[mesIdx + 1])} disabled={!canPrev} style={styles.navBtn}>
-            <ChevronLeft size={18} />
-          </button>
+          <button onClick={() => setCurrentMes(meses[mesIdx + 1])} disabled={!canPrev} style={styles.navBtn}><ChevronLeft size={18} /></button>
           <span style={styles.monthLabel}>{currentMes ? formatMes(currentMes) : ''}</span>
-          <button onClick={() => setCurrentMes(meses[mesIdx - 1])} disabled={!canNext} style={styles.navBtn}>
-            <ChevronRight size={18} />
-          </button>
+          <button onClick={() => setCurrentMes(meses[mesIdx - 1])} disabled={!canNext} style={styles.navBtn}><ChevronRight size={18} /></button>
         </div>
       </div>
 
-      {/* Table */}
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loading}>Cargando...</div>
@@ -276,7 +252,7 @@ export default function ArrendadasPage() {
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={16} style={styles.empty}>No hay propiedades arrendadas en {formatMes(currentMes || '2026-05')}.</td></tr>
+                <tr><td colSpan={16} style={styles.empty}>No hay propiedades arrendadas en {currentMes ? formatMes(currentMes) : ''}.</td></tr>
               ) : (
                 rows.map(row => (
                   <ArrendadaRow key={row.id} row={row} onUpdate={handleUpdate} onDelete={handleDelete} />
@@ -287,7 +263,6 @@ export default function ArrendadasPage() {
         )}
       </div>
 
-      {/* Totals */}
       <div style={styles.totalsRow}>
         <span style={styles.totalsLabel}>TOTAL COMISIONES</span>
         <span style={styles.totalsValue}>{formatCLP(totalComisiones)}</span>
@@ -303,7 +278,7 @@ const styles = {
   subtitle: { fontSize: 14, color: '#5f6368', margin: 0 },
   monthNav: { display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, padding: '6px 12px' },
   monthLabel: { fontSize: 15, fontWeight: 600, color: '#202124', minWidth: 140, textAlign: 'center' },
-  navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', color: '#5f6368', borderRadius: 6, ':disabled': { opacity: 0.3 } },
+  navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', color: '#5f6368', borderRadius: 6 },
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #d0d5dd', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
@@ -311,11 +286,10 @@ const styles = {
   td: { padding: '8px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle' },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle' },
   tdActions: { padding: '4px 6px', borderBottom: '1px solid #f1f3f4', textAlign: 'center', verticalAlign: 'middle' },
-  inlineInput: { border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: 80, textAlign: 'center' },
   saveBtn: { background: '#e8f0fe', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: '#1a73e8', display: 'inline-flex', alignItems: 'center' },
-  actionBtnGray:  { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
+  actionBtnGray: { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
   actionBtnGreen: { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#34a853' },
-  actionBtnRed:   { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
+  actionBtnRed: { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   totalsRow: { display: 'flex', alignItems: 'center', gap: 16, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
