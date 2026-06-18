@@ -7,10 +7,11 @@ import { supabase } from '../supabaseClient';
 import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
-import { RefreshCw, ChevronDown, History, Plus, X } from 'lucide-react';
+import { RefreshCw, ChevronDown, History, Plus, X, Settings } from 'lucide-react';
 import GallerySidebar, { unlockNextGalleryImage } from '../components/GallerySidebar';
 import PlanningPage from './PlanningPage';
 import HistoryPanel from '../components/HistoryPanel';
+import TaskTemplatesPanel from '../components/TaskTemplatesPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
@@ -39,6 +40,7 @@ export default function TasksPage() {
   const { profile } = useAuth();
   const [viewingEmail, setViewingEmail] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [subtaskReloadTrigger, setSubtaskReloadTrigger] = useState(0);
 
   const effectiveEmail = viewingEmail || profile?.email;
@@ -60,6 +62,7 @@ export default function TasksPage() {
   const [galleryUnlockCounter, setGalleryUnlockCounter] = useState(0);
 
   const isDiego = profile?.email === 'ddm@renovalpropiedades.com';
+  const isOwner = profile?.isOwner;
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#0891b2');
 
@@ -116,7 +119,6 @@ export default function TasksPage() {
 
   const isProtected = (name) => ['Llegada arrendatario','Publicar/Arrendar','Equipo','Solicitudes','PAGOS'].includes(name);
 
-  // Auto-create PAGOS category for DD/FD if missing
   React.useEffect(() => {
     if (!profile?.email) return;
     const isAdmin = ['ddm@renovalpropiedades.com','fdm@renovalpropiedades.com'].includes(profile.email);
@@ -224,7 +226,6 @@ export default function TasksPage() {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <div>
           <div style={{ display:'flex', alignItems:'center', gap:16 }}>
@@ -274,6 +275,13 @@ export default function TasksPage() {
           <button onClick={() => setShowNewCategory(true)} style={{ ...styles.refreshBtn, display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'#e8f0fe', border:'1px solid #1a73e8', color:'#1a73e8', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }} title="Nueva lista">
             <Plus size={14} /> Nueva lista
           </button>
+          {isOwner && (
+            <button onClick={() => setShowTemplates(true)}
+              style={{ ...styles.refreshBtn, display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'#fff', border:'1px solid #dadce0', color:'#5f6368', borderRadius:8, fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}
+              title="Configurar tareas automáticas">
+              <Settings size={14} /> Automáticas
+            </button>
+          )}
           {isDiego && (
             <button onClick={() => setShowGallery(g => !g)}
               style={{ ...styles.refreshBtn, width:36, height:36, fontWeight:700, fontSize:16, background: showGallery ? '#202124' : '#fff', color: showGallery ? '#fff' : '#202124', border:'1px solid #dadce0', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
@@ -294,9 +302,7 @@ export default function TasksPage() {
       {loading ? (
         <div style={styles.loading}>Cargando tareas...</div>
       ) : (
-        /* Contenedor principal con sidebars a la derecha */
         <div style={styles.mainArea}>
-          {/* Área de columnas */}
           <div style={styles.columnsArea}>
             {activeTab === 'planning' && (
               <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} userName={profile?.name} />
@@ -346,7 +352,6 @@ export default function TasksPage() {
             )}
           </div>
 
-          {/* Sidebars a la derecha — igual que TaskPanel */}
           {selectedTask && (
             <div style={styles.sidebarArea}>
               <TaskPanel
@@ -374,13 +379,13 @@ export default function TasksPage() {
       )}
 
       {showHistory && (
-        <HistoryPanel
-          onClose={() => setShowHistory(false)}
-          ownerEmail={effectiveEmail}
-        />
+        <HistoryPanel onClose={() => setShowHistory(false)} ownerEmail={effectiveEmail} />
       )}
 
-      {/* Modal nueva categoría */}
+      {showTemplates && (
+        <TaskTemplatesPanel onClose={() => setShowTemplates(false)} />
+      )}
+
       {showNewCategory && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
           <div style={{ background:'#fff', borderRadius:16, padding:28, width:360, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', fontFamily:"'Google Sans','Segoe UI',sans-serif" }}>
@@ -424,49 +429,18 @@ export default function TasksPage() {
 
 const styles = {
   container: { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  header: {
-    display: 'flex', justifyContent: 'space-between',
-    alignItems: 'flex-start', marginBottom: 16, flexShrink: 0,
-  },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexShrink: 0 },
   title: { fontSize: 24, fontWeight: 700, color: '#202124', margin: '0 0 6px' },
   subtitleRow: { display: 'flex', alignItems: 'center', gap: 8 },
   userSelectorWrapper: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
-  userSelector: {
-    appearance: 'none', border: '1px solid #dadce0',
-    borderRadius: 8, padding: '5px 28px 5px 10px',
-    fontSize: 13, fontWeight: 600, color: '#202124',
-    background: '#fff', cursor: 'pointer', outline: 'none',
-    fontFamily: 'inherit',
-  },
+  userSelector: { appearance: 'none', border: '1px solid #dadce0', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 13, fontWeight: 600, color: '#202124', background: '#fff', cursor: 'pointer', outline: 'none', fontFamily: 'inherit' },
   selectorIcon: { position: 'absolute', right: 8, pointerEvents: 'none' },
-  userBadge: {
-    fontSize: 13, fontWeight: 600, color: '#1a73e8',
-    background: '#e8f0fe', borderRadius: 8, padding: '4px 10px',
-  },
+  userBadge: { fontSize: 13, fontWeight: 600, color: '#1a73e8', background: '#e8f0fe', borderRadius: 8, padding: '4px 10px' },
   taskCountText: { fontSize: 14, color: '#5f6368', display: 'flex', alignItems: 'center', gap: 6 },
-  viewingBadge: {
-    background: '#fce8e6', color: '#c5221f',
-    fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-  },
-  refreshBtn: {
-    background: '#fff', border: '1px solid #dadce0',
-    borderRadius: 8, padding: '8px 10px',
-    cursor: 'pointer', display: 'flex', alignItems: 'center',
-  },
-  viewingBanner: {
-    background: '#fff3e0', border: '1px solid #ffe0b2',
-    borderRadius: 8, padding: '10px 16px',
-    fontSize: 13, color: '#e65100',
-    marginBottom: 16, flexShrink: 0,
-    display: 'flex', alignItems: 'center', gap: 12,
-  },
-  bannerBtn: {
-    marginLeft: 'auto', padding: '5px 12px',
-    background: '#e65100', color: '#fff',
-    border: 'none', borderRadius: 6,
-    fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-  },
-  // Layout principal con sidebars
+  viewingBadge: { background: '#fce8e6', color: '#c5221f', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20 },
+  refreshBtn: { background: '#fff', border: '1px solid #dadce0', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center' },
+  viewingBanner: { background: '#fff3e0', border: '1px solid #ffe0b2', borderRadius: 8, padding: '10px 16px', fontSize: 13, color: '#e65100', marginBottom: 16, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12 },
+  bannerBtn: { marginLeft: 'auto', padding: '5px 12px', background: '#e65100', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
   mainArea: { flex: 1, display: 'flex', overflow: 'hidden', gap: 0 },
   columnsArea: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   columnsWrapper: { flex: 1, overflow: 'auto' },
