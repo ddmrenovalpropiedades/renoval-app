@@ -157,6 +157,14 @@ const handleSave = async (form) => {
 
   const handleEdit = (prop) => { setEditingProp(prop); setShowModal(true); };
 
+  const handleDelete = async (prop) => {
+  const confirmar = window.confirm(`¿Eliminar "${prop.propiedad}"? Esta acción también eliminará sus atributos y no se puede deshacer.`);
+  if (!confirmar) return;
+  await supabase.from('property_attributes').delete().eq('propiedad', prop.propiedad);
+  await supabase.from('properties').delete().eq('id', prop.id);
+  await fetchProperties();
+};
+
   return (
     <div style={styles.container}>
       {/* Tabs */}
