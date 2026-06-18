@@ -7,11 +7,12 @@ import { supabase } from '../supabaseClient';
 import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
-import { RefreshCw, ChevronDown, History, Plus, X, Settings } from 'lucide-react';
+import { ChevronDown, History, Plus, X, Settings, Clock } from 'lucide-react';
 import GallerySidebar, { unlockNextGalleryImage } from '../components/GallerySidebar';
 import PlanningPage from './PlanningPage';
 import HistoryPanel from '../components/HistoryPanel';
 import TaskTemplatesPanel from '../components/TaskTemplatesPanel';
+import DevGarPanel from '../components/DevGarPanel';
 import { USER_INITIALS } from '../supabaseClient';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
@@ -41,6 +42,7 @@ export default function TasksPage() {
   const [viewingEmail, setViewingEmail] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showDevGar, setShowDevGar] = useState(false);
   const [subtaskReloadTrigger, setSubtaskReloadTrigger] = useState(0);
 
   const effectiveEmail = viewingEmail || profile?.email;
@@ -266,8 +268,8 @@ export default function TasksPage() {
           </div>
         </div>
         <div style={{display:'flex',gap:8}}>
-          <button onClick={fetchTasks} style={styles.refreshBtn} title="Actualizar">
-            <RefreshCw size={16} color="#5f6368" />
+          <button onClick={() => setShowDevGar(true)} style={{ ...styles.refreshBtn, display:'flex', alignItems:'center', gap:5, padding:'6px 12px', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }} title="Tareas Dev Gar programadas">
+            <Clock size={14} /> Dev Gar
           </button>
           <button onClick={() => setShowHistory(true)} style={styles.refreshBtn} title="Historial">
             <History size={16} color="#5f6368" />
@@ -380,6 +382,10 @@ export default function TasksPage() {
 
       {showHistory && (
         <HistoryPanel onClose={() => setShowHistory(false)} ownerEmail={effectiveEmail} />
+      )}
+
+      {showDevGar && (
+        <DevGarPanel onClose={() => setShowDevGar(false)} />
       )}
 
       {showTemplates && (
