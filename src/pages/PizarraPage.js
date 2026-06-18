@@ -363,12 +363,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </tr>
   );
 
-  const { amount, isUF } = parsePrice(form.precio || '');
-  const precioDisplay = form.precio ? (isUF ? `UF ${amount}` : (amount ? formatCLP(amount) : form.precio)) : '';
-  const precioSub = isUF && uf && amount ? formatCLP(amount * uf) : '';
-  const { amount: promoAmt, isUF: promoIsUF } = parsePrice(form.promo || '');
-  const promoDisplay = form.promo ? (promoIsUF ? `UF ${promoAmt}` : (promoAmt ? formatCLP(promoAmt) : form.promo)) : '';
-  const promoSub = promoIsUF && uf && promoAmt ? formatCLP(promoAmt * uf) : '';
 
   return (
     <tr style={{ background: '#fff' }}
@@ -427,7 +421,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
 
 export default function PizarraPage() {
-  const { profile } = useAuth();
+  useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addingNew, setAddingNew] = useState(false);
