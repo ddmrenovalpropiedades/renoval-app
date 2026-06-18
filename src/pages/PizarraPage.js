@@ -5,6 +5,13 @@ import { Plus, Check, X, Home, Trash2, Link2, Calendar } from 'lucide-react';
 import UrlPublicacionModal from '../components/pizarra/UrlPublicacionModal';
 import DisponibilidadSidebar from '../components/pizarra/DisponibilidadSidebar';
 
+const ENCARGADO_EMAIL = {
+  DD: 'ddm@renovalpropiedades.com',
+  FD: 'fdm@renovalpropiedades.com',
+  EA: 'edith@renovalpropiedades.com',
+  FG: 'fernanda@renovalpropiedades.com',
+};
+
 // ── UF value ──────────────────────────────────────────────────
 const useUFValue = () => {
   const [uf, setUf] = useState(null);
@@ -62,6 +69,85 @@ const EMPTY_FORM = {
   fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
   url_publicacion: '',
 };
+
+// ── Auto task creation ────────────────────────────────────────
+async function createAutoTasks(trigger, propiedad, e1, e2, tipo, fechaEntrega) {
+  const { data: templates } = await supabase
+    .from('task_templates')
+    .select('*')
+    .eq('trigger', trigger)
+    .eq('active', true)
+    .order('position', { ascending: true });
+
+  if (!templates || templates.length === 0) return;
+
+  const tipoNorm = (tipo || '').toLowerCase().trim();
+  const esNuevo = tipoNorm === 'nuevo';
+
+  for (const tpl of templates) {
+    // Filtrar por condition
+    if (trigger === 'pizarra_nueva_propiedad') {
+      if (esNuevo && tpl.condition === 'renovacion') continue;
+      if (esNuevo && tpl.condition === 'renovacion_dev_gar') continue;
+      if (!esNuevo && tpl.condition === 'nuevo') continue;
+    }
+
+    const assigneeEmail = tpl.assignee_role === 'e1'
+      ? ENCARGADO_EMAIL[e1]
+      : ENCARGADO_EMAIL[e2];
+    if (!assigneeEmail) continue;
+
+    const taskTitle = tpl.task_title.replace('{{propiedad}}', propiedad);
+
+    // Tarea Dev Gar: programada con next_occurrence
+    if (tpl.condition === 'renovacion_dev_gar') {
+      if (!fechaEntrega) continue;
+      const base = new Date(fechaEntrega + 'T12:00:00');
+      base.setDate(base.getDate() + 52); // 1 mes + 3 semanas
+      const nextOcc = base.toISOString().split('T')[0];
+      await supabase.from('tasks').insert({
+        owner_email: assigneeEmail,
+        title: taskTitle,
+        category: 'Publicar/Arrendar',
+        completed: false,
+        recurrence: 'none',
+        next_occurrence: nextOcc,
+        position: -Date.now(),
+        notes: `Dev Gar programada para ${nextOcc}`,
+      });
+      continue;
+    }
+
+    const category = trigger === 'pizarra_nueva_propiedad'
+      ? 'Publicar/Arrendar'
+      : 'Llegada arrendatario';
+
+    const { data: parentTask } = await supabase.from('tasks').insert({
+      owner_email: assigneeEmail,
+      title: taskTitle,
+      category,
+      completed: false,
+      recurrence: 'none',
+      position: -Date.now(),
+    }).select().single();
+
+    if (!parentTask) continue;
+
+    const subtasks = tpl.subtasks || [];
+    for (let i = 0; i < subtasks.length; i++) {
+      await supabase.from('tasks').insert({
+        owner_email: assigneeEmail,
+        title: subtasks[i],
+        category,
+        parent_id: parentTask.id,
+        completed: false,
+        position: i,
+        // Metadata para efectos secundarios
+        notes: null,
+      });
+    }
+  }
+}
 
 // ── MoneyInput ────────────────────────────────────────────────
 function MoneyInput({ value, onChange }) {
@@ -209,7 +295,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
   const [errors, setErrors] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Sincronizar form cuando row cambia desde el padre (fix badge URL + Realtime)
   useEffect(() => {
     setForm(prev => ({ ...prev, ...row }));
   }, [row]);
@@ -331,8 +416,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew = false, onCancelN
       <td style={styles.tdCenter}><InlineSelectCell value={form.tipo} options={['Nuevo','Renovación']} onChange={v => set('tipo', v)} /></td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => set('admin', v)} /></td>
       <td style={styles.tdCenter}>
-        <button
-          onClick={() => onOpenUrlModal(row)}
+        <button onClick={() => onOpenUrlModal(row)}
           style={{ ...styles.urlBtn, ...(form.url_publicacion ? styles.urlBtnActive : styles.urlBtnInactive) }}
           title={form.url_publicacion ? 'URL cargada — click para editar' : 'Sin URL — click para agregar'}>
           <Link2 size={13} />
@@ -379,18 +463,13 @@ export default function PizarraPage() {
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
-  // ── Realtime ──────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel('pizarra_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pizarra' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setRows(prev => [payload.new, ...prev]);
-        } else if (payload.eventType === 'UPDATE') {
-          setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
-        } else if (payload.eventType === 'DELETE') {
-          setRows(prev => prev.filter(r => r.id !== payload.old.id));
-        }
+        if (payload.eventType === 'INSERT') setRows(prev => [payload.new, ...prev]);
+        else if (payload.eventType === 'UPDATE') setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
+        else if (payload.eventType === 'DELETE') setRows(prev => prev.filter(r => r.id !== payload.old.id));
       })
       .subscribe();
     return () => supabase.removeChannel(channel);
@@ -429,7 +508,18 @@ export default function PizarraPage() {
       };
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
-      if (data) setRows(prev => [data, ...prev]);
+      if (data) {
+        setRows(prev => [data, ...prev]);
+        // Trigger tareas automáticas nueva propiedad
+        await createAutoTasks(
+          'pizarra_nueva_propiedad',
+          data.propiedad,
+          data.e1,
+          data.e2,
+          data.tipo,
+          data.fecha_salida
+        );
+      }
       setAddingNew(false);
     }
   };
@@ -465,6 +555,15 @@ export default function PizarraPage() {
       fecha_gar: fechaGar, dev_gar: 'Pendiente', cuentas: 'Pendiente',
       promocion: row.promo || null, meses: meses || null,
     });
+    // Trigger tareas automáticas propiedad arrendada
+    await createAutoTasks(
+      'pizarra_arrendada',
+      row.propiedad,
+      row.e1,
+      row.e2,
+      row.tipo,
+      entrega
+    );
     await supabase.from('pizarra').delete().eq('id', row.id);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
@@ -565,7 +664,6 @@ const styles = {
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  thAviso: { padding: '10px 14px', minWidth: 80, background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap', textAlign: 'center' },
   td: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center' },
   tdProp: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left' },
   tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle' },
