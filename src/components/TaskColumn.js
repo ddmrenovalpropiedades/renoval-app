@@ -17,6 +17,30 @@ const CATEGORY_COLORS = {
 
 const WORKERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
 
+// ── Efectos secundarios al completar subtareas ────────────────
+async function runSubtaskSideEffects(subtaskTitle, parentTaskTitle) {
+  const title = (subtaskTitle || '').trim();
+  const propMatch = (parentTaskTitle || '').match(/^(?:Arriendo|Dev Gar)\s+(.+)$/i);
+  const propiedad = propMatch ? propMatch[1].trim() : null;
+  if (!propiedad) return;
+
+  if (title === 'Notificar dueño' || title === 'Notificar dueno') {
+    await supabase.from('pizarra').update({ aviso: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Respaldar publicación' || title === 'Respaldar publicacion') {
+    await supabase.from('pizarra').update({ respaldo: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Liquidación' || title === 'Liquidacion') {
+    await supabase.from('arrendadas').update({ liquidacion: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Respaldo contrato carpeta') {
+    await supabase.from('arrendadas').update({ contrato: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Pago cuentas') {
+    await supabase.from('arrendadas').update({ cuentas: 'Listo' }).ilike('propiedad', propiedad);
+  }
+}
+
 function SubtaskItem({ subtask, onComplete, onOpen }) {
   return (
     <div style={styles.subtaskItem}>
@@ -49,16 +73,19 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
   useEffect(() => { loadSubtasks(); }, [loadSubtasks, reloadKey]);
 
   const handleCompleteSubtask = async (subtask) => {
-    // If Equipo subtask, also delete mirror in Solicitudes
+    // Efectos secundarios según título de subtarea
+    await runSubtaskSideEffects(subtask.title, task.title);
+
+    // Mirrors Equipo/Solicitudes
     if (task.category === 'Equipo' && subtask.solicitud_id) {
       await supabase.from('tasks').delete().eq('id', subtask.solicitud_id);
     }
-    // If Solicitudes subtask, also delete mirror in Equipo
     if (task.category === 'Solicitudes') {
       const { data: mirror } = await supabase.from('tasks').select('id')
         .eq('solicitud_id', subtask.id).eq('category', 'Equipo').maybeSingle();
       if (mirror) await supabase.from('tasks').delete().eq('id', mirror.id);
     }
+
     await supabase.from('tasks').delete().eq('id', subtask.id);
     const remaining = subtasks.filter(s => s.id !== subtask.id);
     setSubtasks(remaining);
@@ -74,7 +101,6 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
   const isOverdue = task.due_date && new Date(task.due_date) < new Date();
   const hasSubtasks = subtasks.length > 0;
 
-  // Display prefix
   let prefix = '';
   if ((task.category === 'Solicitudes' || task.category === 'Equipo') && task.assigned_to) {
     prefix = `[${USER_INITIALS[task.assigned_to] || '?'}] `;
@@ -126,7 +152,6 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
   );
 }
 
-// Mini history for Solicitudes column
 function SolicitudesHistory({ currentUserEmail }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -283,7 +308,6 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
             </button>
           )}
 
-          {/* Mini historial Solicitudes */}
           {isSolicitudes && showHistory && (
             <div style={styles.historySection}>
               <div style={styles.historySectionTitle}>
@@ -294,7 +318,6 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
             </div>
           )}
 
-          {/* Tareas dormidas */}
           {dormantTasks.length > 0 && (
             <div style={styles.dormantSection}>
               <button onClick={() => setShowDormant(!showDormant)} style={styles.dormantToggle}>
