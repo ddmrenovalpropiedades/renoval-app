@@ -30,6 +30,9 @@ async function runSubtaskSideEffects(subtaskTitle, parentTaskTitle) {
   if (title === 'Respaldar publicación' || title === 'Respaldar publicacion') {
     await supabase.from('pizarra').update({ respaldo: 'Listo' }).ilike('propiedad', propiedad);
   }
+  if (title === 'Publicar') {
+    await supabase.from('pizarra').update({ status: 'Listo' }).ilike('propiedad', propiedad);
+  }
   if (title === 'Liquidación' || title === 'Liquidacion') {
     await supabase.from('arrendadas').update({ liquidacion: 'Listo' }).ilike('propiedad', propiedad);
   }
