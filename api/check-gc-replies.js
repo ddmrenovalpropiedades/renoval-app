@@ -40,7 +40,7 @@ async function getPdfAttachments(gmail, messageId, payload) {
           userId: GMAIL_USER, messageId, id: part.body.attachmentId,
         });
         pdfs.push({ filename: part.filename, data: att.data.data });
-      } catch(e) { console.error('Error getting attachment:', e.message); }
+      } catch (e) { console.error('Error getting attachment:', e.message); }
     }
     if (part.parts) pdfs.push(...await getPdfAttachments(gmail, messageId, part));
   }
@@ -59,7 +59,7 @@ async function extractGCFromPdf(pdfBase64, propiedad) {
         'anthropic-beta': 'pdfs-2024-09-25',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4-6',
         max_tokens: 500,
         messages: [{
           role: 'user',
@@ -84,13 +84,46 @@ async function extractGCFromPdf(pdfBase64, propiedad) {
     console.log('PDF extraction status:', response.status);
     console.log('PDF extraction raw:', rawText.substring(0, 500));
     let data;
-    try { data = JSON.parse(rawText); } catch(e) { return null; }
+    try { data = JSON.parse(rawText); } catch (e) { return null; }
     const text = data.content?.[0]?.text?.trim() || 'NO_ENCONTRADO';
     return text === 'NO_ENCONTRADO' ? null : text;
-  } catch(e) {
+  } catch (e) {
     console.error('extractGCFromPdf error:', e.message);
     return null;
   }
+}
+
+// Normaliza texto para comparación: minúsculas, sin tildes, sin caracteres especiales
+function normalizeStr(str) {
+  return String(str)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Extrae palabras significativas de un nombre de propiedad
+function getSignificantWords(prop) {
+  const normalized = normalizeStr(prop);
+  const stopWords = new Set(['departamento', 'depto', 'dpto', 'casa', 'oficina', 'local', 'bodega', 'piso', 'apt', 'apto']);
+  return normalized
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !stopWords.has(w));
+}
+
+// Calcula un score de coincidencia entre el contenido del mail y el nombre de la propiedad
+function matchScore(content, propiedad) {
+  const normalizedContent = normalizeStr(content);
+  const words = getSignificantWords(propiedad);
+  if (!words.length) return 0;
+
+  let matched = 0;
+  for (const w of words) {
+    if (normalizedContent.includes(w)) matched++;
+  }
+  return matched / words.length;
 }
 
 export default async function handler(req, res) {
@@ -107,96 +140,135 @@ export default async function handler(req, res) {
   try {
     const gmail = getGmailClient();
 
-    // Only look for emails received after the send date (or start of current month)
-    const afterDate = enviado_desde
-      ? new Date(enviado_desde)
-      : new Date(`${mes}-01T00:00:00Z`);
+    // Fecha de corte: desde cuando buscamos respuestas
+    // Si no hay enviado_desde, buscamos desde el inicio del mes
+    let afterDate;
+    if (enviado_desde) {
+      afterDate = new Date(enviado_desde);
+      // Validar que la fecha sea válida
+      if (isNaN(afterDate.getTime())) {
+        afterDate = new Date(`${mes}-01T00:00:00Z`);
+      }
+    } else {
+      afterDate = new Date(`${mes}-01T00:00:00Z`);
+    }
     const afterTimestamp = Math.floor(afterDate.getTime() / 1000);
 
-    // Search only emails received after send date, with PDF attachments
-    const query = `in:inbox has:attachment filename:pdf after:${afterTimestamp}`;
-    console.log('Gmail query:', query);
+    console.log('Buscando respuestas desde:', afterDate.toISOString(), '(timestamp:', afterTimestamp, ')');
 
-    const listRes = await gmail.users.messages.list({
-      userId: GMAIL_USER,
-      q: query,
-      maxResults: 50,
-    });
+    // Búsqueda amplia: cualquier email recibido después de la fecha de envío
+    // Incluye con y sin adjunto PDF para no perder respuestas sin PDF
+    const queries = [
+      `in:inbox has:attachment filename:pdf after:${afterTimestamp}`,
+      `in:inbox after:${afterTimestamp} -from:gcrenovalpropiedades@gmail.com`,
+    ];
 
-    const messages = listRes.data.messages || [];
+    const allMessageIds = new Set();
+    for (const query of queries) {
+      console.log('Gmail query:', query);
+      try {
+        const listRes = await gmail.users.messages.list({
+          userId: GMAIL_USER,
+          q: query,
+          maxResults: 100,
+        });
+        (listRes.data.messages || []).forEach(m => allMessageIds.add(m.id));
+      } catch (e) {
+        console.error('Error listing messages for query:', query, e.message);
+      }
+    }
+
+    console.log(`Total mensajes únicos encontrados: ${allMessageIds.size}`);
+
     const replies = [];
     const debug = [];
 
-    for (const msg of messages) {
+    for (const msgId of allMessageIds) {
       const full = await gmail.users.messages.get({
-        userId: GMAIL_USER, id: msg.id, format: 'full',
+        userId: GMAIL_USER, id: msgId, format: 'full',
       });
 
       const headers = full.data.payload.headers || [];
       const subject = headers.find(h => h.name === 'Subject')?.value || '';
+      const from = headers.find(h => h.name === 'From')?.value || '';
       const date = headers.find(h => h.name === 'Date')?.value || '';
       const receivedAt = new Date(date).toISOString();
 
-      // Debug info
-      const msgDebug = {
-        id: msg.id,
-        subject,
-        mimeType: full.data.payload.mimeType,
-        parts: (full.data.payload.parts || []).map(p => ({
-          mimeType: p.mimeType,
-          filename: p.filename || null,
-          hasAttachmentId: !!p.body?.attachmentId,
-          subParts: (p.parts || []).map(sp => ({
-            mimeType: sp.mimeType,
-            filename: sp.filename || null,
-            hasAttachmentId: !!sp.body?.attachmentId,
-          })),
-        })),
-      };
-      debug.push(msgDebug);
-
-      const pdfs = await getPdfAttachments(gmail, msg.id, full.data.payload);
-      msgDebug.pdfsFound = pdfs.map(p => p.filename);
-      if (!pdfs.length) continue;
+      // Saltar emails enviados por nosotros mismos
+      if (from.includes('gcrenovalpropiedades@gmail.com')) continue;
 
       const body = getTextBody(full.data.payload);
-      const combined = (subject + ' ' + body).toLowerCase();
-      console.log('Checking email subject:', subject);
+      const combined = subject + ' ' + body;
 
-      // Match against our propiedades list
+      // Buscar la propiedad con mejor match
       let matchedProp = null;
       let bestScore = 0;
 
       if (propiedades?.length) {
         for (const prop of propiedades) {
-          const words = prop.toLowerCase()
-            .split(/\s+/)
-            .filter(w => w.length > 3 && !/^(departamento|depto|casa|oficina)$/i.test(w));
-          const matchCount = words.filter(w => combined.includes(w)).length;
-          const score = words.length > 0 ? matchCount / words.length : 0;
-          if (score > bestScore && score >= 0.5) {
+          const score = matchScore(combined, prop);
+          console.log(`  "${prop}" → score: ${score.toFixed(2)} en "${subject}"`);
+          if (score > bestScore) {
             bestScore = score;
             matchedProp = prop;
           }
         }
       }
 
-      console.log(`Matched: ${matchedProp} (score: ${bestScore})`);
-      if (!matchedProp) continue;
+      // Umbral mínimo de coincidencia: al menos 40% de las palabras clave
+      const MATCH_THRESHOLD = 0.4;
 
-      // Extract GC value from first PDF
-      const gcValor = await extractGCFromPdf(pdfs[0].data, matchedProp);
-      console.log(`GC valor for ${matchedProp}: ${gcValor}`);
+      const msgDebug = {
+        id: msgId,
+        subject,
+        from,
+        date: receivedAt,
+        matchedProp: bestScore >= MATCH_THRESHOLD ? matchedProp : null,
+        bestScore: Math.round(bestScore * 100) + '%',
+      };
+      debug.push(msgDebug);
 
-      replies.push({
-        propiedad: matchedProp,
-        gc_valor: gcValor,
-        respondido_at: receivedAt,
-        gmail_message_id: msg.id,
-      });
+      if (bestScore < MATCH_THRESHOLD) {
+        console.log(`No match suficiente para "${subject}" (mejor: ${matchedProp} @ ${bestScore.toFixed(2)})`);
+        continue;
+      }
+
+      console.log(`✓ Match: "${matchedProp}" (score: ${bestScore.toFixed(2)}) para "${subject}"`);
+
+      // Intentar extraer valor GC del PDF si hay adjunto
+      const pdfs = await getPdfAttachments(gmail, msgId, full.data.payload);
+      msgDebug.pdfsFound = pdfs.map(p => p.filename);
+
+      let gcValor = null;
+      if (pdfs.length > 0) {
+        gcValor = await extractGCFromPdf(pdfs[0].data, matchedProp);
+        console.log(`GC valor para ${matchedProp}: ${gcValor}`);
+      } else {
+        console.log(`Sin PDF adjunto en respuesta para ${matchedProp}`);
+      }
+
+      // Evitar duplicados: si ya hay un reply para esta propiedad con mejor info, no reemplazar
+      const existing = replies.find(r => r.propiedad === matchedProp);
+      if (existing) {
+        // Preferir el que tiene gc_valor
+        if (!existing.gc_valor && gcValor) {
+          existing.gc_valor = gcValor;
+          existing.respondido_at = receivedAt;
+          existing.gmail_message_id = msgId;
+        }
+      } else {
+        replies.push({
+          propiedad: matchedProp,
+          gc_valor: gcValor,
+          respondido_at: receivedAt,
+          gmail_message_id: msgId,
+        });
+      }
     }
 
-    return res.status(200).json({ replies, debug });
+    console.log(`Respuestas detectadas: ${replies.length}`);
+    return res.status(200).json({ replies, debug, total_emails_checked: allMessageIds.size });
+
   } catch (err) {
     console.error('check-gc-replies error:', err);
     return res.status(500).json({ error: err.message, replies: [] });
