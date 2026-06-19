@@ -550,10 +550,18 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </select>
   );
 
-  const reqSelect = (field) => ({
-    ...newRowSelect,
-    ...(errors[field] ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}),
+  // Estilo del wrapper div para campos obligatorios (select no acepta border en todos los browsers)
+  const reqWrapper = (field) => ({
+    border: errors[field] ? '1px solid #ea4335' : '1px solid #dadce0',
+    background: errors[field] ? '#fce8e6' : '#fff',
+    borderRadius: 6, height: 28, boxSizing: 'border-box',
+    display: 'inline-flex', alignItems: 'center', width: '100%',
   });
+  const selectInsideWrapper = {
+    border: 'none', outline: 'none', background: 'transparent',
+    fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
+    height: '100%', width: '100%', padding: '0 4px',
+  };
 
   if (isNew) return (
     <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
@@ -578,14 +586,18 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         </select>
       </td>
       <td style={styles.tdCenter}>
-        <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={reqSelect('e1')}>
-          <option value="">—</option><option>DD</option><option>FD</option>
-        </select>
+        <div style={reqWrapper('e1')}>
+          <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={selectInsideWrapper}>
+            <option value="">—</option><option>DD</option><option>FD</option>
+          </select>
+        </div>
       </td>
       <td style={styles.tdCenter}>
-        <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={reqSelect('e2')}>
-          <option value="">—</option><option>EA</option><option>FG</option>
-        </select>
+        <div style={reqWrapper('e2')}>
+          <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={selectInsideWrapper}>
+            <option value="">—</option><option>EA</option><option>FG</option>
+          </select>
+        </div>
       </td>
       <td style={styles.tdCenter}>
         <SlashInputNew value={form.db||''} onChange={v=>setForm(p=>({...p,db:v}))} />
@@ -611,14 +623,18 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         </select>
       </td>
       <td style={styles.tdCenter}>
-        <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={reqSelect('tipo')}>
-          <option value="">—</option><option>Nuevo</option><option>Renovación</option>
-        </select>
+        <div style={reqWrapper('tipo')}>
+          <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={selectInsideWrapper}>
+            <option value="">—</option><option>Nuevo</option><option>Renovación</option>
+          </select>
+        </div>
       </td>
       <td style={styles.tdCenter}>
-        <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={reqSelect('admin')}>
-          <option value="">—</option><option>Sí</option><option>No</option>
-        </select>
+        <div style={reqWrapper('admin')}>
+          <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={selectInsideWrapper}>
+            <option value="">—</option><option>Sí</option><option>No</option>
+          </select>
+        </div>
       </td>
       <td style={styles.tdCenter}><span style={{ color: '#dadce0', fontSize: 11 }}>—</span></td>
       <td style={styles.tdActions}>
