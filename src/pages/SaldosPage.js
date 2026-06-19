@@ -367,6 +367,7 @@ function ConsultasTab() {
   const [sendResult, setSendResult] = useState(null);
   const [showTestModal, setShowTestModal] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const mes = currentMes();
 
@@ -649,7 +650,14 @@ function ConsultasTab() {
                       {row.mail_admin && (
                         <button onClick={()=>setPreviewRow(row)} style={{...st.actionBtn,color:'#1a73e8'}} title="Ver correo"><Eye size={14}/></button>
                       )}
-                      <button onClick={()=>handleDelete(row.id)} style={{...st.actionBtn,color:'#9aa0a6'}} title="Eliminar"><Trash2 size={13}/></button>
+                      {confirmDeleteId === row.id ? (
+                        <>
+                          <button onClick={async()=>{ await handleDelete(row.id); setConfirmDeleteId(null); }} style={{...st.actionBtn,background:'#fce8e6',color:'#ea4335'}} title="Confirmar eliminar"><Trash2 size={13}/></button>
+                          <button onClick={()=>setConfirmDeleteId(null)} style={{...st.actionBtn,color:'#5f6368'}} title="Cancelar"><X size={12}/></button>
+                        </>
+                      ) : (
+                        <button onClick={()=>setConfirmDeleteId(row.id)} style={{...st.actionBtn,color:'#9aa0a6'}} title="Eliminar"><Trash2 size={13}/></button>
+                      )}
                     </td>
                   </tr>
                 );
