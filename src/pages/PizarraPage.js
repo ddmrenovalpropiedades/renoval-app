@@ -126,13 +126,17 @@ function PriceInput({ value, onChange, uf }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff' }}>
-          <select value={currency} onChange={e => setCurrency(e.target.value)}
+          <select value={currency}
+            onMouseDown={e => e.stopPropagation()}
+            onChange={e => { setCurrency(e.target.value); }}
             style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '3px 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed' }}>
             <option value="CLP">$</option>
             <option value="UF">UF</option>
           </select>
           <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
-            onBlur={() => {
+            onBlur={e => {
+              // No cerrar si el foco va al select
+              if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return;
               setEditing(false);
               if (raw) {
                 const val = currency === 'UF' ? `UF ${raw}` : raw;
