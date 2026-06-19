@@ -110,8 +110,8 @@ async function createAutoTasks(trigger, propiedad, e1, e2, tipo, fechaEntrega) {
   }
 }
 
-// ── PriceInput: selector UF/CLP + monto ──────────────────────
-function PriceInput({ value, onChange, uf }) {
+// ── PriceInput: en fila nueva muestra contenedor blanco ───────
+function PriceInput({ value, onChange, uf, isNew }) {
   const [editing, setEditing] = useState(false);
   const [currency, setCurrency] = useState('CLP');
   const [raw, setRaw] = useState('');
@@ -124,31 +124,42 @@ function PriceInput({ value, onChange, uf }) {
 
   if (editing) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff' }}>
-          <select value={currency}
-            onMouseDown={e => e.stopPropagation()}
-            onChange={e => { setCurrency(e.target.value); }}
-            style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '3px 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed' }}>
-            <option value="CLP">$</option>
-            <option value="UF">UF</option>
-          </select>
-          <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
-            onBlur={e => {
-              if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return;
-              setEditing(false);
-              if (raw) {
-                const val = currency === 'UF' ? `UF ${raw}` : raw;
-                onChange(val);
-              }
-            }}
-            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-            style={{ border: 'none', outline: 'none', width: 70, fontSize: 12, padding: '3px 5px', fontFamily: 'inherit' }} />
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff', height: 28, boxSizing: 'border-box' }}>
+        <select value={currency}
+          onMouseDown={e => e.stopPropagation()}
+          onChange={e => { setCurrency(e.target.value); }}
+          style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '0 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed', height: '100%' }}>
+          <option value="CLP">$</option>
+          <option value="UF">UF</option>
+        </select>
+        <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
+          onBlur={e => {
+            if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return;
+            setEditing(false);
+            if (raw) {
+              const val = currency === 'UF' ? `UF ${raw}` : raw;
+              onChange(val);
+            }
+          }}
+          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+          style={{ border: 'none', outline: 'none', width: 70, fontSize: 12, padding: '0 5px', fontFamily: 'inherit' }} />
       </div>
     );
   }
 
+  // En fila nueva: contenedor blanco con borde
+  if (isNew) {
+    return (
+      <div onClick={() => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount ? String(amount) : ''); setEditing(true); }}
+        style={{ cursor: 'text', fontSize: 12, height: 28, boxSizing: 'border-box', border: '1px solid #dadce0', borderRadius: 6, background: '#fff', padding: '0 6px', display: 'flex', alignItems: 'center', minWidth: 70 }}>
+        {displayMain
+          ? <span>{displayMain}</span>
+          : <span style={{ color: '#9aa0a6' }}>—</span>}
+      </div>
+    );
+  }
+
+  // Fila normal existente
   return (
     <div onClick={() => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount ? String(amount) : ''); setEditing(true); }}
       style={{ cursor: 'text', fontSize: 12, padding: '2px 4px', borderRadius: 4, minWidth: 60 }}>
@@ -163,13 +174,12 @@ function PriceInput({ value, onChange, uf }) {
 }
 
 // ── DateCellInput: usado en filas normales (existentes) ───────
-function DateCellInput({ value, onChange, hasError }) {
+function DateCellInput({ value, onChange }) {
   const ref = React.useRef(null);
   return (
     <div onClick={() => ref.current && ref.current.showPicker && ref.current.showPicker()}
-      style={{ cursor: 'pointer', fontSize: 11, color: value ? 'inherit' : '#9aa0a6', position: 'relative',
-        ...(hasError ? { background: '#fce8e6', borderRadius: 4, padding: '1px 3px' } : {}) }}>
-      {value ? formatDateCL(value) : <span style={{ color: hasError ? '#ea4335' : '#dadce0' }}>dd/mm/aaaa *</span>}
+      style={{ cursor: 'pointer', fontSize: 11, color: value ? 'inherit' : '#9aa0a6', position: 'relative' }}>
+      {value ? formatDateCL(value) : <span style={{ color: '#dadce0' }}>—</span>}
       <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
         style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
     </div>
@@ -187,13 +197,48 @@ function DateFieldNew({ value, onChange, hasError }) {
         border: hasError ? '1px solid #ea4335' : '1px solid #dadce0',
         borderRadius: 6, background: hasError ? '#fce8e6' : '#fff',
         padding: '0 6px', height: 28, cursor: 'pointer', minWidth: 100, boxSizing: 'border-box',
+        position: 'relative',
       }}>
       <span style={{ fontSize: 12, color: value ? '#202124' : '#9aa0a6', userSelect: 'none' }}>
         {value ? formatDateCL(value) : 'dd/mm/aaaa'}
       </span>
-      <Calendar size={13} style={{ color: hasError ? '#ea4335' : '#9aa0a6', flexShrink: 0, marginLeft: 4 }} onClick={openPicker} />
+      <Calendar size={13} style={{ color: hasError ? '#ea4335' : '#9aa0a6', flexShrink: 0, marginLeft: 4 }} />
       <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
         style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
+    </div>
+  );
+}
+
+// ── SlashInput: dos dígitos separados por "/" ─────────────────
+function SlashInput({ value, onChange }) {
+  // value guardado como "2/1", "D/B", etc.
+  const parts = (value || '/').split('/');
+  const left  = parts[0] || '';
+  const right = parts[1] !== undefined ? parts[1] : '';
+
+  const update = (l, r) => onChange(`${l}/${r}`);
+
+  const inputStyle = {
+    width: 22, height: 28, border: '1px solid #dadce0', borderRadius: 4,
+    textAlign: 'center', fontSize: 12, outline: 'none', fontFamily: 'inherit',
+    background: '#fff', boxSizing: 'border-box', padding: 0,
+  };
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+      <input
+        value={left}
+        maxLength={1}
+        onChange={e => update(e.target.value.replace(/[^0-9]/g, ''), right)}
+        style={inputStyle}
+      />
+      <span style={{ fontSize: 13, color: '#5f6368', lineHeight: 1 }}>/</span>
+      <input
+        value={right}
+        maxLength={1}
+        onChange={e => update(left, e.target.value.replace(/[^0-9]/g, ''))}
+        style={inputStyle}
+      />
     </div>
   );
 }
@@ -298,11 +343,11 @@ function InlineSelectCell({ value, options, onChange }) {
   );
 }
 
-// estilo común para todos los inputs/selects de la fila nueva
+// estilos base para inputs/selects de la fila nueva
 const newRowInput = {
   border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, outline: 'none',
   fontFamily: 'inherit', background: '#fff', height: 28, boxSizing: 'border-box',
-  padding: '0 6px', display: 'flex', alignItems: 'center',
+  padding: '0 6px',
 };
 const newRowSelect = {
   border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, outline: 'none',
@@ -353,25 +398,32 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </select>
   );
 
+  // borde rojo si campo obligatorio vacío, normal si tiene valor
+  const reqSelect = (field) => ({
+    ...newRowSelect,
+    ...(errors[field] ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}),
+  });
+
   if (isNew) return (
     <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
 
       {/* PROPIEDAD */}
       <td style={styles.tdProp}>
-        <div style={{ position: 'relative' }}>
-          <input value={form.propiedad} onChange={e => setForm(p=>({...p,propiedad:e.target.value}))}
-            placeholder="Dirección"
-            style={{ ...newRowInput, display: 'block', width: '100%', paddingRight: 18,
-              ...(errors.propiedad ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }} />
-          <span style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>
-        </div>
+        <input value={form.propiedad} onChange={e => setForm(p=>({...p,propiedad:e.target.value}))}
+          placeholder="Dirección"
+          style={{ ...newRowInput, display: 'block', width: '100%',
+            ...(errors.propiedad ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }} />
       </td>
 
       {/* PRECIO */}
-      <td style={styles.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} /></td>
+      <td style={styles.tdCenter}>
+        <PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} isNew={true} />
+      </td>
 
       {/* PROMO */}
-      <td style={styles.tdCenter}><PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} /></td>
+      <td style={styles.tdCenter}>
+        <PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} isNew={true} />
+      </td>
 
       {/* PUBLICACION */}
       <td style={styles.tdCenter}>
@@ -384,36 +436,28 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* E1 */}
       <td style={styles.tdCenter}>
-        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-          <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))}
-            style={{ ...newRowSelect, paddingRight: 14, ...(errors.e1 ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
-            <option value="">—</option><option>DD</option><option>FD</option>
-          </select>
-          {errors.e1 && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
-        </div>
+        <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))}
+          style={reqSelect('e1')}>
+          <option value="">—</option><option>DD</option><option>FD</option>
+        </select>
       </td>
 
       {/* E2 */}
       <td style={styles.tdCenter}>
-        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-          <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))}
-            style={{ ...newRowSelect, paddingRight: 14, ...(errors.e2 ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
-            <option value="">—</option><option>EA</option><option>FG</option>
-          </select>
-          {errors.e2 && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
-        </div>
+        <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))}
+          style={reqSelect('e2')}>
+          <option value="">—</option><option>EA</option><option>FG</option>
+        </select>
       </td>
 
       {/* D/B */}
       <td style={styles.tdCenter}>
-        <input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))}
-          style={{ ...newRowInput, display: 'block', width: 48 }} />
+        <SlashInput value={form.db||''} onChange={v=>setForm(p=>({...p,db:v}))} />
       </td>
 
       {/* E/B */}
       <td style={styles.tdCenter}>
-        <input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))}
-          style={{ ...newRowInput, display: 'block', width: 48 }} />
+        <SlashInput value={form.eb||''} onChange={v=>setForm(p=>({...p,eb:v}))} />
       </td>
 
       {/* COMUNA */}
@@ -424,10 +468,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* FECHA SALIDA */}
       <td style={styles.tdCenter}>
-        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-          <DateFieldNew value={form.fecha_salida} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} hasError={!!errors.fecha_salida} />
-          {errors.fecha_salida && <span style={{ color: '#ea4335', fontWeight: 700, fontSize: 13 }}>*</span>}
-        </div>
+        <DateFieldNew value={form.fecha_salida} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} hasError={!!errors.fecha_salida} />
       </td>
 
       {/* AVISO */}
@@ -450,24 +491,18 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* TIPO */}
       <td style={styles.tdCenter}>
-        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-          <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))}
-            style={{ ...newRowSelect, paddingRight: 14, ...(errors.tipo ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
-            <option value="">—</option><option>Nuevo</option><option>Renovación</option>
-          </select>
-          {errors.tipo && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
-        </div>
+        <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))}
+          style={reqSelect('tipo')}>
+          <option value="">—</option><option>Nuevo</option><option>Renovación</option>
+        </select>
       </td>
 
       {/* ADMIN */}
       <td style={styles.tdCenter}>
-        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-          <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))}
-            style={{ ...newRowSelect, paddingRight: 14, ...(errors.admin ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
-            <option value="">—</option><option>Sí</option><option>No</option>
-          </select>
-          {errors.admin && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
-        </div>
+        <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))}
+          style={reqSelect('admin')}>
+          <option value="">—</option><option>Sí</option><option>No</option>
+        </select>
       </td>
 
       {/* URL */}
@@ -516,7 +551,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
       <td style={styles.tdCenter}>
-        <DateCellInput value={form.fecha_salida} onChange={v => set('fecha_salida', v)} hasError={false} />
+        <DateCellInput value={form.fecha_salida} onChange={v => set('fecha_salida', v)} />
       </td>
       <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
