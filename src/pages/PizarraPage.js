@@ -330,7 +330,14 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       </td>
       <td style={styles.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} /></td>
       <td style={styles.tdCenter}><PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} /></td>
-      <td style={styles.tdCenter}><input value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} placeholder="Status" style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:70}} /></td>
+      <td style={styles.tdCenter}>
+        <select value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))}
+          style={{ border:'1px solid #dadce0', borderRadius:6, padding:'3px 6px', fontSize:12, outline:'none', fontFamily:'inherit', background:'#fff' }}>
+          <option value="">—</option>
+          <option value="Aún no">Aún no</option>
+          <option value="Listo">Listo</option>
+        </select>
+      </td>
       <td style={{...styles.tdCenter,...reqStyle('e1')}}>
         <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:errors.e1?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
           <option value="">—*</option><option>DD</option><option>FD</option>
@@ -385,7 +392,17 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         <PriceInput value={form.promo} onChange={v => set('promo', v)} uf={uf} />
       </td>
       <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
-        <InlineEditCell value={form.status} onChange={v => set('status', v)} />
+        <select value={form.status || ''} onChange={e => set('status', e.target.value)}
+          style={{
+            border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11,
+            fontWeight: 600, cursor: 'pointer', background: 'transparent',
+            color: form.status === 'Listo' ? '#34a853' : form.status === 'Aún no' ? '#202124' : '#202124',
+            ...(form.status === 'Aún no' ? { background: '#FFF9C4', borderRadius: 4, padding: '2px 4px' } : {}),
+          }}>
+          <option value="">—</option>
+          <option value="Aún no">Aún no</option>
+          <option value="Listo">Listo</option>
+        </select>
       </td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} /></td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} /></td>
@@ -528,7 +545,7 @@ export default function PizarraPage() {
   };
 
   // HEADERS sin OROS
-  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','STATUS','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN','URL',''];
+  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','PUBLICACION','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN','URL',''];
 
   return (
     <div style={styles.container}>
