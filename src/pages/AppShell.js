@@ -100,10 +100,10 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main content — ocupa todo el ancho, el sidebar se superpone */}
+      {/* Main content — ancho fijo, sidebar se superpone encima */}
       <main style={{
         ...styles.main,
-        paddingLeft: collapsed ? 64 + 32 : 32,
+        paddingLeft: 64 + 32,
         paddingRight: 32,
         paddingTop: fullWidth ? 0 : 32,
         paddingBottom: fullWidth ? 0 : 32,
@@ -204,7 +204,6 @@ const styles = {
   main: {
     flex: 1,
     width: '100%',
-    transition: 'padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
     boxSizing: 'border-box',
   },
   comingSoon: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 },
