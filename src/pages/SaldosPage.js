@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2 } from 'lucide-react';
+import PropertyAutocomplete from '../components/PropertyAutocomplete';
 
 // ── Helpers ──────────────────────────────────────────────────
 const parseAmount = (val) => {
@@ -79,7 +80,7 @@ const getCellStyle = (val, tipo, attr, emptyWhite=false) => {
   const defaults = { agua:[40000,60000], luz:[55000,80000], gas:[45000,60000] };
   if (tipo==='agua'||tipo==='luz'||tipo==='gas') {
     let t1,t2;
-    if (attr?.[`umbral1_${tipo}`]&&attr?.[`umbral2_${tipo}`]) { t1=attr[`umbral1_${tipo}`]; t2=attr[`umbral2_${tipo}`]; }
+    if (attr?.['umbral1_'+tipo]&&attr?.['umbral2_'+tipo]) { t1=attr['umbral1_'+tipo]; t2=attr['umbral2_'+tipo]; }
     else { [t1,t2]=defaults[tipo]||[40000,60000]; }
     if (n<t1) return { ...base, background:'#fff', color:'#bdbdbd' };
     if (n<t2) return { ...base, background:'#FFCDD2', color:'#202124' };
@@ -137,6 +138,29 @@ function UploadBtn({ label, tipo, onUpload, lastUpload }) {
   );
 }
 
+// ── CONFIRM MODAL ─────────────────────────────────────────────
+function ConfirmModal({ title, message, onConfirm, onCancel }) {
+  return (
+    <div style={st.overlay} onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div style={{ ...st.modal, width: 420 }}>
+        <div style={st.modalHeader}>
+          <span style={st.modalTitle}>{title}</span>
+          <button onClick={onCancel} style={st.closeBtn}><X size={18}/></button>
+        </div>
+        <div style={{ padding:'16px 20px', fontSize:13, color:'#3c4043', lineHeight:1.6 }}>
+          {message}
+        </div>
+        <div style={{ padding:'0 20px 20px', display:'flex', gap:8, justifyContent:'flex-end' }}>
+          <button onClick={onCancel} style={st.btnSecondary}>Cancelar</button>
+          <button onClick={onConfirm} style={{ ...st.btnPrimary, display:'flex', alignItems:'center', gap:6 }}>
+            <Send size={13}/> Confirmar envío
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── TEST MODAL ───────────────────────────────────────────────
 const TEST_PROPS = [
   { propiedad: 'Vitacura 9123 C25',             mail: 'ddm@renovalpropiedades.com' },
@@ -147,7 +171,6 @@ const TEST_PROPS = [
 function TestModal({ onClose, onSend }) {
   const [mails, setMails] = useState(TEST_PROPS.map(p => ({ ...p })));
   const setMail = (i, v) => setMails(prev => prev.map((r, idx) => idx === i ? { ...r, mail: v } : r));
-
   return (
     <div style={st.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ ...st.modal, width: 540 }}>
@@ -273,7 +296,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
           {ENCARGADOS.map(e=>(
             <button key={e} onClick={()=>setFilterE(prev=>prev.includes(e)?prev.filter(x=>x!==e):[...prev,e])} style={{
               ...st.filterBtn,
-              ...(filterE.includes(e)?{background:`${ENCARGADO_COLORS[e]}22`,color:ENCARGADO_COLORS[e],borderColor:ENCARGADO_COLORS[e],fontWeight:700}:{})
+              ...(filterE.includes(e)?{background:ENCARGADO_COLORS[e]+'22',color:ENCARGADO_COLORS[e],borderColor:ENCARGADO_COLORS[e],fontWeight:700}:{})
             }}>{e}</button>
           ))}
           {filterE.length>0&&<button onClick={()=>setFilterE([])} style={st.clearFilter}>Limpiar</button>}
@@ -315,8 +338,8 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
                     <td style={{...st.tdFixed,textAlign:'center'}}>
                       {hasEdits&&<button onClick={()=>handleSaveRow(row.id)} style={st.saveRowBtn} title="Guardar"><Save size={13} color="#1a73e8"/></button>}
                     </td>
-                    <td style={{...st.tdFixed,textAlign:'center'}}>{row.e1&&<span style={{...st.badge,background:`${EC[row.e1]||'#9aa0a6'}22`,color:EC[row.e1]||'#9aa0a6',border:`1px solid ${EC[row.e1]||'#9aa0a6'}44`}}>{row.e1}</span>}</td>
-                    <td style={{...st.tdFixed,textAlign:'center'}}>{row.e2&&<span style={{...st.badge,background:`${EC[row.e2]||'#9aa0a6'}22`,color:EC[row.e2]||'#9aa0a6',border:`1px solid ${EC[row.e2]||'#9aa0a6'}44`}}>{row.e2}</span>}</td>
+                    <td style={{...st.tdFixed,textAlign:'center'}}>{row.e1&&<span style={{...st.badge,background:EC[row.e1]+'22'||'#9aa0a622',color:EC[row.e1]||'#9aa0a6',border:'1px solid '+(EC[row.e1]||'#9aa0a6')+'44'}}>{row.e1}</span>}</td>
+                    <td style={{...st.tdFixed,textAlign:'center'}}>{row.e2&&<span style={{...st.badge,background:EC[row.e2]+'22'||'#9aa0a622',color:EC[row.e2]||'#9aa0a6',border:'1px solid '+(EC[row.e2]||'#9aa0a6')+'44'}}>{row.e2}</span>}</td>
                   </tr>
                 );
               })}
@@ -337,11 +360,13 @@ function ConsultasTab() {
   const [updating, setUpdating] = useState(false);
   const [previewRow, setPreviewRow] = useState(null);
   const [editingId, setEditingId] = useState(null);
-  const [editMail, setEditMail] = useState('');
+  const [editField, setEditField] = useState(null);
+  const [editValue, setEditValue] = useState('');
   const [addingNew, setAddingNew] = useState(false);
-  const [newRow, setNewRow] = useState({ propiedad:'', mail_admin:'' });
+  const [newRow, setNewRow] = useState({ propiedad:'', mail_admin:'', cartera:'' });
   const [sendResult, setSendResult] = useState(null);
   const [showTestModal, setShowTestModal] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const mes = currentMes();
 
@@ -364,10 +389,18 @@ function ConsultasTab() {
     return m;
   }, [log]);
 
-  const saveMailEdit = async (id) => {
-    await supabase.from('gc_consultas_config').update({ mail_admin: editMail || null }).eq('id', id);
-    setConfig(prev => prev.map(r => r.id === id ? { ...r, mail_admin: editMail || null } : r));
+  const startEdit = (id, field, currentValue) => {
+    setEditingId(id);
+    setEditField(field);
+    setEditValue(currentValue || '');
+  };
+
+  const saveEdit = async (id) => {
+    if (!editField) return;
+    await supabase.from('gc_consultas_config').update({ [editField]: editValue || null }).eq('id', id);
+    setConfig(prev => prev.map(r => r.id === id ? { ...r, [editField]: editValue || null } : r));
     setEditingId(null);
+    setEditField(null);
   };
 
   const handleDelete = async (id) => {
@@ -380,13 +413,15 @@ function ConsultasTab() {
     const { data } = await supabase.from('gc_consultas_config').insert({
       propiedad: newRow.propiedad.trim(),
       mail_admin: newRow.mail_admin.trim() || null,
+      cartera: newRow.cartera.trim() || null,
     }).select().single();
     if (data) { setConfig(prev => [...prev, data]); }
-    setNewRow({ propiedad:'', mail_admin:'' });
+    setNewRow({ propiedad:'', mail_admin:'', cartera:'' });
     setAddingNew(false);
   };
 
-  const handleSendAll = async () => {
+  const doSendAll = async () => {
+    setShowConfirm(false);
     const toSend = config.filter(r => r.mail_admin && r.mail_admin.trim());
     if (!toSend.length) return;
     setSending(true);
@@ -416,7 +451,6 @@ function ConsultasTab() {
           enviado_at: new Date().toISOString(),
           status: 'enviado',
         }, { onConflict: 'propiedad,mes' });
-
         sent++;
       } catch (e) {
         console.error('Error enviando a', row.mail_admin, e);
@@ -431,7 +465,6 @@ function ConsultasTab() {
   const handleCheckReplies = async () => {
     setUpdating(true);
     try {
-      // Obtener la fecha de envío más antigua del mes actual
       const enviado_desde = log
         .filter(l => l.mes === mes && l.enviado_at)
         .reduce((min, l) => (!min || l.enviado_at < min ? l.enviado_at : min), null);
@@ -452,7 +485,6 @@ function ConsultasTab() {
       console.log('check-gc-replies result:', data);
 
       const replies = data.replies || [];
-
       for (const r of replies) {
         if (!r.propiedad) continue;
         await supabase.from('gc_consultas_log').upsert({
@@ -468,7 +500,7 @@ function ConsultasTab() {
         }
       }
       fetchAll();
-    } catch (e) { console.error(e); }
+    } catch(e) { console.error(e); }
     setUpdating(false);
   };
 
@@ -490,10 +522,10 @@ function ConsultasTab() {
         </button>
         <button onClick={handleCheckReplies} disabled={updating}
           style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6 }}>
-          <RefreshCw size={14} style={{animation:updating?'spin 1s linear infinite':'none'}}/> 
+          <RefreshCw size={14} style={{animation:updating?'spin 1s linear infinite':'none'}}/>
           {updating ? 'Revisando...' : 'Actualizar respuestas'}
         </button>
-        <button onClick={handleSendAll} disabled={sending || withMail === 0}
+        <button onClick={() => setShowConfirm(true)} disabled={sending || withMail === 0}
           style={{ ...st.btnPrimary, display:'flex', alignItems:'center', gap:6 }}>
           <Send size={14}/>
           {sending ? 'Enviando...' : `Enviar consultas (${withMail})`}
@@ -512,8 +544,9 @@ function ConsultasTab() {
         {loading ? <div style={st.loading}>Cargando...</div> : (
           <table style={st.table}>
             <thead><tr>
-              <th style={{...st.th,textAlign:'left',minWidth:280}}>PROPIEDAD</th>
-              <th style={{...st.th,textAlign:'left',minWidth:240}}>CORREO ADMINISTRACIÓN</th>
+              <th style={{...st.th,textAlign:'left',minWidth:200}}>PROPIEDAD</th>
+              <th style={{...st.th,textAlign:'left',minWidth:240}}>CARTERA</th>
+              <th style={{...st.th,textAlign:'left',minWidth:220}}>CORREO ADMINISTRACIÓN</th>
               <th style={{...st.th,textAlign:'center',minWidth:120}}>ESTADO {formatMes(mes)}</th>
               <th style={{...st.th,minWidth:80}}></th>
             </tr></thead>
@@ -522,44 +555,84 @@ function ConsultasTab() {
                 <tr style={{background:'#f0f7ff'}}>
                   <td style={st.tdFixed}>
                     <input value={newRow.propiedad} onChange={e=>setNewRow(p=>({...p,propiedad:e.target.value}))}
-                      placeholder="Dirección propiedad" style={{border:'1px solid #dadce0',borderRadius:5,padding:'4px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:'100%'}}/>
+                      placeholder="Nombre propiedad" style={inlineInputStyle}/>
+                  </td>
+                  <td style={{...st.tdFixed, position:'relative', overflow:'visible'}}>
+                    <PropertyAutocomplete
+                      value={newRow.cartera}
+                      onChange={v => setNewRow(p => ({ ...p, cartera: v }))}
+                      placeholder="Buscar en Cartera..."
+                    />
                   </td>
                   <td style={st.tdFixed}>
                     <input value={newRow.mail_admin} onChange={e=>setNewRow(p=>({...p,mail_admin:e.target.value}))}
-                      placeholder="correo@admin.com" style={{border:'1px solid #dadce0',borderRadius:5,padding:'4px 6px',fontSize:12,outline:'none',fontFamily:'inherit',width:'100%'}}/>
+                      placeholder="correo@admin.com" style={inlineInputStyle}/>
                   </td>
                   <td style={{...st.tdFixed,textAlign:'center'}}>—</td>
                   <td style={{...st.tdFixed,textAlign:'center'}}>
                     <button onClick={handleAddNew} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853'}}>✓</button>
-                    <button onClick={()=>{setAddingNew(false);setNewRow({propiedad:'',mail_admin:''});}} style={st.actionBtn}><X size={13}/></button>
+                    <button onClick={()=>{setAddingNew(false);setNewRow({propiedad:'',mail_admin:'',cartera:''}); }} style={st.actionBtn}><X size={13}/></button>
                   </td>
                 </tr>
               )}
               {config.map(row => {
                 const logRow = logMap[row.propiedad];
                 const status = logRow?.status;
+                const isEditingMail = editingId === row.id && editField === 'mail_admin';
+                const isEditingCartera = editingId === row.id && editField === 'cartera';
+
                 return (
                   <tr key={row.id} style={{background:'#fff'}}
                     onMouseEnter={e=>e.currentTarget.style.background='#f8f9fa'}
                     onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
+
+                    {/* PROPIEDAD */}
                     <td style={{...st.tdFixed,fontSize:12}}>{row.propiedad}</td>
-                    <td style={st.tdFixed}>
-                      {editingId === row.id ? (
+
+                    {/* CARTERA */}
+                    <td style={{...st.tdFixed, position:'relative', overflow:'visible'}}>
+                      {isEditingCartera ? (
                         <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                          <input value={editMail} onChange={e=>setEditMail(e.target.value)}
-                            autoFocus style={{border:'1px solid #1a73e8',borderRadius:5,padding:'3px 6px',fontSize:12,outline:'none',fontFamily:'inherit',flex:1}}/>
-                          <button onClick={()=>saveMailEdit(row.id)} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853'}}>✓</button>
-                          <button onClick={()=>setEditingId(null)} style={st.actionBtn}><X size={12}/></button>
+                          <div style={{flex:1, position:'relative'}}>
+                            <PropertyAutocomplete
+                              value={editValue}
+                              onChange={v => setEditValue(v)}
+                              placeholder="Buscar en Cartera..."
+                            />
+                          </div>
+                          <button onClick={()=>saveEdit(row.id)} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853',flexShrink:0}}>✓</button>
+                          <button onClick={()=>{ setEditingId(null); setEditField(null); }} style={{...st.actionBtn,flexShrink:0}}><X size={12}/></button>
                         </div>
                       ) : (
-                        <div onClick={()=>{setEditingId(row.id);setEditMail(row.mail_admin||'');}}
-                          style={{cursor:'text',fontSize:12,padding:'2px 4px',borderRadius:4,display:'flex',alignItems:'center',gap:6}}>
+                        <div onClick={() => startEdit(row.id, 'cartera', row.cartera)}
+                          style={{cursor:'text',fontSize:12,padding:'2px 4px',borderRadius:4,minHeight:20}}>
+                          {row.cartera
+                            ? <span style={{color:'#202124'}}>{row.cartera}</span>
+                            : <span style={{color:'#9aa0a6',fontSize:11}}>— sin vincular —</span>}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* CORREO */}
+                    <td style={st.tdFixed}>
+                      {isEditingMail ? (
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          <input value={editValue} onChange={e=>setEditValue(e.target.value)}
+                            autoFocus style={{...inlineInputStyle,flex:1}}/>
+                          <button onClick={()=>saveEdit(row.id)} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853'}}>✓</button>
+                          <button onClick={()=>{ setEditingId(null); setEditField(null); }} style={st.actionBtn}><X size={12}/></button>
+                        </div>
+                      ) : (
+                        <div onClick={()=>startEdit(row.id,'mail_admin',row.mail_admin)}
+                          style={{cursor:'text',fontSize:12,padding:'2px 4px',borderRadius:4,display:'flex',alignItems:'center',gap:6,minHeight:20}}>
                           {row.mail_admin
                             ? <span style={{color:'#202124'}}>{row.mail_admin}</span>
                             : <span style={{color:'#ea4335',fontSize:11,fontWeight:600}}>⚠ Sin correo</span>}
                         </div>
                       )}
                     </td>
+
+                    {/* ESTADO */}
                     <td style={{...st.tdFixed,textAlign:'center'}}>
                       {!status && <span style={{fontSize:11,color:'#9aa0a6'}}>—</span>}
                       {status==='enviado' && <span style={{fontSize:11,fontWeight:600,color:'#1a73e8',background:'#e8f0fe',padding:'2px 10px',borderRadius:20}}>Enviado</span>}
@@ -570,6 +643,8 @@ function ConsultasTab() {
                         </div>
                       )}
                     </td>
+
+                    {/* ACCIONES */}
                     <td style={{...st.tdFixed,textAlign:'center'}}>
                       {row.mail_admin && (
                         <button onClick={()=>setPreviewRow(row)} style={{...st.actionBtn,color:'#1a73e8'}} title="Ver correo"><Eye size={14}/></button>
@@ -583,7 +658,18 @@ function ConsultasTab() {
           </table>
         )}
       </div>
+
       {previewRow && <EmailPreviewModal propiedad={previewRow.propiedad} mailAdmin={previewRow.mail_admin} onClose={()=>setPreviewRow(null)}/>}
+
+      {showConfirm && (
+        <ConfirmModal
+          title="Confirmar envío de correos"
+          message={`Se enviarán ${withMail} correos de consulta de gasto común para ${formatMes(mes)}. Esta acción no se puede deshacer.`}
+          onConfirm={doSendAll}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+
       {showTestModal && (
         <TestModal
           onClose={() => setShowTestModal(false)}
@@ -623,7 +709,6 @@ function ConsultasTab() {
 }
 
 // ── TAB 3: REPORTABILIDAD ─────────────────────────────────────
-// Una sola tabla consolidada: E (enviado) → R (respondido) → $valor (GC extraído)
 function ReportabilidadTab() {
   const [config, setConfig] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -653,64 +738,24 @@ function ReportabilidadTab() {
     return m;
   }, [logs]);
 
-  // Determina qué mostrar en cada celda:
-  // - gc_valor disponible → muestra el valor (verde oscuro)
-  // - status === 'respondido' sin valor → R (verde)
-  // - status === 'enviado' → E (azul)
-  // - sin datos → —
   const getCellContent = (logEntry) => {
     if (!logEntry) return null;
-    if (logEntry.gc_valor) {
-      return {
-        type: 'valor',
-        text: logEntry.gc_valor,
-        bg: '#e6f4ea',
-        color: '#1e6e3b',
-        fontWeight: 700,
-      };
-    }
-    if (logEntry.status === 'respondido') {
-      return {
-        type: 'respondido',
-        text: 'R',
-        bg: '#e6f4ea',
-        color: '#2e7d32',
-        fontWeight: 700,
-      };
-    }
-    if (logEntry.status === 'enviado') {
-      return {
-        type: 'enviado',
-        text: 'E',
-        bg: '#e8f0fe',
-        color: '#1a73e8',
-        fontWeight: 700,
-      };
-    }
+    if (logEntry.gc_valor) return { type:'valor', text:logEntry.gc_valor, bg:'#e6f4ea', color:'#1e6e3b', fontWeight:700 };
+    if (logEntry.status === 'respondido') return { type:'respondido', text:'R', bg:'#e6f4ea', color:'#2e7d32', fontWeight:700 };
+    if (logEntry.status === 'enviado') return { type:'enviado', text:'E', bg:'#e8f0fe', color:'#1a73e8', fontWeight:700 };
     return null;
   };
 
   if (loading) return <div style={st.loading}>Cargando...</div>;
 
-  // Conteos resumen para el mes actual
   const mesCurrent = currentMes();
   const totalProps = config.length;
-  const countEnviado = config.filter(({ propiedad }) => {
-    const l = logMap[propiedad]?.[mesCurrent];
-    return l && (l.status === 'enviado' || l.status === 'respondido');
-  }).length;
-  const countRespondido = config.filter(({ propiedad }) => {
-    const l = logMap[propiedad]?.[mesCurrent];
-    return l?.status === 'respondido';
-  }).length;
-  const countConValor = config.filter(({ propiedad }) => {
-    const l = logMap[propiedad]?.[mesCurrent];
-    return !!l?.gc_valor;
-  }).length;
+  const countEnviado = config.filter(({ propiedad }) => { const l = logMap[propiedad]?.[mesCurrent]; return l && (l.status === 'enviado' || l.status === 'respondido'); }).length;
+  const countRespondido = config.filter(({ propiedad }) => logMap[propiedad]?.[mesCurrent]?.status === 'respondido').length;
+  const countConValor = config.filter(({ propiedad }) => !!logMap[propiedad]?.[mesCurrent]?.gc_valor).length;
 
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
-      {/* Resumen del mes actual */}
       <div style={{ display:'flex', gap:12, marginBottom:16, flexShrink:0 }}>
         {[
           { label:'Propiedades', value:totalProps, color:'#5f6368', bg:'#f8f9fa' },
@@ -728,19 +773,12 @@ function ReportabilidadTab() {
         </div>
       </div>
 
-      {/* Tabla consolidada única */}
       <div style={{ ...st.tableWrapper, flex:1 }}>
         <table style={st.table}>
           <thead>
             <tr>
-              <th style={{ ...st.th, textAlign:'left', minWidth:260, position:'sticky', left:0, zIndex:2, background:'#f8f9fa' }}>
-                PROPIEDAD
-              </th>
-              {months.map(m => (
-                <th key={m} style={{ ...st.th, minWidth:80, textAlign:'center' }}>
-                  {formatMes(m)}
-                </th>
-              ))}
+              <th style={{ ...st.th, textAlign:'left', minWidth:260, position:'sticky', left:0, zIndex:2, background:'#f8f9fa' }}>PROPIEDAD</th>
+              {months.map(m => <th key={m} style={{ ...st.th, minWidth:80, textAlign:'center' }}>{formatMes(m)}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -748,30 +786,14 @@ function ReportabilidadTab() {
               <tr key={propiedad} style={{ background:'#fff' }}
                 onMouseEnter={e => e.currentTarget.style.background='#f8f9fa'}
                 onMouseLeave={e => e.currentTarget.style.background='#fff'}>
-                <td style={{ ...st.tdFixed, fontSize:11, position:'sticky', left:0, background:'inherit', zIndex:1 }}>
-                  {propiedad}
-                </td>
+                <td style={{ ...st.tdFixed, fontSize:11, position:'sticky', left:0, background:'inherit', zIndex:1 }}>{propiedad}</td>
                 {months.map(m => {
-                  const logEntry = logMap[propiedad]?.[m];
-                  const cell = getCellContent(logEntry);
+                  const cell = getCellContent(logMap[propiedad]?.[m]);
                   return (
-                    <td key={m} style={{ ...st.tdFixed, textAlign:'center', background: cell?.bg || '#fff', padding:'5px 6px' }}>
-                      {cell ? (
-                        <span style={{
-                          fontSize: cell.type === 'valor' ? 11 : 12,
-                          fontWeight: cell.fontWeight,
-                          color: cell.color,
-                          display: 'inline-block',
-                          maxWidth: '100%',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }} title={cell.type === 'valor' ? cell.text : undefined}>
-                          {cell.text}
-                        </span>
-                      ) : (
-                        <span style={{ color:'#dadce0', fontSize:10 }}>—</span>
-                      )}
+                    <td key={m} style={{ ...st.tdFixed, textAlign:'center', background:cell?.bg||'#fff', padding:'5px 6px' }}>
+                      {cell
+                        ? <span style={{ fontSize:cell.type==='valor'?11:12, fontWeight:cell.fontWeight, color:cell.color, display:'inline-block', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={cell.type==='valor'?cell.text:undefined}>{cell.text}</span>
+                        : <span style={{ color:'#dadce0', fontSize:10 }}>—</span>}
                     </td>
                   );
                 })}
@@ -781,20 +803,10 @@ function ReportabilidadTab() {
         </table>
       </div>
 
-      {/* Leyenda */}
       <div style={{ display:'flex', gap:16, marginTop:10, flexShrink:0, fontSize:11, color:'#9aa0a6', alignItems:'center' }}>
-        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ background:'#e8f0fe', color:'#1a73e8', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>E</span>
-          Enviado
-        </span>
-        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ background:'#e6f4ea', color:'#2e7d32', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>R</span>
-          Respondido (sin valor extraído)
-        </span>
-        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>
-          GC extraído del PDF
-        </span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e8f0fe', color:'#1a73e8', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>E</span>Enviado</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#2e7d32', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>R</span>Respondido (sin valor extraído)</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>GC extraído del PDF</span>
       </div>
     </div>
   );
@@ -915,6 +927,11 @@ export default function SaldosPage() {
     </div>
   );
 }
+
+const inlineInputStyle = {
+  border: '1px solid #dadce0', borderRadius: 5, padding: '4px 6px',
+  fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%',
+};
 
 const st = {
   container:{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:"'Google Sans','Segoe UI',sans-serif" },
