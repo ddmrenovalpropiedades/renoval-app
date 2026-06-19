@@ -353,8 +353,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </select>
   );
 
-  const errBorder = (field) => errors[field] ? { border: '1px solid #ea4335', background: '#fce8e6' } : {};
-
   if (isNew) return (
     <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
 
