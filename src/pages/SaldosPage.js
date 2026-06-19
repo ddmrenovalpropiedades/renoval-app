@@ -386,7 +386,6 @@ function ConsultasTab() {
     setAddingNew(false);
   };
 
-  // Send all emails via Gmail MCP (calls Anthropic API with Gmail MCP)
   const handleSendAll = async () => {
     const toSend = config.filter(r => r.mail_admin && r.mail_admin.trim());
     if (!toSend.length) return;
@@ -410,7 +409,6 @@ function ConsultasTab() {
             isTest: false,
           }),
         });
-        // Log in Supabase
         await supabase.from('gc_consultas_log').upsert({
           propiedad: row.propiedad,
           mes,
@@ -430,10 +428,14 @@ function ConsultasTab() {
     fetchAll();
   };
 
-  // Check replies via Anthropic API + Gmail MCP
   const handleCheckReplies = async () => {
     setUpdating(true);
     try {
+      // Obtener la fecha de envío más antigua del mes actual
+      const enviado_desde = log
+        .filter(l => l.mes === mes && l.enviado_at)
+        .reduce((min, l) => (!min || l.enviado_at < min ? l.enviado_at : min), null);
+
       const response = await fetch('/api/check-gc-replies', {
         method: 'POST',
         headers: {
@@ -443,14 +445,13 @@ function ConsultasTab() {
         body: JSON.stringify({
           mes,
           propiedades: config.map(r => r.propiedad),
-          enviado_desde: log.filter(l => l.mes === mes && l.enviado_at)
-            .reduce((min, l) => (!min || l.enviado_at < min ? l.enviado_at : min), null),
+          enviado_desde,
         }),
       });
       const data = await response.json();
-      const text = JSON.stringify(data.replies || []);
-      let replies = [];
-      try { replies = JSON.parse(text); } catch(e) { replies = []; }
+      console.log('check-gc-replies result:', data);
+
+      const replies = data.replies || [];
 
       for (const r of replies) {
         if (!r.propiedad) continue;
@@ -462,13 +463,12 @@ function ConsultasTab() {
           gc_valor: r.gc_valor || null,
         }, { onConflict: 'propiedad,mes' });
 
-        // Update saldos gc_ac if value extracted
         if (r.gc_valor) {
           await supabase.from('saldos').update({ gc_ac: r.gc_valor }).eq('propiedad', r.propiedad);
         }
       }
       fetchAll();
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
     setUpdating(false);
   };
 
@@ -476,7 +476,6 @@ function ConsultasTab() {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
-      {/* Actions bar */}
       <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14, flexShrink:0, flexWrap:'wrap' }}>
         <div style={{ flex:1, fontSize:13, color:'#5f6368' }}>
           {config.length} propiedades · {withMail} con correo · Mes: <b>{formatMes(mes)}</b>
@@ -624,6 +623,7 @@ function ConsultasTab() {
 }
 
 // ── TAB 3: REPORTABILIDAD ─────────────────────────────────────
+// Una sola tabla consolidada: E (enviado) → R (respondido) → $valor (GC extraído)
 function ReportabilidadTab() {
   const [config, setConfig] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -631,7 +631,7 @@ function ReportabilidadTab() {
   const months = getLast12Months();
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchAll = async () => {
       setLoading(true);
       const [{ data: cfg }, { data: lg }] = await Promise.all([
         supabase.from('gc_consultas_config').select('propiedad').order('propiedad'),
@@ -641,7 +641,7 @@ function ReportabilidadTab() {
       setLogs(lg || []);
       setLoading(false);
     };
-    fetch();
+    fetchAll();
   }, []);
 
   const logMap = useMemo(() => {
@@ -653,73 +653,148 @@ function ReportabilidadTab() {
     return m;
   }, [logs]);
 
-  const STATUS_STYLE = {
-    enviado:    { bg:'#e8f0fe', color:'#1a73e8', label:'E' },
-    respondido: { bg:'#e6f4ea', color:'#2e7d32', label:'R' },
+  // Determina qué mostrar en cada celda:
+  // - gc_valor disponible → muestra el valor (verde oscuro)
+  // - status === 'respondido' sin valor → R (verde)
+  // - status === 'enviado' → E (azul)
+  // - sin datos → —
+  const getCellContent = (logEntry) => {
+    if (!logEntry) return null;
+    if (logEntry.gc_valor) {
+      return {
+        type: 'valor',
+        text: logEntry.gc_valor,
+        bg: '#e6f4ea',
+        color: '#1e6e3b',
+        fontWeight: 700,
+      };
+    }
+    if (logEntry.status === 'respondido') {
+      return {
+        type: 'respondido',
+        text: 'R',
+        bg: '#e6f4ea',
+        color: '#2e7d32',
+        fontWeight: 700,
+      };
+    }
+    if (logEntry.status === 'enviado') {
+      return {
+        type: 'enviado',
+        text: 'E',
+        bg: '#e8f0fe',
+        color: '#1a73e8',
+        fontWeight: 700,
+      };
+    }
+    return null;
   };
 
   if (loading) return <div style={st.loading}>Cargando...</div>;
 
+  // Conteos resumen para el mes actual
+  const mesCurrent = currentMes();
+  const totalProps = config.length;
+  const countEnviado = config.filter(({ propiedad }) => {
+    const l = logMap[propiedad]?.[mesCurrent];
+    return l && (l.status === 'enviado' || l.status === 'respondido');
+  }).length;
+  const countRespondido = config.filter(({ propiedad }) => {
+    const l = logMap[propiedad]?.[mesCurrent];
+    return l?.status === 'respondido';
+  }).length;
+  const countConValor = config.filter(({ propiedad }) => {
+    const l = logMap[propiedad]?.[mesCurrent];
+    return !!l?.gc_valor;
+  }).length;
+
   return (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'auto', gap:20, paddingBottom:24 }}>
-      {/* Tabla 1: Status de correos */}
-      <div style={{ flexShrink:0 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:'#202124', marginBottom:8 }}>Estado de correos</div>
-        <div style={{ ...st.tableWrapper, maxHeight:320 }}>
-          <table style={st.table}>
-            <thead><tr>
-              <th style={{...st.th,textAlign:'left',minWidth:260,position:'sticky',left:0,zIndex:2}}>PROPIEDAD</th>
-              {months.map(m=><th key={m} style={{...st.th,minWidth:60,textAlign:'center'}}>{formatMes(m)}</th>)}
-            </tr></thead>
-            <tbody>
-              {config.map(({propiedad}) => (
-                <tr key={propiedad} style={{background:'#fff'}}>
-                  <td style={{...st.tdFixed,fontSize:11,position:'sticky',left:0,background:'#fff',zIndex:1}}>{propiedad}</td>
-                  {months.map(m => {
-                    const l = logMap[propiedad]?.[m];
-                    const s = STATUS_STYLE[l?.status];
-                    return (
-                      <td key={m} style={{...st.tdFixed,textAlign:'center',background: s?s.bg:'#fff'}}>
-                        {s ? <span style={{fontSize:11,fontWeight:700,color:s.color}}>{s.label}</span> : <span style={{color:'#dadce0',fontSize:10}}>—</span>}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+      {/* Resumen del mes actual */}
+      <div style={{ display:'flex', gap:12, marginBottom:16, flexShrink:0 }}>
+        {[
+          { label:'Propiedades', value:totalProps, color:'#5f6368', bg:'#f8f9fa' },
+          { label:'Enviados', value:countEnviado, color:'#1a73e8', bg:'#e8f0fe' },
+          { label:'Respondidos', value:countRespondido, color:'#2e7d32', bg:'#e6f4ea' },
+          { label:'Con valor GC', value:countConValor, color:'#1e6e3b', bg:'#c8e6c9' },
+        ].map(s => (
+          <div key={s.label} style={{ padding:'10px 16px', background:s.bg, borderRadius:10, textAlign:'center', minWidth:90 }}>
+            <div style={{ fontSize:22, fontWeight:700, color:s.color }}>{s.value}</div>
+            <div style={{ fontSize:11, color:'#5f6368', marginTop:2 }}>{s.label}</div>
+          </div>
+        ))}
+        <div style={{ flex:1, display:'flex', alignItems:'center', paddingLeft:8 }}>
+          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b></span>
         </div>
-        <div style={{fontSize:11,color:'#9aa0a6',marginTop:6}}>E = Enviado · R = Respondido</div>
       </div>
 
-      {/* Tabla 2: Valores GC */}
-      <div style={{ flexShrink:0 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:'#202124', marginBottom:8 }}>Valores GC registrados</div>
-        <div style={{ ...st.tableWrapper, maxHeight:320 }}>
-          <table style={st.table}>
-            <thead><tr>
-              <th style={{...st.th,textAlign:'left',minWidth:260,position:'sticky',left:0,zIndex:2}}>PROPIEDAD</th>
-              {months.map(m=><th key={m} style={{...st.th,minWidth:80,textAlign:'center'}}>{formatMes(m)}</th>)}
-            </tr></thead>
-            <tbody>
-              {config.map(({propiedad}) => (
-                <tr key={propiedad} style={{background:'#fff'}}>
-                  <td style={{...st.tdFixed,fontSize:11,position:'sticky',left:0,background:'#fff',zIndex:1}}>{propiedad}</td>
-                  {months.map(m => {
-                    const l = logMap[propiedad]?.[m];
-                    return (
-                      <td key={m} style={{...st.tdFixed,textAlign:'center'}}>
-                        {l?.gc_valor
-                          ? <span style={{fontSize:11,fontWeight:600,color:'#2e7d32'}}>{l.gc_valor}</span>
-                          : <span style={{color:'#dadce0',fontSize:10}}>—</span>}
-                      </td>
-                    );
-                  })}
-                </tr>
+      {/* Tabla consolidada única */}
+      <div style={{ ...st.tableWrapper, flex:1 }}>
+        <table style={st.table}>
+          <thead>
+            <tr>
+              <th style={{ ...st.th, textAlign:'left', minWidth:260, position:'sticky', left:0, zIndex:2, background:'#f8f9fa' }}>
+                PROPIEDAD
+              </th>
+              {months.map(m => (
+                <th key={m} style={{ ...st.th, minWidth:80, textAlign:'center' }}>
+                  {formatMes(m)}
+                </th>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </tr>
+          </thead>
+          <tbody>
+            {config.map(({ propiedad }) => (
+              <tr key={propiedad} style={{ background:'#fff' }}
+                onMouseEnter={e => e.currentTarget.style.background='#f8f9fa'}
+                onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+                <td style={{ ...st.tdFixed, fontSize:11, position:'sticky', left:0, background:'inherit', zIndex:1 }}>
+                  {propiedad}
+                </td>
+                {months.map(m => {
+                  const logEntry = logMap[propiedad]?.[m];
+                  const cell = getCellContent(logEntry);
+                  return (
+                    <td key={m} style={{ ...st.tdFixed, textAlign:'center', background: cell?.bg || '#fff', padding:'5px 6px' }}>
+                      {cell ? (
+                        <span style={{
+                          fontSize: cell.type === 'valor' ? 11 : 12,
+                          fontWeight: cell.fontWeight,
+                          color: cell.color,
+                          display: 'inline-block',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }} title={cell.type === 'valor' ? cell.text : undefined}>
+                          {cell.text}
+                        </span>
+                      ) : (
+                        <span style={{ color:'#dadce0', fontSize:10 }}>—</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Leyenda */}
+      <div style={{ display:'flex', gap:16, marginTop:10, flexShrink:0, fontSize:11, color:'#9aa0a6', alignItems:'center' }}>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ background:'#e8f0fe', color:'#1a73e8', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>E</span>
+          Enviado
+        </span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ background:'#e6f4ea', color:'#2e7d32', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>R</span>
+          Respondido (sin valor extraído)
+        </span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>
+          GC extraído del PDF
+        </span>
       </div>
     </div>
   );
@@ -803,14 +878,13 @@ export default function SaldosPage() {
   };
 
   const TABS = [
-    { id:'saldos',       label:'Saldos',      icon:<BarChart2 size={14}/> },
-    { id:'consultas',    label:'Consultas GC', icon:<Mail size={14}/> },
-    { id:'reportabilidad', label:'Reportabilidad', icon:<RefreshCw size={14}/> },
+    { id:'saldos',         label:'Saldos',         icon:<BarChart2 size={14}/> },
+    { id:'consultas',      label:'Consultas GC',    icon:<Mail size={14}/> },
+    { id:'reportabilidad', label:'Reportabilidad',  icon:<RefreshCw size={14}/> },
   ];
 
   return (
     <div style={st.container}>
-      {/* Header */}
       <div style={st.header}>
         <div>
           <h1 style={st.title}>Saldos</h1>
@@ -822,7 +896,6 @@ export default function SaldosPage() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div style={{ display:'flex', gap:4, marginBottom:16, borderBottom:'2px solid #e8eaed', flexShrink:0 }}>
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
