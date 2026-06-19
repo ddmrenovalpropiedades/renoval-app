@@ -326,27 +326,30 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
       <td style={{ ...styles.td, ...reqStyle('propiedad') }}>
         <input value={form.propiedad} onChange={e => setForm(p=>({...p,propiedad:e.target.value}))}
-          placeholder="Dirección *" style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+          placeholder={<span>Dirección <span style={{color:'#ea4335'}}>*</span></span>}
+          style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+        {errors.propiedad && <span style={{color:'#ea4335',fontSize:9,position:'absolute'}}>*</span>}
       </td>
       <td style={styles.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} /></td>
       <td style={styles.tdCenter}><PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} /></td>
       <td style={styles.tdCenter}>
-        <select value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))}
+        <select value={form.status||'Aún no'} onChange={e=>setForm(p=>({...p,status:e.target.value}))}
           style={{ border:'1px solid #dadce0', borderRadius:6, padding:'3px 6px', fontSize:12, outline:'none', fontFamily:'inherit', background:'#fff' }}>
-          <option value="">—</option>
           <option value="Aún no">Aún no</option>
           <option value="Listo">Listo</option>
         </select>
       </td>
       <td style={{...styles.tdCenter,...reqStyle('e1')}}>
         <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:errors.e1?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
-          <option value="">—*</option><option>DD</option><option>FD</option>
+          <option value="">—</option><option>DD</option><option>FD</option>
         </select>
+        {errors.e1 && <span style={{color:'#ea4335',fontSize:10}}> *</span>}
       </td>
       <td style={{...styles.tdCenter,...reqStyle('e2')}}>
         <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:errors.e2?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
-          <option value="">—*</option><option>EA</option><option>FG</option>
+          <option value="">—</option><option>EA</option><option>FG</option>
         </select>
+        {errors.e2 && <span style={{color:'#ea4335',fontSize:10}}> *</span>}
       </td>
       <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
       <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
@@ -358,13 +361,15 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
       <td style={{...styles.tdCenter,...reqStyle('tipo')}}>
         <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:errors.tipo?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
-          <option value="">—*</option><option>Nuevo</option><option>Renovación</option>
+          <option value="">—</option><option>Nuevo</option><option>Renovación</option>
         </select>
+        {errors.tipo && <span style={{color:'#ea4335',fontSize:10}}> *</span>}
       </td>
       <td style={{...styles.tdCenter,...reqStyle('admin')}}>
         <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:errors.admin?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
-          <option value="">—*</option><option>Sí</option><option>No</option>
+          <option value="">—</option><option>Sí</option><option>No</option>
         </select>
+        {errors.admin && <span style={{color:'#ea4335',fontSize:10}}> *</span>}
       </td>
       <td style={styles.tdCenter}><span style={{ color: '#dadce0', fontSize: 11 }}>—</span></td>
       <td style={styles.tdActions}>
@@ -501,7 +506,7 @@ export default function PizarraPage() {
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
       if (data) {
-        setRows(prev => [data, ...prev]);
+        // No hacemos setRows aquí — el canal Realtime INSERT lo agrega automáticamente
         await createAutoTasks('pizarra_nueva_propiedad', data.propiedad, data.e1, data.e2, data.tipo, data.fecha_salida);
       }
       setAddingNew(false);
