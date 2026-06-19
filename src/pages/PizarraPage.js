@@ -260,7 +260,7 @@ function InlineEditCell({ value, onChange }) {
   );
   return (
     <div onClick={() => { setRaw(value || ''); setEditing(true); }}
-      style={{ cursor: 'text', fontSize: 12, minHeight: 22, padding: '1px 2px' }}>
+      style={{ cursor: 'text', fontSize: 12, display: 'flex', alignItems: 'center', height: '100%', padding: '0 2px' }}>
       {value || <span style={{ color: '#dadce0' }}>—</span>}
     </div>
   );
