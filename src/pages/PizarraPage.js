@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Check, X, Home, Trash2, Link2, Calendar } from 'lucide-react';
@@ -55,6 +55,9 @@ const parsePrice = (val) => {
   return { amount: isNaN(n) ? null : n, isUF: false };
 };
 
+const normalize = (str) =>
+  String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
 
 const UrgentDot = () => (
@@ -110,7 +113,96 @@ async function createAutoTasks(trigger, propiedad, e1, e2, tipo, fechaEntrega) {
   }
 }
 
-// ── PriceInput: en fila nueva muestra contenedor blanco ───────
+// ── PropertyAutocomplete (igual que en Pagos) ─────────────────
+function PropertyAutocomplete({ value, onChange, hasError }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [allProps, setAllProps] = useState([]);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    supabase.from('properties').select('address').order('address', { ascending: true })
+      .then(({ data }) => setAllProps((data || []).map(p => p.address).filter(Boolean)));
+  }, []);
+
+  useEffect(() => {
+    if (!value.trim()) { setSuggestions([]); setOpen(false); return; }
+    const q = normalize(value);
+    const words = q.split(/\s+/).filter(Boolean);
+    const filtered = allProps.filter(a => words.every(w => normalize(a).includes(w)));
+    setSuggestions(filtered.slice(0, 8));
+    setOpen(filtered.length > 0);
+  }, [value, allProps]);
+
+  useEffect(() => {
+    const handleClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value.toUpperCase())}
+        placeholder="Dirección"
+        style={{
+          border: hasError ? '1px solid #ea4335' : '1px solid #dadce0',
+          background: hasError ? '#fce8e6' : '#fff',
+          borderRadius: 6, padding: '0 6px', fontSize: 12, outline: 'none',
+          fontFamily: 'inherit', height: 28, boxSizing: 'border-box', width: '100%',
+        }}
+      />
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, zIndex: 9999,
+          background: '#fff', border: '1px solid #dadce0', borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 260, maxWidth: 380,
+          overflow: 'hidden', marginTop: 2,
+        }}>
+          {suggestions.map((s, i) => (
+            <div key={i}
+              onMouseDown={e => { e.preventDefault(); onChange(s); setOpen(false); }}
+              style={{
+                padding: '8px 12px', fontSize: 12, cursor: 'pointer',
+                borderBottom: i < suggestions.length - 1 ? '1px solid #f1f3f4' : 'none',
+                color: '#202124',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
+              onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+            >{s}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SlashInput: dos dígitos separados por "/" (fila nueva Y fila existente) ───
+function SlashInput({ value, onChange }) {
+  const parts = (value || '/').split('/');
+  const left  = parts[0] || '';
+  const right  = parts[1] !== undefined ? parts[1] : '';
+  const update = (l, r) => onChange(`${l}/${r}`);
+  const inputStyle = {
+    width: 22, height: 24, border: '1px solid #dadce0', borderRadius: 4,
+    textAlign: 'center', fontSize: 12, outline: 'none', fontFamily: 'inherit',
+    background: '#fff', boxSizing: 'border-box', padding: 0,
+  };
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+      <input value={left} maxLength={1}
+        onChange={e => update(e.target.value.replace(/[^0-9]/g, ''), right)}
+        style={inputStyle} />
+      <span style={{ fontSize: 13, color: '#5f6368', lineHeight: 1 }}>/</span>
+      <input value={right} maxLength={1}
+        onChange={e => update(left, e.target.value.replace(/[^0-9]/g, ''))}
+        style={inputStyle} />
+    </div>
+  );
+}
+
+// ── PriceInput ────────────────────────────────────────────────
 function PriceInput({ value, onChange, uf, isNew }) {
   const [editing, setEditing] = useState(false);
   const [currency, setCurrency] = useState('CLP');
@@ -122,44 +214,44 @@ function PriceInput({ value, onChange, uf, isNew }) {
     : '';
   const displaySub = isUF && uf && amount ? formatCLP(amount * uf) : '';
 
+  // Formatea con separador de miles mientras escribe (solo para CLP)
+  const displayRaw = currency === 'CLP' && raw
+    ? parseInt(raw || '0').toLocaleString('es-CL')
+    : raw;
+
   if (editing) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff', height: 28, boxSizing: 'border-box' }}>
         <select value={currency}
           onMouseDown={e => e.stopPropagation()}
-          onChange={e => { setCurrency(e.target.value); }}
+          onChange={e => setCurrency(e.target.value)}
           style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '0 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed', height: '100%' }}>
           <option value="CLP">$</option>
           <option value="UF">UF</option>
         </select>
-        <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
+        <input autoFocus
+          value={displayRaw}
+          onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
           onBlur={e => {
             if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return;
             setEditing(false);
-            if (raw) {
-              const val = currency === 'UF' ? `UF ${raw}` : raw;
-              onChange(val);
-            }
+            if (raw) onChange(currency === 'UF' ? `UF ${raw}` : raw);
           }}
           onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-          style={{ border: 'none', outline: 'none', width: 70, fontSize: 12, padding: '0 5px', fontFamily: 'inherit' }} />
+          style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, padding: '0 5px', fontFamily: 'inherit' }} />
       </div>
     );
   }
 
-  // En fila nueva: contenedor blanco con borde
   if (isNew) {
     return (
       <div onClick={() => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount ? String(amount) : ''); setEditing(true); }}
-        style={{ cursor: 'text', fontSize: 12, height: 28, boxSizing: 'border-box', border: '1px solid #dadce0', borderRadius: 6, background: '#fff', padding: '0 6px', display: 'flex', alignItems: 'center', minWidth: 70 }}>
-        {displayMain
-          ? <span>{displayMain}</span>
-          : <span style={{ color: '#9aa0a6' }}>—</span>}
+        style={{ cursor: 'text', fontSize: 12, height: 28, boxSizing: 'border-box', border: '1px solid #dadce0', borderRadius: 6, background: '#fff', padding: '0 6px', display: 'flex', alignItems: 'center', minWidth: 80 }}>
+        {displayMain ? <span>{displayMain}</span> : <span style={{ color: '#9aa0a6' }}>—</span>}
       </div>
     );
   }
 
-  // Fila normal existente
   return (
     <div onClick={() => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount ? String(amount) : ''); setEditing(true); }}
       style={{ cursor: 'text', fontSize: 12, padding: '2px 4px', borderRadius: 4, minWidth: 60 }}>
@@ -173,9 +265,9 @@ function PriceInput({ value, onChange, uf, isNew }) {
   );
 }
 
-// ── DateCellInput: usado en filas normales (existentes) ───────
+// ── DateCellInput: filas existentes ──────────────────────────
 function DateCellInput({ value, onChange }) {
-  const ref = React.useRef(null);
+  const ref = useRef(null);
   return (
     <div onClick={() => ref.current && ref.current.showPicker && ref.current.showPicker()}
       style={{ cursor: 'pointer', fontSize: 11, color: value ? 'inherit' : '#9aa0a6', position: 'relative' }}>
@@ -186,19 +278,18 @@ function DateCellInput({ value, onChange }) {
   );
 }
 
-// ── DateFieldNew: campo blanco con ícono, para fila nueva ─────
+// ── DateFieldNew: fila nueva, campo blanco con ícono ─────────
 function DateFieldNew({ value, onChange, hasError }) {
-  const ref = React.useRef(null);
+  const ref = useRef(null);
   const openPicker = () => ref.current && ref.current.showPicker && ref.current.showPicker();
   return (
-    <div onClick={openPicker}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        border: hasError ? '1px solid #ea4335' : '1px solid #dadce0',
-        borderRadius: 6, background: hasError ? '#fce8e6' : '#fff',
-        padding: '0 6px', height: 28, cursor: 'pointer', minWidth: 100, boxSizing: 'border-box',
-        position: 'relative',
-      }}>
+    <div onClick={openPicker} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      border: hasError ? '1px solid #ea4335' : '1px solid #dadce0',
+      borderRadius: 6, background: hasError ? '#fce8e6' : '#fff',
+      padding: '0 6px', height: 28, cursor: 'pointer', minWidth: 100, boxSizing: 'border-box',
+      position: 'relative',
+    }}>
       <span style={{ fontSize: 12, color: value ? '#202124' : '#9aa0a6', userSelect: 'none' }}>
         {value ? formatDateCL(value) : 'dd/mm/aaaa'}
       </span>
@@ -209,47 +300,13 @@ function DateFieldNew({ value, onChange, hasError }) {
   );
 }
 
-// ── SlashInput: dos dígitos separados por "/" ─────────────────
-function SlashInput({ value, onChange }) {
-  // value guardado como "2/1", "D/B", etc.
-  const parts = (value || '/').split('/');
-  const left  = parts[0] || '';
-  const right = parts[1] !== undefined ? parts[1] : '';
-
-  const update = (l, r) => onChange(`${l}/${r}`);
-
-  const inputStyle = {
-    width: 22, height: 28, border: '1px solid #dadce0', borderRadius: 4,
-    textAlign: 'center', fontSize: 12, outline: 'none', fontFamily: 'inherit',
-    background: '#fff', boxSizing: 'border-box', padding: 0,
-  };
-
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-      <input
-        value={left}
-        maxLength={1}
-        onChange={e => update(e.target.value.replace(/[^0-9]/g, ''), right)}
-        style={inputStyle}
-      />
-      <span style={{ fontSize: 13, color: '#5f6368', lineHeight: 1 }}>/</span>
-      <input
-        value={right}
-        maxLength={1}
-        onChange={e => update(left, e.target.value.replace(/[^0-9]/g, ''))}
-        style={inputStyle}
-      />
-    </div>
-  );
-}
-
 // ── RentModal ─────────────────────────────────────────────────
 function RentModal({ row, onConfirm, onCancel, uf }) {
   const [comision, setComision] = useState('');
   const [entrega, setEntrega] = useState('');
   const [meses, setMeses] = useState('');
   const hasPromo = !!(row.promo && String(row.promo).trim());
-  const ref = React.useRef(null);
+  const ref = useRef(null);
 
   return (
     <div style={rentStyles.overlay} onClick={e => e.target === e.currentTarget && onCancel()}>
@@ -316,11 +373,12 @@ const rentStyles = {
 };
 
 // ── InlineEditCell ─────────────────────────────────────────────
-function InlineEditCell({ value, onChange }) {
+function InlineEditCell({ value, onChange, uppercase }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState(value || '');
   if (editing) return (
-    <input autoFocus value={raw} onChange={e => setRaw(e.target.value)}
+    <input autoFocus value={raw}
+      onChange={e => setRaw(uppercase ? e.target.value.toUpperCase() : e.target.value)}
       onBlur={() => { setEditing(false); if (raw !== value) onChange(raw); }}
       onKeyDown={e => e.key === 'Enter' && e.target.blur()}
       style={{ border: '1px solid #1a73e8', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
@@ -343,7 +401,7 @@ function InlineSelectCell({ value, options, onChange }) {
   );
 }
 
-// estilos base para inputs/selects de la fila nueva
+// estilos base fila nueva
 const newRowInput = {
   border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, outline: 'none',
   fontFamily: 'inherit', background: '#fff', height: 28, boxSizing: 'border-box',
@@ -398,7 +456,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </select>
   );
 
-  // borde rojo si campo obligatorio vacío, normal si tiene valor
+  // select con borde rojo si obligatorio y vacío
   const reqSelect = (field) => ({
     ...newRowSelect,
     ...(errors[field] ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}),
@@ -409,10 +467,11 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* PROPIEDAD */}
       <td style={styles.tdProp}>
-        <input value={form.propiedad} onChange={e => setForm(p=>({...p,propiedad:e.target.value}))}
-          placeholder="Dirección"
-          style={{ ...newRowInput, display: 'block', width: '100%',
-            ...(errors.propiedad ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }} />
+        <PropertyAutocomplete
+          value={form.propiedad}
+          onChange={v => setForm(p => ({ ...p, propiedad: v }))}
+          hasError={!!errors.propiedad}
+        />
       </td>
 
       {/* PRECIO */}
@@ -427,8 +486,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* PUBLICACION */}
       <td style={styles.tdCenter}>
-        <select value={form.status||'Aún no'} onChange={e=>setForm(p=>({...p,status:e.target.value}))}
-          style={newRowSelect}>
+        <select value={form.status||'Aún no'} onChange={e=>setForm(p=>({...p,status:e.target.value}))} style={newRowSelect}>
           <option value="Aún no">Aún no</option>
           <option value="Listo">Listo</option>
         </select>
@@ -436,16 +494,14 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* E1 */}
       <td style={styles.tdCenter}>
-        <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))}
-          style={reqSelect('e1')}>
+        <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={reqSelect('e1')}>
           <option value="">—</option><option>DD</option><option>FD</option>
         </select>
       </td>
 
       {/* E2 */}
       <td style={styles.tdCenter}>
-        <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))}
-          style={reqSelect('e2')}>
+        <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={reqSelect('e2')}>
           <option value="">—</option><option>EA</option><option>FG</option>
         </select>
       </td>
@@ -462,7 +518,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* COMUNA */}
       <td style={styles.tdCenter}>
-        <input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))}
+        <input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value.toUpperCase()}))}
           style={{ ...newRowInput, display: 'block', width: 90 }} />
       </td>
 
@@ -473,8 +529,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* AVISO */}
       <td style={styles.tdCenter}>
-        <select value={form.aviso||'Aún no'} onChange={e=>setForm(p=>({...p,aviso:e.target.value}))}
-          style={newRowSelect}>
+        <select value={form.aviso||'Aún no'} onChange={e=>setForm(p=>({...p,aviso:e.target.value}))} style={newRowSelect}>
           <option value="Aún no">Aún no</option>
           <option value="Listo">Listo</option>
         </select>
@@ -482,8 +537,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* RESPALDO */}
       <td style={styles.tdCenter}>
-        <select value={form.respaldo||'Aún no'} onChange={e=>setForm(p=>({...p,respaldo:e.target.value}))}
-          style={newRowSelect}>
+        <select value={form.respaldo||'Aún no'} onChange={e=>setForm(p=>({...p,respaldo:e.target.value}))} style={newRowSelect}>
           <option value="Aún no">Aún no</option>
           <option value="Listo">Listo</option>
         </select>
@@ -491,16 +545,14 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
       {/* TIPO */}
       <td style={styles.tdCenter}>
-        <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))}
-          style={reqSelect('tipo')}>
+        <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={reqSelect('tipo')}>
           <option value="">—</option><option>Nuevo</option><option>Renovación</option>
         </select>
       </td>
 
       {/* ADMIN */}
       <td style={styles.tdCenter}>
-        <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))}
-          style={reqSelect('admin')}>
+        <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={reqSelect('admin')}>
           <option value="">—</option><option>Sí</option><option>No</option>
         </select>
       </td>
@@ -523,7 +575,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       <td style={styles.tdProp}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           {showAlert && <UrgentDot />}
-          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} />
+          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} uppercase />
         </div>
       </td>
       <td style={styles.td}>
@@ -534,12 +586,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       </td>
       <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
         <select value={form.status || ''} onChange={e => set('status', e.target.value)}
-          style={{
-            border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11,
-            fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1,
-            color: form.status === 'Listo' ? '#34a853' : '#202124',
-            ...(form.status === 'Aún no' ? { background: '#FFF9C4', borderRadius: 4, padding: '2px 4px' } : {}),
-          }}>
+          style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1, color: form.status === 'Listo' ? '#34a853' : '#202124', ...(form.status === 'Aún no' ? { background: '#FFF9C4', borderRadius: 4, padding: '2px 4px' } : {}) }}>
           <option value="">—</option>
           <option value="Aún no">Aún no</option>
           <option value="Listo">Listo</option>
@@ -547,9 +594,9 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       </td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} /></td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} /></td>
-      <td style={styles.tdCenter}><InlineEditCell value={form.db} onChange={v => set('db', v)} /></td>
-      <td style={styles.tdCenter}><InlineEditCell value={form.eb} onChange={v => set('eb', v)} /></td>
-      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} /></td>
+      <td style={styles.tdCenter}><SlashInput value={form.db} onChange={v => set('db', v)} /></td>
+      <td style={styles.tdCenter}><SlashInput value={form.eb} onChange={v => set('eb', v)} /></td>
+      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} uppercase /></td>
       <td style={styles.tdCenter}>
         <DateCellInput value={form.fecha_salida} onChange={v => set('fecha_salida', v)} />
       </td>
