@@ -135,7 +135,6 @@ function PriceInput({ value, onChange, uf }) {
           </select>
           <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
             onBlur={e => {
-              // No cerrar si el foco va al select
               if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return;
               setEditing(false);
               if (raw) {
@@ -270,7 +269,7 @@ function InlineEditCell({ value, onChange }) {
 function InlineSelectCell({ value, options, onChange }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}
-      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', textAlign: 'center' }}>
+      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', textAlign: 'center', lineHeight: 1 }}>
       <option value="">—</option>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
     </select>
@@ -314,7 +313,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
   const AvisoCell = ({ field }) => (
     <select value={form[field] || ''} onChange={e => set(field, e.target.value)}
-      style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: form[field] === 'Listo' ? '#34a853' : form[field] === 'Aún no' ? '#fff' : '#202124', ...(form[field] === 'Aún no' ? { background: '#ea4335', borderRadius: 4, padding: '2px 4px' } : {}) }}>
+      style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1, color: form[field] === 'Listo' ? '#34a853' : form[field] === 'Aún no' ? '#fff' : '#202124', ...(form[field] === 'Aún no' ? { background: '#ea4335', borderRadius: 4, padding: '2px 4px' } : {}) }}>
       <option value="" style={{ color: '#202124', background: '#fff' }}>—</option>
       {['Aún no','Listo'].map(o => <option key={o} value={o} style={{ color: '#202124', background: '#fff' }}>{o}</option>)}
     </select>
@@ -392,13 +391,12 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </tr>
   );
 
-
   return (
     <tr style={{ background: '#fff' }}
       onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
       onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
       <td style={styles.tdProp}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           {showAlert && <UrgentDot />}
           <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} />
         </div>
@@ -413,8 +411,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         <select value={form.status || ''} onChange={e => set('status', e.target.value)}
           style={{
             border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11,
-            fontWeight: 600, cursor: 'pointer', background: 'transparent',
-            color: form.status === 'Listo' ? '#34a853' : form.status === 'Aún no' ? '#202124' : '#202124',
+            fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1,
+            color: form.status === 'Listo' ? '#34a853' : '#202124',
             ...(form.status === 'Aún no' ? { background: '#FFF9C4', borderRadius: 4, padding: '2px 4px' } : {}),
           }}>
           <option value="">—</option>
@@ -446,7 +444,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         <button onClick={() => onRented(row)} style={styles.actionBtnBlue}><Home size={13} /></button>
         {confirmDelete ? (
           <>
-            <button onClick={async () => { if (!confirmDelete) { setConfirmDelete(true); return; } await onDelete(row.id); }} style={styles.actionBtnRed}><Trash2 size={13} /></button>
+            <button onClick={async () => { await onDelete(row.id); }} style={styles.actionBtnRed}><Trash2 size={13} /></button>
             <button onClick={() => setConfirmDelete(false)} style={styles.actionBtnGray}><X size={12} /></button>
           </>
         ) : (
@@ -519,7 +517,6 @@ export default function PizarraPage() {
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
       if (data) {
-        // No hacemos setRows aquí — el canal Realtime INSERT lo agrega automáticamente
         await createAutoTasks('pizarra_nueva_propiedad', data.propiedad, data.e1, data.e2, data.tipo, data.fecha_salida);
       }
       setAddingNew(false);
@@ -562,7 +559,6 @@ export default function PizarraPage() {
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
 
-  // HEADERS sin OROS
   const HEADERS = ['PROPIEDAD','PRECIO','PROMO','PUBLICACION','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN','URL',''];
 
   return (
@@ -648,16 +644,16 @@ const styles = {
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  td: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center' },
-  tdProp: { padding: '7px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left' },
-  tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle' },
-  tdActions: { padding: '4px 6px', borderBottom: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' },
-  actionBtnGray:   { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#5f6368' },
-  actionBtnGreen:  { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#34a853' },
-  actionBtnBlue:   { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#1a73e8' },
-  actionBtnPurple: { background: '#f3e8fd', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#9334e6' },
-  actionBtnRed:    { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', color: '#ea4335' },
-  urlBtn:         { border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, display: 'inline-flex' },
+  td:        { padding: '0 10px', height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center', lineHeight: 1 },
+  tdProp:    { padding: '0 10px', height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left', lineHeight: 1 },
+  tdCenter:  { padding: '0 8px',  height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', lineHeight: 1 },
+  tdActions: { padding: '0 6px', height: 38, borderBottom: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap', lineHeight: 1 },
+  actionBtnGray:   { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#5f6368' },
+  actionBtnGreen:  { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#34a853' },
+  actionBtnBlue:   { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#1a73e8' },
+  actionBtnPurple: { background: '#f3e8fd', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#9334e6' },
+  actionBtnRed:    { background: '#fce8e6', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#ea4335' },
+  urlBtn:         { border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, display: 'inline-flex', alignItems: 'center' },
   urlBtnActive:   { background: '#e6f4ea', color: '#34a853' },
   urlBtnInactive: { background: '#f1f3f4', color: '#9aa0a6' },
   empty:   { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
