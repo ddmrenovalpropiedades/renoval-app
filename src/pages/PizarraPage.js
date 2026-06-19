@@ -162,7 +162,7 @@ function PriceInput({ value, onChange, uf }) {
   );
 }
 
-// ── DateCellDisplay ───────────────────────────────────────────
+// ── DateCellInput: usado en filas normales (existentes) ───────
 function DateCellInput({ value, onChange, hasError }) {
   const ref = React.useRef(null);
   return (
@@ -170,6 +170,28 @@ function DateCellInput({ value, onChange, hasError }) {
       style={{ cursor: 'pointer', fontSize: 11, color: value ? 'inherit' : '#9aa0a6', position: 'relative',
         ...(hasError ? { background: '#fce8e6', borderRadius: 4, padding: '1px 3px' } : {}) }}>
       {value ? formatDateCL(value) : <span style={{ color: hasError ? '#ea4335' : '#dadce0' }}>dd/mm/aaaa *</span>}
+      <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
+    </div>
+  );
+}
+
+// ── DateFieldNew: campo blanco con ícono, para fila nueva ─────
+function DateFieldNew({ value, onChange, hasError }) {
+  const ref = React.useRef(null);
+  const openPicker = () => ref.current && ref.current.showPicker && ref.current.showPicker();
+  return (
+    <div onClick={openPicker}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        border: hasError ? '1px solid #ea4335' : '1px solid #dadce0',
+        borderRadius: 6, background: hasError ? '#fce8e6' : '#fff',
+        padding: '0 6px', height: 28, cursor: 'pointer', minWidth: 100, boxSizing: 'border-box',
+      }}>
+      <span style={{ fontSize: 12, color: value ? '#202124' : '#9aa0a6', userSelect: 'none' }}>
+        {value ? formatDateCL(value) : 'dd/mm/aaaa'}
+      </span>
+      <Calendar size={13} style={{ color: hasError ? '#ea4335' : '#9aa0a6', flexShrink: 0, marginLeft: 4 }} onClick={openPicker} />
       <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
         style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
     </div>
@@ -276,6 +298,18 @@ function InlineSelectCell({ value, options, onChange }) {
   );
 }
 
+// estilo común para todos los inputs/selects de la fila nueva
+const newRowInput = {
+  border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, outline: 'none',
+  fontFamily: 'inherit', background: '#fff', height: 28, boxSizing: 'border-box',
+  padding: '0 6px', display: 'flex', alignItems: 'center',
+};
+const newRowSelect = {
+  border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, outline: 'none',
+  fontFamily: 'inherit', background: '#fff', height: 28, boxSizing: 'border-box',
+  padding: '0 4px', cursor: 'pointer',
+};
+
 // ── PropertyRow ───────────────────────────────────────────────
 function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
@@ -319,71 +353,129 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </select>
   );
 
-  const reqStyle = (field) => errors[field] ? { background: '#fce8e6', outline: '1px solid #ea4335' } : {};
+  const errBorder = (field) => errors[field] ? { border: '1px solid #ea4335', background: '#fce8e6' } : {};
 
   if (isNew) return (
     <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
-      <td style={{ ...styles.td, ...reqStyle('propiedad') }}>
+
+      {/* PROPIEDAD */}
+      <td style={styles.tdProp}>
         <div style={{ position: 'relative' }}>
           <input value={form.propiedad} onChange={e => setForm(p=>({...p,propiedad:e.target.value}))}
             placeholder="Dirección"
-            style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 18px 4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }} />
-          <span style={{ position: 'absolute', right: 5, top: 3, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>
+            style={{ ...newRowInput, display: 'block', width: '100%', paddingRight: 18,
+              ...(errors.propiedad ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }} />
+          <span style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>
         </div>
       </td>
+
+      {/* PRECIO */}
       <td style={styles.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} /></td>
+
+      {/* PROMO */}
       <td style={styles.tdCenter}><PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} /></td>
+
+      {/* PUBLICACION */}
       <td style={styles.tdCenter}>
         <select value={form.status||'Aún no'} onChange={e=>setForm(p=>({...p,status:e.target.value}))}
-          style={{ border:'1px solid #dadce0', borderRadius:6, padding:'3px 6px', fontSize:12, outline:'none', fontFamily:'inherit', background:'#fff' }}>
+          style={newRowSelect}>
           <option value="Aún no">Aún no</option>
           <option value="Listo">Listo</option>
         </select>
       </td>
-      <td style={{...styles.tdCenter,...reqStyle('e1')}}>
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:errors.e1?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 16px 3px 3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+
+      {/* E1 */}
+      <td style={styles.tdCenter}>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))}
+            style={{ ...newRowSelect, paddingRight: 14, ...(errors.e1 ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
             <option value="">—</option><option>DD</option><option>FD</option>
           </select>
-          <span style={{ position: 'absolute', right: 2, top: 1, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>
+          {errors.e1 && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
         </div>
       </td>
-      <td style={{...styles.tdCenter,...reqStyle('e2')}}>
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:errors.e2?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 16px 3px 3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+
+      {/* E2 */}
+      <td style={styles.tdCenter}>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))}
+            style={{ ...newRowSelect, paddingRight: 14, ...(errors.e2 ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
             <option value="">—</option><option>EA</option><option>FG</option>
           </select>
-          <span style={{ position: 'absolute', right: 2, top: 1, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>
+          {errors.e2 && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
         </div>
       </td>
-      <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
-      <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
-      <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:80}} /></td>
-      <td style={{...styles.tdCenter,...reqStyle('fecha_salida')}}>
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <DateCellInput value={form.fecha_salida} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} hasError={!!errors.fecha_salida} />
-          <span style={{ color: '#ea4335', fontWeight: 700, fontSize: 13, marginLeft: 2 }}>*</span>
+
+      {/* D/B */}
+      <td style={styles.tdCenter}>
+        <input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))}
+          style={{ ...newRowInput, display: 'block', width: 48 }} />
+      </td>
+
+      {/* E/B */}
+      <td style={styles.tdCenter}>
+        <input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))}
+          style={{ ...newRowInput, display: 'block', width: 48 }} />
+      </td>
+
+      {/* COMUNA */}
+      <td style={styles.tdCenter}>
+        <input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value}))}
+          style={{ ...newRowInput, display: 'block', width: 90 }} />
+      </td>
+
+      {/* FECHA SALIDA */}
+      <td style={styles.tdCenter}>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+          <DateFieldNew value={form.fecha_salida} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} hasError={!!errors.fecha_salida} />
+          {errors.fecha_salida && <span style={{ color: '#ea4335', fontWeight: 700, fontSize: 13 }}>*</span>}
         </div>
       </td>
-      <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
-      <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
-      <td style={{...styles.tdCenter,...reqStyle('tipo')}}>
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={{border:errors.tipo?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 16px 3px 3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+
+      {/* AVISO */}
+      <td style={styles.tdCenter}>
+        <select value={form.aviso||'Aún no'} onChange={e=>setForm(p=>({...p,aviso:e.target.value}))}
+          style={newRowSelect}>
+          <option value="Aún no">Aún no</option>
+          <option value="Listo">Listo</option>
+        </select>
+      </td>
+
+      {/* RESPALDO */}
+      <td style={styles.tdCenter}>
+        <select value={form.respaldo||'Aún no'} onChange={e=>setForm(p=>({...p,respaldo:e.target.value}))}
+          style={newRowSelect}>
+          <option value="Aún no">Aún no</option>
+          <option value="Listo">Listo</option>
+        </select>
+      </td>
+
+      {/* TIPO */}
+      <td style={styles.tdCenter}>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))}
+            style={{ ...newRowSelect, paddingRight: 14, ...(errors.tipo ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
             <option value="">—</option><option>Nuevo</option><option>Renovación</option>
           </select>
-          <span style={{ position: 'absolute', right: 2, top: 1, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>
+          {errors.tipo && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
         </div>
       </td>
-      <td style={{...styles.tdCenter,...reqStyle('admin')}}>
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={{border:errors.admin?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px 16px 3px 3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
+
+      {/* ADMIN */}
+      <td style={styles.tdCenter}>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))}
+            style={{ ...newRowSelect, paddingRight: 14, ...(errors.admin ? { border: '1px solid #ea4335', background: '#fce8e6' } : {}) }}>
             <option value="">—</option><option>Sí</option><option>No</option>
           </select>
-          <span style={{ position: 'absolute', right: 2, top: 1, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>
+          {errors.admin && <span style={{ position: 'absolute', right: 2, color: '#ea4335', fontWeight: 700, fontSize: 13, pointerEvents: 'none' }}>*</span>}
         </div>
       </td>
+
+      {/* URL */}
       <td style={styles.tdCenter}><span style={{ color: '#dadce0', fontSize: 11 }}>—</span></td>
+
+      {/* ACCIONES */}
       <td style={styles.tdActions}>
         <button onClick={handleNewSave} style={styles.actionBtnGreen}><Check size={14} /></button>
         <button onClick={onCancelNew} style={styles.actionBtnGray}><X size={14} /></button>
