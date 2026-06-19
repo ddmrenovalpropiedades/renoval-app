@@ -320,15 +320,14 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </select>
   );
 
-  const reqStyle = (field) => errors[field] ? { background: '#fce8e6' } : {};
+  const reqStyle = (field) => errors[field] ? { background: '#fce8e6', outline: '1px solid #ea4335' } : {};
 
   if (isNew) return (
     <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
       <td style={{ ...styles.td, ...reqStyle('propiedad') }}>
         <input value={form.propiedad} onChange={e => setForm(p=>({...p,propiedad:e.target.value}))}
-          placeholder={<span>Dirección <span style={{color:'#ea4335'}}>*</span></span>}
+          placeholder="Dirección"
           style={{ border: errors.propiedad ? '1px solid #ea4335' : '1px solid #dadce0', borderRadius: 6, padding: '4px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
-        {errors.propiedad && <span style={{color:'#ea4335',fontSize:9,position:'absolute'}}>*</span>}
       </td>
       <td style={styles.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} /></td>
       <td style={styles.tdCenter}><PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} /></td>
@@ -343,13 +342,11 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{border:errors.e1?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
           <option value="">—</option><option>DD</option><option>FD</option>
         </select>
-        {errors.e1 && <span style={{color:'#ea4335',fontSize:10}}> *</span>}
       </td>
       <td style={{...styles.tdCenter,...reqStyle('e2')}}>
         <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{border:errors.e2?'1px solid #ea4335':'1px solid #dadce0',borderRadius:6,padding:'3px',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none'}}>
           <option value="">—</option><option>EA</option><option>FG</option>
         </select>
-        {errors.e2 && <span style={{color:'#ea4335',fontSize:10}}> *</span>}
       </td>
       <td style={styles.tdCenter}><input value={form.db||''} onChange={e=>setForm(p=>({...p,db:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
       <td style={styles.tdCenter}><input value={form.eb||''} onChange={e=>setForm(p=>({...p,eb:e.target.value}))} style={{border:'1px solid #dadce0',borderRadius:6,padding:'3px 4px',fontSize:12,outline:'none',width:45}} /></td>
