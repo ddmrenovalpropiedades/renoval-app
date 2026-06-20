@@ -134,8 +134,20 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { mes, propiedades, enviado_desde } = req.body;
+  const { mes, propiedades, enviado_desde, ya_resueltas } = req.body;
   if (!mes) return res.status(400).json({ error: 'Missing mes' });
+
+  // Propiedades que ya tienen gc_valor extraído para este mes: no hace falta
+  // volver a procesarlas (evita llamadas innecesarias a la API de Claude)
+  const resueltasSet = new Set(ya_resueltas || []);
+  const propiedadesPendientes = (propiedades || []).filter(p => !resueltasSet.has(p));
+
+  console.log(`Propiedades totales: ${(propiedades || []).length}, ya resueltas: ${resueltasSet.size}, pendientes: ${propiedadesPendientes.length}`);
+
+  if (propiedadesPendientes.length === 0) {
+    console.log('Todas las propiedades ya tienen valor GC extraído, no hay nada que revisar.');
+    return res.status(200).json({ replies: [], debug: [], total_emails_checked: 0, skipped_all_resolved: true });
+  }
 
   try {
     const gmail = getGmailClient();
@@ -204,8 +216,8 @@ export default async function handler(req, res) {
       let matchedProp = null;
       let bestScore = 0;
 
-      if (propiedades?.length) {
-        for (const prop of propiedades) {
+      if (propiedadesPendientes?.length) {
+        for (const prop of propiedadesPendientes) {
           const score = matchScore(combined, prop);
           console.log(`  "${prop}" → score: ${score.toFixed(2)} en "${subject}"`);
           if (score > bestScore) {
