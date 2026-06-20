@@ -42,6 +42,11 @@ const currentMes = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 };
+const prevMes = () => {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+};
 
 // ── Color logic ───────────────────────────────────────────────
 const rowExceedsUmbral = (row, attrsMap, level) => {
@@ -569,6 +574,7 @@ function ConsultasTab() {
                       value={newRow.cartera}
                       onChange={v => setNewRow(p => ({ ...p, cartera: v }))}
                       placeholder="Buscar en Cartera..."
+                      raw
                     />
                   </td>
                   <td style={st.tdFixed}>
@@ -605,6 +611,7 @@ function ConsultasTab() {
                               value={editValue}
                               onChange={v => setEditValue(v)}
                               placeholder="Buscar en Cartera..."
+                              raw
                             />
                           </div>
                           <button onClick={()=>saveEdit(row.id)} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853',flexShrink:0}}>✓</button>
@@ -903,6 +910,71 @@ export default function SaldosPage() {
     for (let i=0;i<batch.length;i+=50) await supabase.from('saldos').upsert(batch.slice(i,i+50),{onConflict:'propiedad'});
   };
 
+  // Carga los valores de GC extraídos en Consultas GC hacia la tabla Saldos.
+  // El cruce se hace por la columna "cartera" de gc_consultas_config, que
+  // usa la misma nomenclatura que "propiedad" en la tabla saldos.
+  const [loadingGC, setLoadingGC] = useState(false);
+  const [loadGCResult, setLoadGCResult] = useState(null);
+
+  const handleLoadGCValues = async () => {
+    setLoadingGC(true);
+    setLoadGCResult(null);
+    try {
+      const mesActual = currentMes();
+      const mesAnterior = prevMes();
+
+      const [{ data: cfg }, { data: logs }] = await Promise.all([
+        supabase.from('gc_consultas_config').select('propiedad, cartera'),
+        supabase.from('gc_consultas_log').select('propiedad, mes, gc_valor').in('mes', [mesActual, mesAnterior]),
+      ]);
+
+      // Mapa propiedad (Consultas GC) -> cartera (nomenclatura Saldos/Cartera)
+      const carteraMap = {};
+      (cfg || []).forEach(c => { if (c.cartera) carteraMap[c.propiedad] = c.cartera; });
+
+      // Mapas de valores por mes
+      const valoresActual = {};
+      const valoresAnterior = {};
+      (logs || []).forEach(l => {
+        if (!l.gc_valor) return;
+        if (l.mes === mesActual) valoresActual[l.propiedad] = l.gc_valor;
+        if (l.mes === mesAnterior) valoresAnterior[l.propiedad] = l.gc_valor;
+      });
+
+      let updated = 0, skipped = 0, notFound = 0;
+      const propiedadesConsulta = Object.keys(carteraMap);
+
+      for (const propConsulta of propiedadesConsulta) {
+        const propCartera = carteraMap[propConsulta];
+        const gcAc = valoresActual[propConsulta] || null;
+        const gcAn = valoresAnterior[propConsulta] || null;
+
+        if (!gcAc && !gcAn) { skipped++; continue; }
+
+        const updates = {};
+        if (gcAc) updates.gc_ac = gcAc;
+        if (gcAn) updates.gc_an = gcAn;
+
+        const { data: updatedRows, error } = await supabase
+          .from('saldos')
+          .update(updates)
+          .eq('propiedad', propCartera)
+          .select('id');
+
+        if (error) { console.error('Error actualizando', propCartera, error); skipped++; }
+        else if (!updatedRows || updatedRows.length === 0) { notFound++; }
+        else updated++;
+      }
+
+      setLoadGCResult({ updated, skipped, notFound, total: propiedadesConsulta.length });
+      await fetchData();
+    } catch (e) {
+      console.error('Error en handleLoadGCValues:', e);
+      setLoadGCResult({ error: e.message });
+    }
+    setLoadingGC(false);
+  };
+
   const TABS = [
     { id:'saldos',         label:'Saldos',         icon:<BarChart2 size={14}/> },
     { id:'consultas',      label:'Consultas GC',    icon:<Mail size={14}/> },
@@ -916,7 +988,25 @@ export default function SaldosPage() {
           <h1 style={st.title}>Saldos</h1>
           <p style={st.subtitle}>{rows.filter(r=>r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos).length} propiedades con datos</p>
         </div>
-        <div style={{display:'flex',gap:8}}>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {tab==='saldos'&&loadGCResult&&!loadGCResult.error&&(
+            <div style={{fontSize:12,color:'#2e7d32',background:'#e6f4ea',padding:'6px 12px',borderRadius:8}}>
+              ✓ {loadGCResult.updated} actualizadas
+              {loadGCResult.skipped>0?`, ${loadGCResult.skipped} sin valor`:''}
+              {loadGCResult.notFound>0?`, ${loadGCResult.notFound} sin match en Saldos`:''}
+            </div>
+          )}
+          {tab==='saldos'&&loadGCResult?.error&&(
+            <div style={{fontSize:12,color:'#c62828',background:'#fce8e6',padding:'6px 12px',borderRadius:8}}>
+              Error: {loadGCResult.error}
+            </div>
+          )}
+          {tab==='saldos'&&(
+            <button onClick={handleLoadGCValues} disabled={loadingGC} style={{...st.iconBtn,display:'flex',alignItems:'center',gap:6,padding:'8px 14px',width:'auto'}} title="Cargar valores GC desde Consultas">
+              <RefreshCw size={15} color="#5f6368" style={{animation:loadingGC?'spin 1s linear infinite':'none'}}/>
+              <span style={{fontSize:13,color:'#3c4043'}}>{loadingGC?'Cargando...':'Cargar GC'}</span>
+            </button>
+          )}
           <button onClick={fetchData} style={st.iconBtn} title="Actualizar"><RefreshCw size={16} color="#5f6368"/></button>
           {tab==='saldos'&&<button onClick={()=>setShowUpload(!showUpload)} style={{...st.iconBtn,...(showUpload?{background:'#e8f0fe',borderColor:'#1a73e8'}:{})}}><Upload size={16} color={showUpload?'#1a73e8':'#5f6368'}/></button>}
         </div>
@@ -938,6 +1028,7 @@ export default function SaldosPage() {
       {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload}/>}
       {tab==='consultas'&&<ConsultasTab/>}
       {tab==='reportabilidad'&&<ReportabilidadTab/>}
+      <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
