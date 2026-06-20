@@ -470,6 +470,11 @@ function ConsultasTab() {
         .filter(l => l.mes === mes && l.enviado_at)
         .reduce((min, l) => (!min || l.enviado_at < min ? l.enviado_at : min), null);
 
+      // Propiedades que ya tienen valor GC extraído este mes: no hace falta reprocesarlas
+      const ya_resueltas = log
+        .filter(l => l.mes === mes && l.gc_valor)
+        .map(l => l.propiedad);
+
       const response = await fetch('/api/check-gc-replies', {
         method: 'POST',
         headers: {
@@ -480,6 +485,7 @@ function ConsultasTab() {
           mes,
           propiedades: config.map(r => r.propiedad),
           enviado_desde,
+          ya_resueltas,
         }),
       });
       const data = await response.json();
