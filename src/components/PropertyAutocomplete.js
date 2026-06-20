@@ -14,7 +14,9 @@ const transformAddress = (full) => {
     .replace(/\bCasa\s+/gi, 'C');
 };
 
-export default function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', hasError = false, inputStyle = {} }) {
+// raw: si es true, no transforma la nomenclatura y usa la dirección
+// exactamente como está registrada en la tabla properties (Cartera)
+export default function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', hasError = false, inputStyle = {}, raw = false }) {
   const [properties, setProperties] = useState([]);
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -61,7 +63,7 @@ export default function PropertyAutocomplete({ value, onChange, placeholder = 'D
   }, []);
 
   const handleSelect = (prop) => {
-    onChange(transformAddress(prop));
+    onChange(raw ? prop : transformAddress(prop));
     setOpen(false);
   };
 
@@ -115,8 +117,14 @@ export default function PropertyAutocomplete({ value, onChange, placeholder = 'D
               onMouseEnter={e => e.currentTarget.style.background = '#f0f7ff'}
               onMouseLeave={e => e.currentTarget.style.background = '#fff'}
             >
-              <div style={{ fontWeight: 600 }}>{transformAddress(prop)}</div>
-              <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 1 }}>{prop}</div>
+              {raw ? (
+                <div style={{ fontWeight: 600 }}>{prop}</div>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 600 }}>{transformAddress(prop)}</div>
+                  <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 1 }}>{prop}</div>
+                </>
+              )}
             </div>
           ))}
         </div>
