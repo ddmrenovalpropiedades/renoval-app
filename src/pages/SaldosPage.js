@@ -333,7 +333,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
                     <td style={{...st.tdFixed,fontSize:11,color:'#5f6368',textAlign:'center'}}>{row.propietario||''}</td>
                     {COLS.map(c=>{
                       const rowAttr=attrsMap[row.propiedad];
-                      const emptyWhite=c.tipo==='arriendo'||(c.tipo==='agua'&&rowAttr?.tiene_agua===false)||(c.tipo==='luz'&&rowAttr?.tiene_luz===false)||(c.tipo==='gas'&&rowAttr?.tiene_gas===false);
+                      const emptyWhite=c.tipo==='arriendo'||(c.tipo==='agua'&&rowAttr?.tiene_agua===false)||(c.tipo==='luz'&&rowAttr?.tiene_luz===false)||(c.tipo==='gas'&&rowAttr?.tiene_gas===false)||(c.tipo==='gc'&&rowAttr?.tiene_gc===false);
                       return (
                         <td key={c.key} style={{...st.td,padding:'4px 6px',...(c.groupStart?{borderLeft:'2px solid #bdbdbd'}:{}),...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{})}}>
                           <EditableCell value={merged[c.key]||''} tipo={c.tipo} alerta={c.alerta?merged[c.alerta]:false} onChange={val=>handleCellChange(row.id,c.key,val)} attr={rowAttr} emptyWhite={emptyWhite}/>
