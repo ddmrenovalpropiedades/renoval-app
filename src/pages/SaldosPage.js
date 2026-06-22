@@ -78,6 +78,8 @@ const rowExceedsUmbral = (row, attrsMap, level) => {
 };
 const getCellStyle = (val, tipo, attr, emptyWhite=false) => {
   const base = { padding:0, fontSize:12, textAlign:'center', width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:4 };
+  const u1 = { background:'#FFE0B2', color:'#202124', borderRadius:6 }; // naranja suave — supera umbral 1
+  const u2 = { background:'#FFCDD2', color:'#202124', borderRadius:6 }; // rojo suave  — supera umbral 2
   if (!val||val==='') return { ...base, background: emptyWhite?'#fff':'#FAF3E0' };
   if (isPagada(val)) return { ...base, background:'#fff', color:'#bdbdbd' };
   const n = parseAmount(val);
@@ -88,19 +90,19 @@ const getCellStyle = (val, tipo, attr, emptyWhite=false) => {
     if (attr?.['umbral1_'+tipo]&&attr?.['umbral2_'+tipo]) { t1=attr['umbral1_'+tipo]; t2=attr['umbral2_'+tipo]; }
     else { [t1,t2]=defaults[tipo]||[40000,60000]; }
     if (n<t1) return { ...base, background:'#fff', color:'#bdbdbd' };
-    if (n<t2) return { ...base, background:'#FFCDD2', color:'#202124' };
-    return { ...base, background:'#EF9A9A', color:'#202124' };
+    if (n<t2) return { ...base, ...u1 };
+    return { ...base, ...u2 };
   }
   if (tipo==='gc') {
     const gcProm=attr?.gc_promedio;
     if (gcProm) {
       if (n<gcProm*1.9) return { ...base, background:'#fff', color:'#bdbdbd' };
-      if (n<gcProm*2.8) return { ...base, background:'#FFCDD2', color:'#202124' };
-      return { ...base, background:'#EF9A9A', color:'#202124' };
+      if (n<gcProm*2.8) return { ...base, ...u1 };
+      return { ...base, ...u2 };
     }
     if (n<70000) return { ...base, background:'#fff', color:'#bdbdbd' };
     if (n<180000) return { ...base, background:'#fff', color:'#202124' };
-    return { ...base, background:'#EF9A9A', color:'#202124' };
+    return { ...base, ...u2 };
   }
   if (tipo==='arriendo') {
     if (n<10000) return { ...base, background:'#fff', color:'#bdbdbd' };
