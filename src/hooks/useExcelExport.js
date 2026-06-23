@@ -13,6 +13,8 @@ export function useExcelExport() {
       Object.fromEntries(columns.map(c => [c.label, row[c.key] ?? '']))
     );
 
+    const now = new Date();
+    const fecha = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const ws = XLSX.utils.json_to_sheet(rows, { header: columns.map(c => c.label) });
 
     // Ancho automático por columna
@@ -23,7 +25,7 @@ export function useExcelExport() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Datos');
-    XLSX.writeFile(wb, `${filename}.xlsx`);
+    XLSX.writeFile(wb, `${filename}_${fecha}.xlsx`);
   }, []);
 
   return { exportToExcel };
