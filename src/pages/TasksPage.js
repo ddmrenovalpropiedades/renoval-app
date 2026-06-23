@@ -81,8 +81,8 @@ function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis
 }
 
 // ── Zona drop: columna invisible completa (useDroppable) ─────────────────────
-function DroppableColumn({ colIdx, isOver, children, style }) {
-  const { setNodeRef } = useDroppable({ id: colDropId(colIdx) });
+function DroppableColumn({ colIdx, isDraggingAny, children, style }) {
+  const { setNodeRef, isOver } = useDroppable({ id: colDropId(colIdx) });
   return (
     <div ref={setNodeRef} style={{
       ...style,
@@ -96,18 +96,20 @@ function DroppableColumn({ colIdx, isOver, children, style }) {
   );
 }
 
-// ── Zona drop: nueva columna al final ─────────────────────────────────────────
-function NewColumnDropZone({ isOver }) {
-  const { setNodeRef } = useDroppable({ id: DROP_ZONE_NEW_COL });
+// ── Zona drop: nueva columna al final (solo visible al arrastrar) ─────────────
+function NewColumnDropZone() {
+  const { setNodeRef, isOver } = useDroppable({ id: DROP_ZONE_NEW_COL });
   return (
     <div ref={setNodeRef} style={{
-      minWidth: 80, width: 80, alignSelf: 'stretch', minHeight: 120,
-      border: `2px dashed ${isOver ? '#1a73e8' : '#dadce0'}`,
+      minWidth: isOver ? 100 : 40, width: isOver ? 100 : 40,
+      alignSelf: 'stretch', minHeight: 80,
+      border: `2px dashed ${isOver ? '#1a73e8' : '#c5cae9'}`,
       borderRadius: 12,
-      background: isOver ? '#e8f0fe' : 'transparent',
+      background: isOver ? '#e8f0fe' : 'rgba(200,210,255,0.10)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       flexShrink: 0,
       transition: 'all 0.15s',
+      opacity: 1,
     }}>
       {isOver && <Plus size={22} color="#1a73e8" />}
     </div>
@@ -508,7 +510,6 @@ export default function TasksPage() {
                         <DroppableColumn
                           key={colIndex}
                           colIdx={colIndex}
-                          isOver={overDropZone === colDropId(colIndex)}
                           style={styles.invisibleColumn}
                         >
                           {col.map((category, rowIndex) => (
@@ -535,7 +536,7 @@ export default function TasksPage() {
                         </DroppableColumn>
                       ))}
                       {/* Zona drop nueva columna */}
-                      <NewColumnDropZone isOver={overDropZone === DROP_ZONE_NEW_COL} />
+                      {draggingCategory && <NewColumnDropZone />}
                     </div>
                   </div>
                 </SortableContext>
