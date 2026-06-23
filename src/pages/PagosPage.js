@@ -443,9 +443,9 @@ export default function PagosPage() {
           <div style={s.filterGroup}>{ESTADO_OPTIONS.map(v => <button key={v} onClick={() => toggleFilter(filterEstado, setFilterEstado, v)} style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>)}</div>
           <div style={s.filterGroup}>{[{ val: 'reciente', label: '- 3m' }, { val: 'antigua', label: '+ 3m' }].map(({ val, label }) => <button key={val} onClick={() => { setFilterAntiguedad(prev => prev === val ? '' : val); setPage(0); }} style={{ ...s.filterBtn, ...(filterAntiguedad === val ? s.filterBtnActive : {}) }}>{label}</button>)}</div>
           {activeFilters && <button onClick={() => { setFilterPor([]); setFilterEstado([]); setFilterAntiguedad(''); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>}
-          <button onClick={handleExport} disabled={exporting} title="Exportar todos los pagos a Excel"
-            style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:exporting?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:exporting?0.6:1 }}>
-            <Download size={14} color="#34a853" />{exporting ? 'Exportando...' : 'Excel'}
+          <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
+           style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1 }}>
+           <Download size={15} color="#34a853" />
           </button>
           <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}><BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas</button>
           <button onClick={() => setAddingNew(true)} disabled={addingNew} style={s.addBtn}><Plus size={14} style={{ marginRight: 5 }} /> Nuevo pago</button>
