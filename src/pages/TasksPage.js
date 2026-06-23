@@ -362,20 +362,15 @@ export default function TasksPage() {
     const topMatch = String(overId).match(/^__COL_TOP_(\d+)__$/);
     if (topMatch) {
       const colIdx = parseInt(topMatch[1]);
-      const withoutDrag = removeFromLayout(layout, draggedCat);
-      // El índice de columna puede haber cambiado tras removeFromLayout
-      // Recalcular por contenido: encontrar la columna que tenía ese índice
-      const targetColContent = layout[colIdx]?.filter(n => n !== draggedCat);
-      const newLayout = withoutDrag.map(col => {
-        // Si esta columna es la target (mismo contenido)
-        const same = col.length === (targetColContent?.length || 0) &&
-          col.every((n, i) => n === targetColContent[i]);
-        return same ? [draggedCat, ...col] : col;
-      });
-      // Si la columna objetivo quedó vacía, era la misma que el dragged y fue eliminada
-      // En ese caso simplemente agregar como nueva columna
-      const found = newLayout.some(col => col.includes(draggedCat));
-      saveLayout(found ? newLayout : [...newLayout, [draggedCat]]);
+      // Quitar el dragged del layout y ajustar índice destino si la col fuente era anterior
+      const newLayout = layout.map(col => col.filter(n => n !== draggedCat)).filter(col => col.length > 0);
+      const adjustedIdx = src.colIndex < colIdx ? colIdx - 1 : colIdx;
+      if (newLayout[adjustedIdx]) {
+        newLayout[adjustedIdx] = [draggedCat, ...newLayout[adjustedIdx]];
+      } else {
+        newLayout.push([draggedCat]);
+      }
+      saveLayout(newLayout);
       return;
     }
 
@@ -383,15 +378,14 @@ export default function TasksPage() {
     const bottomMatch = String(overId).match(/^__COL_BOTTOM_(\d+)__$/);
     if (bottomMatch) {
       const colIdx = parseInt(bottomMatch[1]);
-      const withoutDrag = removeFromLayout(layout, draggedCat);
-      const targetColContent = layout[colIdx]?.filter(n => n !== draggedCat);
-      const newLayout = withoutDrag.map(col => {
-        const same = col.length === (targetColContent?.length || 0) &&
-          col.every((n, i) => n === targetColContent[i]);
-        return same ? [...col, draggedCat] : col;
-      });
-      const found = newLayout.some(col => col.includes(draggedCat));
-      saveLayout(found ? newLayout : [...newLayout, [draggedCat]]);
+      const newLayout = layout.map(col => col.filter(n => n !== draggedCat)).filter(col => col.length > 0);
+      const adjustedIdx = src.colIndex < colIdx ? colIdx - 1 : colIdx;
+      if (newLayout[adjustedIdx]) {
+        newLayout[adjustedIdx] = [...newLayout[adjustedIdx], draggedCat];
+      } else {
+        newLayout.push([draggedCat]);
+      }
+      saveLayout(newLayout);
       return;
     }
 
