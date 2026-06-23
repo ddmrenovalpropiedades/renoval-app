@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { ChevronLeft, ChevronRight, Save, Edit2, Trash2, Check, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Edit2, Trash2, Check, X, Download } from 'lucide-react';
+import { useExcelExport } from '../hooks/useExcelExport';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const formatMes = (mes) => { const [y, m] = mes.split('-'); return `${MESES_ES[parseInt(m) - 1]} ${y}`; };
@@ -170,6 +171,7 @@ export default function ArrendadasPage() {
   const [currentMes, setCurrentMes] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { exportToExcel } = useExcelExport();
 
   const fetchMeses = useCallback(async () => {
     const { data } = await supabase.from('arrendadas_meses').select('mes').order('mes', { ascending: false });
@@ -190,31 +192,41 @@ export default function ArrendadasPage() {
   useEffect(() => { fetchMeses(); }, [fetchMeses]);
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
-  // ── Realtime ──────────────────────────────────────────────────
   useEffect(() => {
     if (!currentMes) return;
     const channel = supabase
       .channel(`arrendadas_realtime_${currentMes}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'arrendadas', filter: `mes=eq.${currentMes}` }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setRows(prev => [...prev, payload.new]);
-        } else if (payload.eventType === 'UPDATE') {
-          setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
-        } else if (payload.eventType === 'DELETE') {
-          setRows(prev => prev.filter(r => r.id !== payload.old.id));
-        }
-      })
-      .subscribe();
+        if (payload.eventType === 'INSERT') setRows(prev => [...prev, payload.new]);
+        else if (payload.eventType === 'UPDATE') setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
+        else if (payload.eventType === 'DELETE') setRows(prev => prev.filter(r => r.id !== payload.old.id));
+      }).subscribe();
     return () => supabase.removeChannel(channel);
   }, [currentMes]);
 
-  const handleUpdate = (id, updates) => {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-  };
+  const handleUpdate = (id, updates) => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
   const handleDelete = async (id) => {
     await supabase.from('arrendadas').delete().eq('id', id);
     setRows(prev => prev.filter(r => r.id !== id));
   };
+
+  const handleExport = () => exportToExcel(rows, [
+    { key: 'propiedad',   label: 'Propiedad' },
+    { key: 'arriendo',    label: 'Arriendo' },
+    { key: 'comision',    label: 'Comisión' },
+    { key: 'tipo',        label: 'Tipo' },
+    { key: 'admin',       label: 'Admin' },
+    { key: 'e1',          label: 'E1' },
+    { key: 'e2',          label: 'E2' },
+    { key: 'entrega',     label: 'Fecha Entrega' },
+    { key: 'contrato',    label: 'Contrato' },
+    { key: 'liquidacion', label: 'Liquidación' },
+    { key: 'fecha_gar',   label: 'Fecha Gar.' },
+    { key: 'dev_gar',     label: 'Dev Gar' },
+    { key: 'cuentas',     label: 'Cuentas' },
+    { key: 'promocion',   label: 'Promoción' },
+    { key: 'meses',       label: 'Meses promo' },
+  ], `Arrendadas_${currentMes}`);
 
   const mesIdx = meses.indexOf(currentMes);
   const canPrev = mesIdx < meses.length - 1;
@@ -231,10 +243,16 @@ export default function ArrendadasPage() {
           <h1 style={styles.title}>Propiedades Arrendadas</h1>
           <p style={styles.subtitle}>{rows.length} propiedades · {currentMes ? formatMes(currentMes) : ''}</p>
         </div>
-        <div style={styles.monthNav}>
-          <button onClick={() => setCurrentMes(meses[mesIdx + 1])} disabled={!canPrev} style={styles.navBtn}><ChevronLeft size={18} /></button>
-          <span style={styles.monthLabel}>{currentMes ? formatMes(currentMes) : ''}</span>
-          <button onClick={() => setCurrentMes(meses[mesIdx - 1])} disabled={!canNext} style={styles.navBtn}><ChevronRight size={18} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={handleExport} disabled={loading || rows.length === 0} title="Exportar a Excel"
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:(loading||rows.length===0)?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:(loading||rows.length===0)?0.5:1 }}>
+            <Download size={14} color="#34a853" /> Excel
+          </button>
+          <div style={styles.monthNav}>
+            <button onClick={() => setCurrentMes(meses[mesIdx + 1])} disabled={!canPrev} style={styles.navBtn}><ChevronLeft size={18} /></button>
+            <span style={styles.monthLabel}>{currentMes ? formatMes(currentMes) : ''}</span>
+            <button onClick={() => setCurrentMes(meses[mesIdx - 1])} disabled={!canNext} style={styles.navBtn}><ChevronRight size={18} /></button>
+          </div>
         </div>
       </div>
 
