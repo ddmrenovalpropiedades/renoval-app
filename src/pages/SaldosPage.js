@@ -332,8 +332,13 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
                     ...st.th, minWidth:70, textAlign:'center',
                     ...(c.groupStart?{borderLeft:'2px solid #bdbdbd'}:{}),
                     ...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{}),
-                    ...(hc.bg ? { background: hc.bg, color: hc.color } : {}),
-                  }}>{c.label}</th>
+                  }}>
+                    {hc.bg ? (
+                      <span style={{ display:'inline-block', background:hc.bg, color:hc.color, borderRadius:20, padding:'2px 10px', fontWeight:700, fontSize:10, letterSpacing:0.5 }}>
+                        {c.label}
+                      </span>
+                    ) : c.label}
+                  </th>
                 );
               })}
               <th style={{...st.th,minWidth:40}}></th>
