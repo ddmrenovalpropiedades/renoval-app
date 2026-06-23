@@ -32,13 +32,9 @@ function flattenLayout(layout) {
   return layout.flat();
 }
 
-// Convierte array plano [A,B,C,D,E] → layout de 2 por columna [[A,B],[C,D],[E]]
+// Convierte array plano [A,B,C,D,E] → una columna por listado [[A],[B],[C],[D],[E]]
 function buildDefaultLayout(names) {
-  const cols = [];
-  for (let i = 0; i < names.length; i += 2) {
-    cols.push(names.slice(i, i + 2));
-  }
-  return cols;
+  return names.map(name => [name]);
 }
 
 // Devuelve { colIndex, rowIndex } de un listado en el layout, o null
@@ -268,14 +264,7 @@ export default function TasksPage() {
         setCategories(prev => [...(prev || []), data]);
         setLayout(prev => {
           if (!prev) return prev;
-          // Agregar PAGOS al final
-          const last = prev[prev.length - 1];
-          let newLayout;
-          if (last && last.length < 2) {
-            newLayout = [...prev.slice(0, -1), [...last, 'PAGOS']];
-          } else {
-            newLayout = [...prev, ['PAGOS']];
-          }
+          const newLayout = [...prev, ['PAGOS']];
           localStorage.setItem(`tasksLayout_${profile.email}`, JSON.stringify(newLayout));
           return newLayout;
         });
@@ -293,14 +282,7 @@ export default function TasksPage() {
     if (data) {
       setCategories(prev => [...(prev || []), data]);
       setLayout(prev => {
-        if (!prev) return [[data.name]];
-        const last = prev[prev.length - 1];
-        let newLayout;
-        if (last && last.length < 2) {
-          newLayout = [...prev.slice(0, -1), [...last, data.name]];
-        } else {
-          newLayout = [...prev, [data.name]];
-        }
+        const newLayout = prev ? [...prev, [data.name]] : [[data.name]];
         localStorage.setItem(`tasksLayout_${profile?.email}`, JSON.stringify(newLayout));
         return newLayout;
       });
