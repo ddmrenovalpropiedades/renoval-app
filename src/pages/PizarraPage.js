@@ -876,7 +876,24 @@ export default function PizarraPage() {
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
 
-  const HEADERS = ['PROPIEDAD','PRECIO','PROMO','PUBLICACION','E1','E2','D/B','E/B','COMUNA','FECHA SALIDA','AVISO','RESPALDO','TIPO','ADMIN','URL',''];
+  const HEADERS = [
+    { label: 'PROPIEDAD',    minWidth: 200 },
+    { label: 'PRECIO',       minWidth: 90  },
+    { label: 'PROMO',        minWidth: 90  },
+    { label: 'PUBLICACION',  minWidth: 80  },
+    { label: 'E1',           minWidth: 70  },
+    { label: 'E2',           minWidth: 70  },
+    { label: 'D/B',          minWidth: 55  },
+    { label: 'E/B',          minWidth: 55  },
+    { label: 'COMUNA',       minWidth: 90  },
+    { label: 'FECHA SALIDA', minWidth: 90  },
+    { label: 'AVISO',        minWidth: 65  },
+    { label: 'RESPALDO',     minWidth: 65  },
+    { label: 'TIPO',         minWidth: 80  },
+    { label: 'ADMIN',        minWidth: 55  },
+    { label: 'URL',          minWidth: 45  },
+    { label: '',             minWidth: 80  },
+  ];
 
   return (
     <div style={styles.container}>
@@ -910,7 +927,7 @@ export default function PizarraPage() {
             <thead>
               <tr>
                 {HEADERS.map((h, i) => (
-                  <th key={i} style={{ ...styles.th, textAlign: h === 'PROPIEDAD' ? 'left' : 'center' }}>{h}</th>
+                  <th key={i} style={{ ...styles.th, textAlign: h.label === 'PROPIEDAD' ? 'left' : 'center', minWidth: h.minWidth }}>{h.label}</th>
                 ))}
               </tr>
             </thead>
