@@ -40,14 +40,14 @@ async function getAccessToken() {
 async function findOrCreateFolder(token, name, parentId) {
   const q = `mimeType='application/vnd.google-apps.folder' and name='${name}' and '${parentId}' in parents and trashed=false`;
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
   if (data.files && data.files.length > 0) return data.files[0].id;
 
   // Crear carpeta
-  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
@@ -353,11 +353,13 @@ export default async function handler(req, res) {
     const token = await getAccessToken();
 
     // 2. Navegar / crear estructura de carpetas
-    // Buscar "RENOVAL PROPIEDADES" en Mi Unidad
+    // Buscar "RENOVAL PROPIEDADES" sin restricción de parent (más robusto)
     const rootSearch = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='RENOVAL PROPIEDADES' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false")}&fields=files(id,name)`,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='RENOVAL PROPIEDADES' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id,name,parents)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
       { headers: { Authorization: `Bearer ${token}` } }
     ).then(r => r.json());
+
+    console.log('Búsqueda carpeta raíz:', JSON.stringify(rootSearch));
 
     if (!rootSearch.files?.length) throw new Error('No se encontró la carpeta "RENOVAL PROPIEDADES" en Mi Unidad');
     const renovalId = rootSearch.files[0].id;
