@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
+
 const supabase = createClient(
   process.env.REACT_APP_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
 const INITIALS_TO_EMAIL = {
   DD: 'ddm@renovalpropiedades.com',
   FD: 'fdm@renovalpropiedades.com',
@@ -37,18 +39,18 @@ export default async function handler(req, res) {
     .eq('fecha', targetStr);
 
   if (pagosError) return res.status(500).json({ error: pagosError.message });
+
   if (!pagos || pagos.length === 0) {
-    return res.status(200).json({ message: `No hay pagos que cumplan 90 días el ${targetStr}.` });
+    // Aun sin pagos, seguir para ejecutar el respaldo si corresponde
   }
 
   const created = [];
   const skipped = [];
 
-  for (const pago of pagos) {
+  for (const pago of (pagos || [])) {
     const ownerEmail = INITIALS_TO_EMAIL[pago.pagado_por];
     if (!ownerEmail) continue;
 
-    // Buscar template para este rol
     const roleKey = pago.pagado_por.toLowerCase();
     const tpl = templates.find(t => t.assignee_role === roleKey);
     if (!tpl) continue;
@@ -88,7 +90,6 @@ export default async function handler(req, res) {
       continue;
     }
 
-    // Insertar subtareas si las hay
     const subtasks = tpl.subtasks || [];
     for (let i = 0; i < subtasks.length; i++) {
       await supabase.from('tasks').insert({
@@ -104,9 +105,36 @@ export default async function handler(req, res) {
     created.push(pago.propiedad);
   }
 
+  // ── Respaldo semanal a Drive (solo los lunes) ─────────────────────────────
+  let backupResult = null;
+  const hoy = new Date();
+  const esLunes = hoy.getDay() === 1; // 0=Dom, 1=Lun, 2=Mar...
+
+  if (esLunes) {
+    try {
+      console.log('Lunes detectado — iniciando respaldo semanal a Drive...');
+      const backupRes = await fetch(
+        'https://renoval-app.vercel.app/api/backup-to-drive',
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        }
+      );
+      const backupData = await backupRes.json();
+      backupResult = backupData.ok
+        ? { ok: true, carpeta: backupData.carpeta }
+        : { ok: false, error: backupData.error };
+      console.log('Respaldo Drive:', backupResult.ok ? `✓ ${backupResult.carpeta}` : `✗ ${backupResult.error}`);
+    } catch (e) {
+      console.error('Error al llamar backup-to-drive:', e.message);
+      backupResult = { ok: false, error: e.message };
+    }
+  }
+
   return res.status(200).json({
     message: `Revisión completada para ${targetStr}.`,
     created,
     skipped,
+    ...(backupResult ? { backup: backupResult } : {}),
   });
 }
