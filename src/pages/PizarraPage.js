@@ -523,7 +523,14 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  useEffect(() => { setForm(prev => ({ ...prev, ...row })); }, [row]);
+  const hasEdits = !isNew && JSON.stringify(form) !== JSON.stringify({ ...EMPTY_FORM, ...row });
+  const hasEditsRef = useRef(false);
+  hasEditsRef.current = hasEdits;
+
+  useEffect(() => {
+    // Solo sincronizar desde el servidor si no hay cambios locales pendientes
+    if (!hasEditsRef.current) setForm(prev => ({ ...prev, ...row }));
+  }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const errors = attempted ? {
     propiedad:   !form.propiedad.trim(),
@@ -536,7 +543,26 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
 
   const set = (k, v) => {
     setForm(prev => ({ ...prev, [k]: v }));
-    if (!isNew) supabase.from('pizarra').update({ [k]: v || null }).eq('id', row.id).then(() => onSave({ ...row, [k]: v }));
+  };
+
+  const handleSave = async () => {
+    await supabase.from('pizarra').update({
+      propiedad: form.propiedad || null,
+      precio: form.precio || null,
+      promo: form.promo || null,
+      status: form.status || null,
+      e1: form.e1 || null,
+      e2: form.e2 || null,
+      db: form.db || null,
+      eb: form.eb || null,
+      comuna: form.comuna || null,
+      fecha_salida: form.fecha_salida || null,
+      aviso: form.aviso || null,
+      respaldo: form.respaldo || null,
+      tipo: form.tipo || null,
+      admin: form.admin || null,
+    }).eq('id', row.id);
+    onSave({ ...row, ...form });
   };
 
   const handleNewSave = async () => {
@@ -708,6 +734,11 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         </button>
       </td>
       <td style={styles.tdActions}>
+        {hasEdits && (
+          <button onClick={handleSave} style={styles.actionBtnGreen} title="Guardar cambios">
+            <Check size={14} />
+          </button>
+        )}
         <button onClick={() => onOpenDisponibilidad(row)} style={styles.actionBtnPurple}><Calendar size={13} /></button>
         <button onClick={() => onRented(row)} style={styles.actionBtnBlue}><Home size={13} /></button>
         {confirmDelete ? (
