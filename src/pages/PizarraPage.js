@@ -7,7 +7,7 @@ import DisponibilidadSidebar from '../components/pizarra/DisponibilidadSidebar';
 
 
 
-// ── PropertyAutocomplete (inline, copia exacta de components/PropertyAutocomplete) ──
+// ── PropertyAutocomplete (inline) ─────────────────────────────
 const normalizeStr = (str) =>
   str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -18,7 +18,8 @@ const transformAddress = (full) => {
     .replace(/\bCasa\s+/gi, 'C');
 };
 
-function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', hasError = false, inputStyle = {} }) {
+// onSelect recibe el objeto completo { propiedad, e1, e2 } para autocompletar encargados
+function PropertyAutocomplete({ value, onChange, onSelect, placeholder = 'Dirección *', hasError = false, inputStyle = {} }) {
   const [properties, setProperties] = useState([]);
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -29,9 +30,10 @@ function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', h
       let all = [];
       let from = 0;
       while (true) {
-        const { data, error } = await supabase.from('properties').select('propiedad').range(from, from + 999);
+        // Cargar también e1 y e2 para autocompletar encargados
+        const { data, error } = await supabase.from('properties').select('propiedad, e1, e2').range(from, from + 999);
         if (error || !data || data.length === 0) break;
-        all = [...all, ...data.map(p => p.propiedad)];
+        all = [...all, ...data];
         if (data.length < 1000) break;
         from += 1000;
       }
@@ -45,7 +47,7 @@ function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', h
     const words = normalizeStr(value.trim()).split(/\s+/).filter(Boolean);
     return properties
       .filter(p => {
-        const norm = normalizeStr(p);
+        const norm = normalizeStr(p.propiedad);
         return words.every(w => norm.includes(w));
       })
       .slice(0, 8);
@@ -59,8 +61,10 @@ function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', h
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const handleSelect = (prop) => {
-    onChange(transformAddress(prop));
+  const handleSelect = (item) => {
+    onChange(transformAddress(item.propiedad));
+    // Notificar e1/e2 al padre si se proveyó callback
+    if (onSelect) onSelect({ e1: item.e1 || '', e2: item.e2 || '' });
     setOpen(false);
   };
 
@@ -95,8 +99,8 @@ function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', h
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 9999,
           marginTop: 2, overflow: 'hidden',
         }}>
-          {suggestions.map((prop, i) => (
-            <div key={i} onMouseDown={() => handleSelect(prop)}
+          {suggestions.map((item, i) => (
+            <div key={i} onMouseDown={() => handleSelect(item)}
               style={{
                 padding: '8px 12px', fontSize: 12, cursor: 'pointer',
                 borderBottom: i < suggestions.length - 1 ? '1px solid #f1f3f4' : 'none',
@@ -104,8 +108,15 @@ function PropertyAutocomplete({ value, onChange, placeholder = 'Dirección *', h
               }}
               onMouseEnter={e => e.currentTarget.style.background = '#f0f7ff'}
               onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-              <div style={{ fontWeight: 600 }}>{transformAddress(prop)}</div>
-              <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 1 }}>{prop}</div>
+              <div style={{ fontWeight: 600 }}>{transformAddress(item.propiedad)}</div>
+              <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 1 }}>
+                {item.propiedad}
+                {(item.e1 || item.e2) && (
+                  <span style={{ marginLeft: 8, color: '#1a73e8' }}>
+                    {[item.e1, item.e2].filter(Boolean).join(' / ')}
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -160,7 +171,8 @@ const parsePrice = (val) => {
     const n = parseFloat(ufMatch[1].replace(',', '.'));
     return { amount: n, isUF: true };
   }
-  const n = parseFloat(str.replace(/[$.]/g, '').replace(',', '.'));
+  // Eliminar puntos de miles y símbolo $, luego parsear
+  const n = parseFloat(str.replace(/\$/g, '').replace(/\./g, '').replace(',', '.'));
   return { amount: isNaN(n) ? null : n, isUF: false };
 };
 
@@ -219,14 +231,11 @@ async function createAutoTasks(trigger, propiedad, e1, e2, tipo, fechaEntrega) {
   }
 }
 
-// ── SlashInput: edita los dos dígitos separados por "/"
-// En modo display muestra solo "2/1" sin contenedores blancos.
-// Col indica si es D/B o E/B para el display (no afecta al valor guardado).
+// ── SlashInput ────────────────────────────────────────────────
 function SlashInput({ value, onChange }) {
   const [editing, setEditing] = useState(false);
   const leftRef = useRef(null);
 
-  // valor guardado como "2/1"
   const parts = (value || '').split('/');
   const left  = parts[0] || '';
   const right = parts[1] !== undefined ? parts[1] : '';
@@ -237,32 +246,21 @@ function SlashInput({ value, onChange }) {
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}
         onBlur={e => {
-          // cerrar solo si el foco sale del grupo completo
           if (!e.currentTarget.contains(e.relatedTarget)) setEditing(false);
         }}>
-        <input
-          ref={leftRef}
-          autoFocus
-          value={left}
-          maxLength={1}
+        <input ref={leftRef} autoFocus value={left} maxLength={1}
           onChange={e => update(e.target.value.replace(/[^0-9]/g, ''), right)}
-          style={slashInputStyle}
-        />
+          style={slashInputStyle} />
         <span style={{ fontSize: 12, color: '#5f6368' }}>/</span>
-        <input
-          value={right}
-          maxLength={1}
+        <input value={right} maxLength={1}
           onChange={e => update(left, e.target.value.replace(/[^0-9]/g, ''))}
-          style={slashInputStyle}
-        />
+          style={slashInputStyle} />
       </div>
     );
   }
 
-  // Display: igual que el resto de celdas, sin bordes blancos
   return (
-    <div
-      onClick={() => setEditing(true)}
+    <div onClick={() => setEditing(true)}
       style={{ cursor: 'text', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 2px' }}>
       {(left || right)
         ? <span>{left || '—'}/{right || '—'}</span>
@@ -278,6 +276,9 @@ const slashInputStyle = {
 };
 
 // ── PriceInput ────────────────────────────────────────────────
+// Fixes:
+// 1. displayRaw nunca formatea con toLocaleString para evitar el loop de puntos
+// 2. onBlur guarda aunque raw esté vacío (permite dejar la celda vacía)
 function PriceInput({ value, onChange, uf, isNew }) {
   const [editing, setEditing] = useState(false);
   const [currency, setCurrency] = useState('CLP');
@@ -289,9 +290,22 @@ function PriceInput({ value, onChange, uf, isNew }) {
     : '';
   const displaySub = isUF && uf && amount ? formatCLP(amount * uf) : '';
 
-  const displayRaw = currency === 'CLP' && raw
-    ? parseInt(raw || '0').toLocaleString('es-CL')
-    : raw;
+  const startEditing = () => {
+    setCurrency(isUF ? 'UF' : 'CLP');
+    // raw siempre como número limpio sin puntos ni $
+    setRaw(amount != null ? String(amount) : '');
+    setEditing(true);
+  };
+
+  const commitEdit = () => {
+    setEditing(false);
+    if (raw === '') {
+      // Permitir dejar vacío
+      onChange('');
+    } else {
+      onChange(currency === 'UF' ? `UF ${raw}` : raw);
+    }
+  };
 
   if (editing) {
     return (
@@ -304,12 +318,11 @@ function PriceInput({ value, onChange, uf, isNew }) {
           <option value="UF">UF</option>
         </select>
         <input autoFocus
-          value={displayRaw}
+          value={raw}
           onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
           onBlur={e => {
             if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return;
-            setEditing(false);
-            if (raw) onChange(currency === 'UF' ? `UF ${raw}` : raw);
+            commitEdit();
           }}
           onKeyDown={e => e.key === 'Enter' && e.target.blur()}
           style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, padding: '0 5px', fontFamily: 'inherit' }} />
@@ -319,7 +332,7 @@ function PriceInput({ value, onChange, uf, isNew }) {
 
   if (isNew) {
     return (
-      <div onClick={() => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount ? String(amount) : ''); setEditing(true); }}
+      <div onClick={startEditing}
         style={{ cursor: 'text', fontSize: 12, height: 28, boxSizing: 'border-box', border: '1px solid #dadce0', borderRadius: 6, background: '#fff', padding: '0 6px', display: 'flex', alignItems: 'center', minWidth: 80 }}>
         {displayMain ? <span>{displayMain}</span> : <span style={{ color: '#9aa0a6' }}>—</span>}
       </div>
@@ -327,7 +340,7 @@ function PriceInput({ value, onChange, uf, isNew }) {
   }
 
   return (
-    <div onClick={() => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount ? String(amount) : ''); setEditing(true); }}
+    <div onClick={startEditing}
       style={{ cursor: 'text', fontSize: 12, padding: '2px 4px', borderRadius: 4, minWidth: 60 }}>
       {displayMain ? (
         <div>
@@ -339,7 +352,7 @@ function PriceInput({ value, onChange, uf, isNew }) {
   );
 }
 
-// ── DateCellInput: filas existentes ──────────────────────────
+// ── DateCellInput ─────────────────────────────────────────────
 function DateCellInput({ value, onChange }) {
   const ref = useRef(null);
   return (
@@ -352,7 +365,7 @@ function DateCellInput({ value, onChange }) {
   );
 }
 
-// ── DateFieldNew: fila nueva, campo blanco con ícono ─────────
+// ── DateFieldNew ──────────────────────────────────────────────
 function DateFieldNew({ value, onChange, hasError }) {
   const ref = useRef(null);
   const openPicker = () => ref.current && ref.current.showPicker && ref.current.showPicker();
@@ -475,7 +488,6 @@ function InlineSelectCell({ value, options, onChange }) {
   );
 }
 
-// estilos base fila nueva
 const newRowInput = {
   border: '1px solid #dadce0', borderRadius: 6, fontSize: 12, outline: 'none',
   fontFamily: 'inherit', background: '#fff', height: 28, boxSizing: 'border-box',
@@ -487,7 +499,6 @@ const newRowSelect = {
   padding: '0 4px', cursor: 'pointer',
 };
 
-// ── SlashInput fila nueva: siempre muestra los dos inputs ─────
 function SlashInputNew({ value, onChange }) {
   const parts = (value || '').split('/');
   const left  = parts[0] || '';
@@ -509,33 +520,42 @@ function SlashInputNew({ value, onChange }) {
 // ── PropertyRow ───────────────────────────────────────────────
 function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
-  const [errors, setErrors] = useState({});
+  const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => { setForm(prev => ({ ...prev, ...row })); }, [row]);
+
+  const errors = attempted ? {
+    propiedad:   !form.propiedad.trim(),
+    fecha_salida: !form.fecha_salida,
+    e1:           !form.e1,
+    e2:           !form.e2,
+    tipo:         !form.tipo,
+    admin:        !form.admin,
+  } : {};
 
   const set = (k, v) => {
     setForm(prev => ({ ...prev, [k]: v }));
     if (!isNew) supabase.from('pizarra').update({ [k]: v || null }).eq('id', row.id).then(() => onSave({ ...row, [k]: v }));
   };
 
-  const validate = () => {
-    const e = {};
-    if (!form.propiedad.trim()) e.propiedad = true;
-    if (!form.fecha_salida) e.fecha_salida = true;
-    if (!form.e1) e.e1 = true;
-    if (!form.e2) e.e2 = true;
-    if (!form.tipo) e.tipo = true;
-    if (!form.admin) e.admin = true;
-    setErrors(e);
-    return e;
-  };
-
   const handleNewSave = async () => {
-    const e = validate();
-    if (Object.keys(e).length > 0) return;
+    setAttempted(true);
+    const hasErrors = !form.propiedad.trim() || !form.fecha_salida || !form.e1 || !form.e2 || !form.tipo || !form.admin;
+    if (hasErrors) return;
     await onSave(form);
     if (onCancelNew) onCancelNew();
+  };
+
+  // Callback para autocompletar E1/E2 desde Cartera al seleccionar propiedad
+  const handlePropSelect = ({ e1, e2 }) => {
+    if (isNew) {
+      setForm(prev => ({
+        ...prev,
+        e1: e1 || prev.e1,
+        e2: e2 || prev.e2,
+      }));
+    }
   };
 
   const days = daysDiff(form.fecha_salida);
@@ -550,7 +570,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     </select>
   );
 
-  // Estilo del wrapper div para campos obligatorios (select no acepta border en todos los browsers)
   const reqWrapper = (field) => ({
     border: errors[field] ? '1px solid #ea4335' : '1px solid #dadce0',
     background: errors[field] ? '#fce8e6' : '#fff',
@@ -569,6 +588,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         <PropertyAutocomplete
           value={form.propiedad}
           onChange={v => setForm(p => ({ ...p, propiedad: v }))}
+          onSelect={handlePropSelect}
           hasError={!!errors.propiedad}
           inputStyle={{ height: 28, boxSizing: 'border-box', fontSize: 12 }}
         />
