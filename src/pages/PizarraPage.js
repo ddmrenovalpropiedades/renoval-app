@@ -478,7 +478,23 @@ function InlineEditCell({ value, onChange, uppercase }) {
   );
 }
 
-function InlineSelectCell({ value, options, onChange }) {
+function InlineSelectCell({ value, options, onChange, colors }) {
+  if (colors) {
+    return (
+      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+        {value && (
+          <span style={{ position: 'absolute', pointerEvents: 'none', fontSize: 11, fontWeight: 700, color: colors[value] || '#5f6368', background: (colors[value] || '#9aa0a6') + '22', border: `1px solid ${(colors[value] || '#9aa0a6')}44`, borderRadius: 20, padding: '1px 8px', zIndex: 1 }}>
+            {value}
+          </span>
+        )}
+        <select value={value || ''} onChange={e => onChange(e.target.value)}
+          style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', textAlign: 'center', lineHeight: 1, color: 'transparent', zIndex: 2, position: 'relative' }}>
+          <option value="">—</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+    );
+  }
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}
       style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', textAlign: 'center', lineHeight: 1 }}>
@@ -632,15 +648,17 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         </select>
       </td>
       <td style={styles.tdCenter}>
-        <div style={reqWrapper('e1')}>
-          <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={selectInsideWrapper}>
+        <div style={{ ...reqWrapper('e1'), position: 'relative' }}>
+          {form.e1 && <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', fontSize: 11, fontWeight: 700, color: ENCARGADO_COLORS[form.e1], background: ENCARGADO_COLORS[form.e1] + '22', border: `1px solid ${ENCARGADO_COLORS[form.e1]}44`, borderRadius: 20, padding: '1px 8px', zIndex: 1, whiteSpace: 'nowrap' }}>{form.e1}</span>}
+          <select value={form.e1||''} onChange={e=>setForm(p=>({...p,e1:e.target.value}))} style={{ ...selectInsideWrapper, color: 'transparent', zIndex: 2, position: 'relative' }}>
             <option value="">—</option><option>DD</option><option>FD</option>
           </select>
         </div>
       </td>
       <td style={styles.tdCenter}>
-        <div style={reqWrapper('e2')}>
-          <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={selectInsideWrapper}>
+        <div style={{ ...reqWrapper('e2'), position: 'relative' }}>
+          {form.e2 && <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', fontSize: 11, fontWeight: 700, color: ENCARGADO_COLORS[form.e2], background: ENCARGADO_COLORS[form.e2] + '22', border: `1px solid ${ENCARGADO_COLORS[form.e2]}44`, borderRadius: 20, padding: '1px 8px', zIndex: 1, whiteSpace: 'nowrap' }}>{form.e2}</span>}
+          <select value={form.e2||''} onChange={e=>setForm(p=>({...p,e2:e.target.value}))} style={{ ...selectInsideWrapper, color: 'transparent', zIndex: 2, position: 'relative' }}>
             <option value="">—</option><option>EA</option><option>FG</option>
           </select>
         </div>
@@ -714,8 +732,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
           <option value="Listo">Listo</option>
         </select>
       </td>
-      <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} /></td>
-      <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} /></td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} colors={ENCARGADO_COLORS} /></td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} colors={ENCARGADO_COLORS} /></td>
       <td style={styles.tdCenter}><SlashInput value={form.db} onChange={v => set('db', v)} /></td>
       <td style={styles.tdCenter}><SlashInput value={form.eb} onChange={v => set('eb', v)} /></td>
       <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} uppercase /></td>
