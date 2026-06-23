@@ -244,9 +244,9 @@ export default function ArrendadasPage() {
           <p style={styles.subtitle}>{rows.length} propiedades · {currentMes ? formatMes(currentMes) : ''}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={handleExport} disabled={loading || rows.length === 0} title="Exportar a Excel"
-            style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:(loading||rows.length===0)?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:(loading||rows.length===0)?0.5:1 }}>
-            <Download size={14} color="#34a853" /> Excel
+          <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
+          style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1 }}>
+          <Download size={15} color="#34a853" />
           </button>
           <div style={styles.monthNav}>
             <button onClick={() => setCurrentMes(meses[mesIdx + 1])} disabled={!canPrev} style={styles.navBtn}><ChevronLeft size={18} /></button>
