@@ -860,7 +860,8 @@ function ReportabilidadTab() {
 
 // ── MAIN ──────────────────────────────────────────────────────
 export default function SaldosPage() {
-  useAuth();
+  const { profile } = useAuth();
+  const isOwner = profile?.isOwner;
   const [tab, setTab] = useState('saldos');
   const [rows, setRows] = useState([]);
   const [attrsMap, setAttrsMap] = useState({});
@@ -871,7 +872,7 @@ export default function SaldosPage() {
 
   const { exportToExcel } = useExcelExport();
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (tab === 'saldos') {
       exportToExcel(rows.filter(r => r.last_cuentas_ac || r.last_cuentas_an || r.last_arriendos), [
         { key: 'propiedad',      label: 'Propiedad' },
@@ -888,6 +889,49 @@ export default function SaldosPage() {
         { key: 'gc_an',          label: 'GC An' },
         { key: 'deuda_arriendo', label: 'Deuda Arriendo' },
       ], 'Saldos');
+    } else if (tab === 'consultas' || tab === 'reportabilidad') {
+      // Fetch fresco de config y logs para exportar todo, no solo el mes visible
+      const mesActual = currentMes();
+      const [{ data: cfg }, { data: allLogs }] = await Promise.all([
+        supabase.from('gc_consultas_config').select('*').order('propiedad'),
+        supabase.from('gc_consultas_log').select('*').order('mes', { ascending: false }),
+      ]);
+
+      if (tab === 'consultas') {
+        const logMapActual = {};
+        (allLogs || []).filter(l => l.mes === mesActual).forEach(l => { logMapActual[l.propiedad] = l; });
+        const consultasRows = (cfg || []).map(r => {
+          const logRow = logMapActual[r.propiedad] || {};
+          return {
+            propiedad:     r.propiedad,
+            cartera:       r.cartera || '',
+            mail_admin:    r.mail_admin || '',
+            status:        logRow.status || '',
+            gc_valor:      logRow.gc_valor || '',
+            enviado_at:    logRow.enviado_at ? new Date(logRow.enviado_at).toLocaleDateString('es-CL') : '',
+            respondido_at: logRow.respondido_at ? new Date(logRow.respondido_at).toLocaleDateString('es-CL') : '',
+          };
+        });
+        exportToExcel(consultasRows, [
+          { key: 'propiedad',     label: 'Propiedad' },
+          { key: 'cartera',       label: 'Cartera' },
+          { key: 'mail_admin',    label: 'Correo Admin' },
+          { key: 'status',        label: 'Estado' },
+          { key: 'gc_valor',      label: 'Valor GC' },
+          { key: 'enviado_at',    label: 'Enviado' },
+          { key: 'respondido_at', label: 'Respondido' },
+        ], 'ConsultasGC');
+      } else {
+        // Reportabilidad: historial completo
+        exportToExcel(allLogs || [], [
+          { key: 'propiedad',     label: 'Propiedad' },
+          { key: 'mes',           label: 'Mes' },
+          { key: 'status',        label: 'Estado' },
+          { key: 'gc_valor',      label: 'Valor GC' },
+          { key: 'enviado_at',    label: 'Enviado' },
+          { key: 'respondido_at', label: 'Respondido' },
+        ], 'Reportabilidad');
+      }
     }
   };
 
@@ -1054,10 +1098,18 @@ export default function SaldosPage() {
               <span style={{fontSize:13,color:'#3c4043'}}>{loadingGC?'Cargando...':'Cargar GC'}</span>
             </button>
           )}
-          <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
-            style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:loading?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:loading?0.5:1 }}>
-            <Download size={14} color="#34a853" /> Excel
-          </button>
+          {tab==='saldos' && isOwner && (
+            <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
+              style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1 }}>
+              <Download size={15} color="#34a853" />
+            </button>
+          )}
+          {(tab==='consultas'||tab==='reportabilidad') && (
+            <button onClick={handleExport} title="Exportar a Excel"
+              style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:'pointer' }}>
+              <Download size={15} color="#34a853" />
+            </button>
+          )}
           <button onClick={fetchData} style={st.iconBtn} title="Actualizar"><RefreshCw size={16} color="#5f6368"/></button>
           {tab==='saldos'&&<button onClick={()=>setShowUpload(!showUpload)} style={{...st.iconBtn,...(showUpload?{background:'#e8f0fe',borderColor:'#1a73e8'}:{})}}><Upload size={16} color={showUpload?'#1a73e8':'#5f6368'}/></button>}
         </div>
