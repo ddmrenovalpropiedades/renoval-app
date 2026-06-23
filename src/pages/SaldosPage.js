@@ -334,7 +334,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
                     ...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{}),
                   }}>
                     {hc.bg ? (
-                      <span style={{ display:'inline-block', background:hc.bg, color:hc.color, borderRadius:20, padding:'2px 10px', fontWeight:700, fontSize:10, letterSpacing:0.5 }}>
+                      <span style={{ display:'inline-block', background:hc.bg, color:hc.color, borderRadius:20, padding:'6px 10px', fontWeight:700, fontSize:10, letterSpacing:0.5, border:`1px solid ${hc.color}44` }}>
                         {c.label}
                       </span>
                     ) : c.label}
