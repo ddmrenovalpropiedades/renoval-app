@@ -151,7 +151,7 @@ export default function TasksPage() {
   // ── Estado de layout: [[cat, cat?], [cat, cat?], ...] ──────────────────────
   const [layout, setLayout] = useState(null); // null = no cargado aún
   const [draggingCategory, setDraggingCategory] = useState(null);
-  const [overDropZone, setOverDropZone] = useState(null); // id de zona activa
+
 
   const handleExportTareas = async () => {
     setExporting(true);
@@ -320,15 +320,9 @@ export default function TasksPage() {
     }
   };
 
-  const handleDragOver = (event) => {
-    const overId = event.over?.id;
-    setOverDropZone(overId || null);
-  };
-
   const handleDragEnd = (event) => {
     const { active, over } = event;
     setDraggingCategory(null);
-    setOverDropZone(null);
     if (!over || !layout) return;
 
     const draggedCat = active.id;
@@ -500,7 +494,6 @@ export default function TasksPage() {
                 sensors={sensors}
                 collisionDetection={pointerWithin}
                 onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
