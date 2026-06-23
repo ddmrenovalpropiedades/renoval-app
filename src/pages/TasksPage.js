@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   DndContext, KeyboardSensor, PointerSensor,
   useSensor, useSensors, DragOverlay, pointerWithin,
-  useDroppable,
 } from '@dnd-kit/core';
 import {
   sortableKeyboardCoordinates, arrayMove,
@@ -56,8 +55,6 @@ function removeFromLayout(layout, name) {
 
 // IDs de zonas drop especiales
 const DROP_ZONE_NEW_COL = '__NEW_COL__';
-function colDropId(colIdx) { return `__COL_DROP_${colIdx}__`; }
-
 // ── Componente columna sortable (drag handle en el nombre del listado) ────────
 function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis, ...props }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
@@ -80,11 +77,10 @@ function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis
   );
 }
 
-// ── Zona drop: columna invisible completa (useDroppable) ─────────────────────
-function DroppableColumn({ colIdx, isDraggingAny, children, style }) {
-  const { setNodeRef, isOver } = useDroppable({ id: colDropId(colIdx) });
+// ── Columna invisible: div simple con data-colidx para detección por posición ──
+const DroppableColumn = React.forwardRef(function DroppableColumn({ colIdx, isOver, children, style }, ref) {
   return (
-    <div ref={setNodeRef} style={{
+    <div ref={ref} data-colidx={colIdx} style={{
       ...style,
       outline: isOver ? '2px dashed #1a73e8' : '2px dashed transparent',
       borderRadius: 14,
@@ -94,13 +90,12 @@ function DroppableColumn({ colIdx, isDraggingAny, children, style }) {
       {children}
     </div>
   );
-}
+});
 
 // ── Zona drop: nueva columna al final (solo visible al arrastrar) ─────────────
-function NewColumnDropZone() {
-  const { setNodeRef, isOver } = useDroppable({ id: DROP_ZONE_NEW_COL });
+const NewColumnDropZone = React.forwardRef(function NewColumnDropZone({ isOver }, ref) {
   return (
-    <div ref={setNodeRef} style={{
+    <div ref={ref} style={{
       minWidth: isOver ? 100 : 40, width: isOver ? 100 : 40,
       alignSelf: 'stretch', minHeight: 80,
       border: `2px dashed ${isOver ? '#1a73e8' : '#c5cae9'}`,
@@ -109,12 +104,11 @@ function NewColumnDropZone() {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       flexShrink: 0,
       transition: 'all 0.15s',
-      opacity: 1,
     }}>
       {isOver && <Plus size={22} color="#1a73e8" />}
     </div>
   );
-}
+});
 
 export default function TasksPage() {
   const { profile } = useAuth();
@@ -151,6 +145,9 @@ export default function TasksPage() {
   // ── Estado de layout: [[cat, cat?], [cat, cat?], ...] ──────────────────────
   const [layout, setLayout] = useState(null); // null = no cargado aún
   const [draggingCategory, setDraggingCategory] = useState(null);
+  const [hoveredColIdx, setHoveredColIdx] = useState(null); // columna destacada durante drag
+  const colRefs = useRef([]); // refs a cada DroppableColumn
+  const newColRef = useRef(null); // ref a NewColumnDropZone
 
 
   const handleExportTareas = async () => {
@@ -313,21 +310,59 @@ export default function TasksPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // Detecta sobre qué columna (o zona nueva) está el puntero, basado en bounding rects
+  const getHoveredColFromPoint = useCallback((x, y) => {
+    // Primero chequear zona nueva columna
+    if (newColRef.current) {
+      const r = newColRef.current.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+        return 'new';
+      }
+    }
+    // Chequear columnas existentes
+    for (let i = 0; i < colRefs.current.length; i++) {
+      const el = colRefs.current[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+        return i;
+      }
+    }
+    return null;
+  }, []);
+
   const handleDragStart = (event) => {
     const id = event.active.id;
     if (layout && flattenLayout(layout).includes(id)) {
       setDraggingCategory(id);
+      setHoveredColIdx(null);
     }
+  };
+
+  const handleDragMove = (event) => {
+    if (!draggingCategory) return;
+    const point = event.activatorEvent;
+    // Usar la posición del puntero desde el evento nativo
+    const nativeEvent = event.activatorEvent;
+    // La posición actual viene de active.rect
+    const rect = event.active.rect.current?.translated;
+    if (!rect) return;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const hovered = getHoveredColFromPoint(cx, cy);
+    setHoveredColIdx(hovered);
   };
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
+    const finalHovered = hoveredColIdx;
     setDraggingCategory(null);
-    if (!over || !layout) return;
+    setHoveredColIdx(null);
 
+    // ── Drag de tarea dentro de columna (reorder vertical) ────────────────────
     const draggedCat = active.id;
-    if (!flattenLayout(layout).includes(draggedCat)) {
-      // Drag de tarea dentro de columna (reorder vertical)
+    if (!layout || !flattenLayout(layout).includes(draggedCat)) {
+      if (!over) return;
       for (const category of CATEGORIES) {
         const catTasks = tasksByCategory[category];
         const oldIndex = catTasks.findIndex(t => t.id === active.id);
@@ -341,25 +376,30 @@ export default function TasksPage() {
       return;
     }
 
-    const overId = String(over.id);
     const src = findInLayout(layout, draggedCat);
     if (!src) return;
 
+    // ── Usar posición del puntero para determinar destino ─────────────────────
+    const rect = event.active.rect.current?.translated;
+    if (!rect) return;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const targetCol = getHoveredColFromPoint(cx, cy);
+
     // ── Soltar en zona "nueva columna" ────────────────────────────────────────
-    if (overId === DROP_ZONE_NEW_COL) {
+    if (targetCol === 'new') {
       const withoutDrag = removeFromLayout(layout, draggedCat);
       saveLayout([...withoutDrag, [draggedCat]]);
       return;
     }
 
-    // ── Soltar sobre columna invisible (useDroppable) → agregar al final de esa col ──
-    const colDropMatch = overId.match(/^__COL_DROP_(\d+)__$/);
-    if (colDropMatch) {
-      const colIdx = parseInt(colDropMatch[1]);
-      // Si es la misma columna y tiene 1 elemento, no hacer nada
-      if (src.colIndex === colIdx && layout[colIdx].length === 1) return;
+    // ── Soltar sobre una columna existente ────────────────────────────────────
+    if (typeof targetCol === 'number') {
+      // Misma columna con 1 solo listado → no hacer nada
+      if (targetCol === src.colIndex && layout[src.colIndex].length === 1) return;
       const newLayout = layout.map(col => col.filter(n => n !== draggedCat)).filter(col => col.length > 0);
-      const adjustedIdx = src.colIndex < colIdx ? colIdx - 1 : colIdx;
+      // Ajustar índice: si la columna fuente era anterior al destino, el destino se corre -1
+      const adjustedIdx = src.colIndex < targetCol ? targetCol - 1 : targetCol;
       if (newLayout[adjustedIdx]) {
         newLayout[adjustedIdx] = [...newLayout[adjustedIdx], draggedCat];
       } else {
@@ -369,15 +409,7 @@ export default function TasksPage() {
       return;
     }
 
-    // ── Soltar sobre otro listado → swap de posiciones ────────────────────────
-    if (flattenLayout(layout).includes(overId) && overId !== draggedCat) {
-      const dst = findInLayout(layout, overId);
-      if (!dst) return;
-      const newLayout = layout.map(col => [...col]);
-      newLayout[src.colIndex][src.rowIndex] = overId;
-      newLayout[dst.colIndex][dst.rowIndex] = draggedCat;
-      saveLayout(newLayout);
-    }
+    // ── Sin destino claro → no hacer nada (el listado vuelve a su lugar) ─────
   };
 
   const handleCompleteTask = async (task) => {
@@ -399,7 +431,7 @@ export default function TasksPage() {
 
   const totalTasks = Object.values(tasksByCategory).flat().length;
 
-  // IDs sortables: solo los listados (las zonas drop usan useDroppable, no useSortable)
+  // IDs sortables: solo los listados (las columnas se detectan por bounding rect)
   const allSortableIds = layout ? flattenLayout(layout) : [];
 
   return (
@@ -494,6 +526,7 @@ export default function TasksPage() {
                 sensors={sensors}
                 collisionDetection={pointerWithin}
                 onDragStart={handleDragStart}
+                onDragMove={handleDragMove}
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
@@ -503,6 +536,8 @@ export default function TasksPage() {
                         <DroppableColumn
                           key={colIndex}
                           colIdx={colIndex}
+                          isOver={hoveredColIdx === colIndex}
+                          ref={el => colRefs.current[colIndex] = el}
                           style={styles.invisibleColumn}
                         >
                           {col.map((category, rowIndex) => (
@@ -529,7 +564,12 @@ export default function TasksPage() {
                         </DroppableColumn>
                       ))}
                       {/* Zona drop nueva columna */}
-                      {draggingCategory && <NewColumnDropZone />}
+                      {draggingCategory && (
+                        <NewColumnDropZone
+                          ref={newColRef}
+                          isOver={hoveredColIdx === 'new'}
+                        />
+                      )}
                     </div>
                   </div>
                 </SortableContext>
