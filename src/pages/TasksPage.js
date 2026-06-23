@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
-import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay, pointerWithin } from '@dnd-kit/core';
-import { sortableKeyboardCoordinates, arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import {
+  DndContext, KeyboardSensor, PointerSensor,
+  useSensor, useSensors, DragOverlay, pointerWithin,
+} from '@dnd-kit/core';
+import {
+  sortableKeyboardCoordinates, arrayMove,
+  SortableContext, verticalListSortingStrategy, useSortable,
+} from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useTasks } from '../hooks/useTasks';
 import { supabase } from '../supabaseClient';
@@ -19,13 +25,53 @@ import { exportTareasAllUsers } from '../hooks/exportTareasAllUsers';
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
 const DEFAULT_CATEGORIES = ['Llegada arrendatario', 'Publicar/Arrendar', 'Equipo', 'Solicitudes', 'Misceláneo', 'PAGOS'];
 
-function SortableColumn({ category, isDragging, ...props }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: category });
+// ── Helpers de layout ─────────────────────────────────────────────────────────
+
+// Convierte layout [[A,B],[C],[D,E]] → [A,B,C,D,E]
+function flattenLayout(layout) {
+  return layout.flat();
+}
+
+// Convierte array plano [A,B,C,D,E] → layout de 2 por columna [[A,B],[C,D],[E]]
+function buildDefaultLayout(names) {
+  const cols = [];
+  for (let i = 0; i < names.length; i += 2) {
+    cols.push(names.slice(i, i + 2));
+  }
+  return cols;
+}
+
+// Devuelve { colIndex, rowIndex } de un listado en el layout, o null
+function findInLayout(layout, name) {
+  for (let c = 0; c < layout.length; c++) {
+    const r = layout[c].indexOf(name);
+    if (r !== -1) return { colIndex: c, rowIndex: r };
+  }
+  return null;
+}
+
+// Elimina listado del layout y limpia columnas vacías
+function removeFromLayout(layout, name) {
+  return layout
+    .map(col => col.filter(n => n !== name))
+    .filter(col => col.length > 0);
+}
+
+// IDs de zonas drop especiales
+const DROP_ZONE_NEW_COL = '__NEW_COL__';
+function colTopId(colIdx) { return `__COL_TOP_${colIdx}__`; }
+function colBottomId(colIdx) { return `__COL_BOTTOM_${colIdx}__`; }
+
+// ── Componente columna sortable (drag handle en el nombre del listado) ────────
+function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis, ...props }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: category,
+    data: { type: 'listCard', category, colIndex, rowIndex },
+  });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
-    cursor: 'default',
+    opacity: isDraggingThis ? 0.3 : 1,
   };
   return (
     <div ref={setNodeRef} style={style}>
@@ -34,6 +80,41 @@ function SortableColumn({ category, isDragging, ...props }) {
         category={category}
         columnDragHandleProps={{ ...attributes, ...listeners }}
       />
+    </div>
+  );
+}
+
+// ── Zona de drop para nueva columna ──────────────────────────────────────────
+function NewColumnDropZone({ isOver }) {
+  const { setNodeRef } = useSortable({ id: DROP_ZONE_NEW_COL, data: { type: 'newCol' } });
+  return (
+    <div ref={setNodeRef} style={{
+      minWidth: 80, width: 80, height: '100%', minHeight: 120,
+      border: `2px dashed ${isOver ? '#1a73e8' : '#dadce0'}`,
+      borderRadius: 12,
+      background: isOver ? '#e8f0fe' : 'transparent',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0, alignSelf: 'stretch',
+      transition: 'all 0.15s',
+    }}>
+      {isOver && <Plus size={22} color="#1a73e8" />}
+    </div>
+  );
+}
+
+// ── Zona drop top/bottom dentro de una columna ────────────────────────────────
+function ColDropZone({ id, isOver, position }) {
+  const { setNodeRef } = useSortable({ id, data: { type: position === 'top' ? 'colTop' : 'colBottom' } });
+  return (
+    <div ref={setNodeRef} style={{
+      height: isOver ? 48 : 8,
+      background: isOver ? '#e8f0fe' : 'transparent',
+      borderRadius: 8,
+      border: isOver ? '2px dashed #1a73e8' : '2px dashed transparent',
+      transition: 'all 0.15s',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      {isOver && <Plus size={14} color="#1a73e8" />}
     </div>
   );
 }
@@ -70,12 +151,18 @@ export default function TasksPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#0891b2');
 
+  // ── Estado de layout: [[cat, cat?], [cat, cat?], ...] ──────────────────────
+  const [layout, setLayout] = useState(null); // null = no cargado aún
+  const [draggingCategory, setDraggingCategory] = useState(null);
+  const [overDropZone, setOverDropZone] = useState(null); // id de zona activa
+
   const handleExportTareas = async () => {
     setExporting(true);
     await exportTareasAllUsers();
     setExporting(false);
   };
 
+  // ── Cargar categorías ────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!profile?.email) return;
     const loadCategories = async () => {
@@ -91,36 +178,72 @@ export default function TasksPage() {
       } else {
         setCategories(DEFAULT_CATEGORIES.map((name, i) => ({
           name, color: ['#1565C0','#2E7D32','#6A1B9A','#E65100','#37474F'][i],
-          position: i, is_default: i < 4
+          position: i, is_default: i < 4,
         })));
       }
     };
     loadCategories();
   }, [profile?.email]);
 
-  const [columnOrder, setColumnOrder] = useState([...DEFAULT_CATEGORIES]);
-
+  // ── Cargar layout desde localStorage una vez que tenemos categorías ──────────
   React.useEffect(() => {
     if (!categories || !profile?.email) return;
     const catNames = categories.map(c => c.name);
+    const storageKey = `tasksLayout_${profile.email}`;
+
     try {
-      const saved = localStorage.getItem(`tasksColumnOrder_${profile.email}`);
+      const saved = localStorage.getItem(storageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const migrated = parsed.map(n => {
+        // Migrar nombres viejos
+        const migrated = parsed.map(col =>
+          col.map(n => {
+            if (n === 'Entrada') return 'Llegada arrendatario';
+            if (n === 'Salida') return 'Publicar/Arrendar';
+            return n;
+          }).filter(n => catNames.includes(n))
+        ).filter(col => col.length > 0);
+
+        // Añadir categorías nuevas que no estén en el layout guardado
+        const inLayout = migrated.flat();
+        const missing = catNames.filter(n => !inLayout.includes(n));
+        // Agregar faltantes al final, de a 2
+        const extra = buildDefaultLayout(missing);
+        const finalLayout = [...migrated, ...extra];
+        setLayout(finalLayout);
+        return;
+      }
+    } catch (e) { /* ignore */ }
+
+    // Sin layout guardado: construir desde cero
+    // Migrar columnOrder viejo si existe
+    try {
+      const oldKey = `tasksColumnOrder_${profile.email}`;
+      const oldSaved = localStorage.getItem(oldKey);
+      if (oldSaved) {
+        const oldOrder = JSON.parse(oldSaved).map(n => {
           if (n === 'Entrada') return 'Llegada arrendatario';
           if (n === 'Salida') return 'Publicar/Arrendar';
           return n;
-        });
-        const merged = [...migrated.filter(c => catNames.includes(c)), ...catNames.filter(c => !migrated.includes(c))];
-        setColumnOrder(merged);
+        }).filter(n => catNames.includes(n));
+        const missing = catNames.filter(n => !oldOrder.includes(n));
+        const full = [...oldOrder, ...missing];
+        const newLayout = buildDefaultLayout(full);
+        setLayout(newLayout);
+        localStorage.setItem(storageKey, JSON.stringify(newLayout));
         return;
       }
-    } catch(e) {}
-    setColumnOrder(catNames);
+    } catch (e) { /* ignore */ }
+
+    const defaultLayout = buildDefaultLayout(catNames);
+    setLayout(defaultLayout);
   }, [categories, profile?.email]);
 
-  const [draggingColumn, setDraggingColumn] = useState(null);
+  const saveLayout = React.useCallback((newLayout) => {
+    if (!profile?.email) return;
+    setLayout(newLayout);
+    localStorage.setItem(`tasksLayout_${profile.email}`, JSON.stringify(newLayout));
+  }, [profile?.email]);
 
   const getCategoryColor = (name) => {
     const cat = categories?.find(c => c.name === name);
@@ -129,6 +252,7 @@ export default function TasksPage() {
 
   const isProtected = (name) => ['Llegada arrendatario','Publicar/Arrendar','Equipo','Solicitudes','PAGOS'].includes(name);
 
+  // ── Auto-insertar PAGOS para admins ─────────────────────────────────────────
   React.useEffect(() => {
     if (!profile?.email) return;
     const isAdmin = ['ddm@renovalpropiedades.com','fdm@renovalpropiedades.com'].includes(profile.email);
@@ -142,10 +266,18 @@ export default function TasksPage() {
         .select().single();
       if (data) {
         setCategories(prev => [...(prev || []), data]);
-        setColumnOrder(prev => {
-          const next = [...prev, 'PAGOS'];
-          localStorage.setItem(`tasksColumnOrder_${profile.email}`, JSON.stringify(next));
-          return next;
+        setLayout(prev => {
+          if (!prev) return prev;
+          // Agregar PAGOS al final
+          const last = prev[prev.length - 1];
+          let newLayout;
+          if (last && last.length < 2) {
+            newLayout = [...prev.slice(0, -1), [...last, 'PAGOS']];
+          } else {
+            newLayout = [...prev, ['PAGOS']];
+          }
+          localStorage.setItem(`tasksLayout_${profile.email}`, JSON.stringify(newLayout));
+          return newLayout;
         });
       }
     };
@@ -159,10 +291,19 @@ export default function TasksPage() {
       .insert({ name: newCatName.trim(), color: newCatColor, position: pos, is_default: false, user_email: profile?.email })
       .select().single();
     if (data) {
-      setCategories(prev => [...(prev||[]), data]);
-      const newOrder = [...columnOrder, data.name];
-      setColumnOrder(newOrder);
-      localStorage.setItem(`tasksColumnOrder_${profile?.email}`, JSON.stringify(newOrder));
+      setCategories(prev => [...(prev || []), data]);
+      setLayout(prev => {
+        if (!prev) return [[data.name]];
+        const last = prev[prev.length - 1];
+        let newLayout;
+        if (last && last.length < 2) {
+          newLayout = [...prev.slice(0, -1), [...last, data.name]];
+        } else {
+          newLayout = [...prev, [data.name]];
+        }
+        localStorage.setItem(`tasksLayout_${profile?.email}`, JSON.stringify(newLayout));
+        return newLayout;
+      });
     }
     setNewCatName('');
     setNewCatColor('#0891b2');
@@ -175,43 +316,112 @@ export default function TasksPage() {
     await supabase.from('tasks').delete().eq('category', name).eq('assigned_to', effectiveEmail);
     await supabase.from('task_categories').delete().eq('name', name).eq('user_email', profile?.email);
     setCategories(prev => prev.filter(c => c.name !== name));
-    const newOrder = columnOrder.filter(c => c !== name);
-    setColumnOrder(newOrder);
-    localStorage.setItem(`tasksColumnOrder_${profile?.email}`, JSON.stringify(newOrder));
+    setLayout(prev => {
+      if (!prev) return prev;
+      const newLayout = removeFromLayout(prev, name);
+      localStorage.setItem(`tasksLayout_${profile?.email}`, JSON.stringify(newLayout));
+      return newLayout;
+    });
   };
 
+  // ── DnD ─────────────────────────────────────────────────────────────────────
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   const handleDragStart = (event) => {
-    if (columnOrder.includes(event.active.id)) setDraggingColumn(event.active.id);
+    const id = event.active.id;
+    if (layout && flattenLayout(layout).includes(id)) {
+      setDraggingCategory(id);
+    }
+  };
+
+  const handleDragOver = (event) => {
+    const overId = event.over?.id;
+    setOverDropZone(overId || null);
   };
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
-    setDraggingColumn(null);
-    if (!over || active.id === over.id) return;
-    if (columnOrder.includes(active.id)) {
-      const oldIdx = columnOrder.indexOf(active.id);
-      const newIdx = columnOrder.indexOf(over.id);
-      if (oldIdx !== -1 && newIdx !== -1) {
-        const newOrder = arrayMove(columnOrder, oldIdx, newIdx);
-        setColumnOrder(newOrder);
-        localStorage.setItem(`tasksColumnOrder_${profile?.email}`, JSON.stringify(newOrder));
+    setDraggingCategory(null);
+    setOverDropZone(null);
+    if (!over || !layout) return;
+
+    const draggedCat = active.id;
+    if (!flattenLayout(layout).includes(draggedCat)) {
+      // Drag de tarea dentro de columna (reorder vertical)
+      for (const category of CATEGORIES) {
+        const catTasks = tasksByCategory[category];
+        const oldIndex = catTasks.findIndex(t => t.id === active.id);
+        const newIndex = catTasks.findIndex(t => t.id === over.id);
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const reordered = arrayMove(catTasks, oldIndex, newIndex);
+          reorderTasks(category, reordered.map(t => t.id));
+          break;
+        }
       }
       return;
     }
-    for (const category of CATEGORIES) {
-      const catTasks = tasksByCategory[category];
-      const oldIndex = catTasks.findIndex(t => t.id === active.id);
-      const newIndex = catTasks.findIndex(t => t.id === over.id);
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const reordered = arrayMove(catTasks, oldIndex, newIndex);
-        reorderTasks(category, reordered.map(t => t.id));
-        break;
-      }
+
+    const overId = over.id;
+    const src = findInLayout(layout, draggedCat);
+    if (!src) return;
+
+    // ── Soltar en zona "nueva columna" ────────────────────────────────────────
+    if (overId === DROP_ZONE_NEW_COL) {
+      const withoutDrag = removeFromLayout(layout, draggedCat);
+      const newLayout = [...withoutDrag, [draggedCat]];
+      saveLayout(newLayout);
+      return;
+    }
+
+    // ── Soltar en zona top de una columna ─────────────────────────────────────
+    const topMatch = String(overId).match(/^__COL_TOP_(\d+)__$/);
+    if (topMatch) {
+      const colIdx = parseInt(topMatch[1]);
+      const withoutDrag = removeFromLayout(layout, draggedCat);
+      // El índice de columna puede haber cambiado tras removeFromLayout
+      // Recalcular por contenido: encontrar la columna que tenía ese índice
+      const targetColContent = layout[colIdx]?.filter(n => n !== draggedCat);
+      const newLayout = withoutDrag.map(col => {
+        // Si esta columna es la target (mismo contenido)
+        const same = col.length === (targetColContent?.length || 0) &&
+          col.every((n, i) => n === targetColContent[i]);
+        return same ? [draggedCat, ...col] : col;
+      });
+      // Si la columna objetivo quedó vacía, era la misma que el dragged y fue eliminada
+      // En ese caso simplemente agregar como nueva columna
+      const found = newLayout.some(col => col.includes(draggedCat));
+      saveLayout(found ? newLayout : [...newLayout, [draggedCat]]);
+      return;
+    }
+
+    // ── Soltar en zona bottom de una columna ──────────────────────────────────
+    const bottomMatch = String(overId).match(/^__COL_BOTTOM_(\d+)__$/);
+    if (bottomMatch) {
+      const colIdx = parseInt(bottomMatch[1]);
+      const withoutDrag = removeFromLayout(layout, draggedCat);
+      const targetColContent = layout[colIdx]?.filter(n => n !== draggedCat);
+      const newLayout = withoutDrag.map(col => {
+        const same = col.length === (targetColContent?.length || 0) &&
+          col.every((n, i) => n === targetColContent[i]);
+        return same ? [...col, draggedCat] : col;
+      });
+      const found = newLayout.some(col => col.includes(draggedCat));
+      saveLayout(found ? newLayout : [...newLayout, [draggedCat]]);
+      return;
+    }
+
+    // ── Soltar sobre otro listado (intercambiar posiciones) ────────────────────
+    if (flattenLayout(layout).includes(overId) && overId !== draggedCat) {
+      const dst = findInLayout(layout, overId);
+      if (!dst) return;
+      const newLayout = layout.map(col => [...col]);
+      // Swap
+      newLayout[src.colIndex][src.rowIndex] = overId;
+      newLayout[dst.colIndex][dst.rowIndex] = draggedCat;
+      saveLayout(newLayout);
     }
   };
 
@@ -233,6 +443,15 @@ export default function TasksPage() {
   };
 
   const totalTasks = Object.values(tasksByCategory).flat().length;
+
+  // IDs sortables: todos los listados + zonas de drop
+  const allSortableIds = layout
+    ? [
+        ...flattenLayout(layout),
+        DROP_ZONE_NEW_COL,
+        ...(layout.map((_, i) => [colTopId(i), colBottomId(i)]).flat()),
+      ]
+    : [];
 
   return (
     <div style={styles.container}>
@@ -313,7 +532,7 @@ export default function TasksPage() {
         </div>
       )}
 
-      {loading ? (
+      {loading || !layout ? (
         <div style={styles.loading}>Cargando tareas...</div>
       ) : (
         <div style={styles.mainArea}>
@@ -322,42 +541,72 @@ export default function TasksPage() {
               <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} userName={profile?.name} />
             )}
             {activeTab === 'tasks' && (
-              <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                <div style={styles.columnsWrapper}>
-                  <div style={styles.columns}>
-                    <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
-                      {columnOrder.map(category => (
-                        <SortableColumn
-                          key={category}
-                          category={category}
-                          isDragging={draggingColumn === category}
-                          tasks={tasksByCategory[category] || []}
-                          onOpenTask={setSelectedTask}
-                          onCompleteTask={handleCompleteTask}
-                          onCreateTask={createTask}
-                          currentUserEmail={effectiveEmail}
-                          dormantTasks={dormantByCategory[category] || []}
-                          subtaskReloadTrigger={subtaskReloadTrigger}
-                          customColor={getCategoryColor(category)}
-                          canDelete={!isProtected(category)}
-                          onDelete={() => handleDeleteCategory(category)}
-                          onSubtaskCompleted={handleSubtaskCompleted}
-                        />
+              <DndContext
+                sensors={sensors}
+                collisionDetection={pointerWithin}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
+                  <div style={styles.columnsWrapper}>
+                    <div style={styles.columnsGrid}>
+                      {layout.map((col, colIndex) => (
+                        <div key={colIndex} style={styles.invisibleColumn}>
+                          {/* Zona drop top de columna */}
+                          <ColDropZone
+                            id={colTopId(colIndex)}
+                            isOver={overDropZone === colTopId(colIndex)}
+                            position="top"
+                          />
+                          {col.map((category, rowIndex) => (
+                            <SortableListCard
+                              key={category}
+                              category={category}
+                              colIndex={colIndex}
+                              rowIndex={rowIndex}
+                              layout={layout}
+                              isDraggingThis={draggingCategory === category}
+                              tasks={tasksByCategory[category] || []}
+                              onOpenTask={setSelectedTask}
+                              onCompleteTask={handleCompleteTask}
+                              onCreateTask={createTask}
+                              currentUserEmail={effectiveEmail}
+                              dormantTasks={dormantByCategory[category] || []}
+                              subtaskReloadTrigger={subtaskReloadTrigger}
+                              customColor={getCategoryColor(category)}
+                              canDelete={!isProtected(category)}
+                              onDelete={() => handleDeleteCategory(category)}
+                              onSubtaskCompleted={handleSubtaskCompleted}
+                            />
+                          ))}
+                          {/* Zona drop bottom de columna (solo si tiene 1 listado) */}
+                          {col.length < 2 && (
+                            <ColDropZone
+                              id={colBottomId(colIndex)}
+                              isOver={overDropZone === colBottomId(colIndex)}
+                              position="bottom"
+                            />
+                          )}
+                        </div>
                       ))}
-                    </SortableContext>
+                      {/* Zona drop nueva columna */}
+                      <NewColumnDropZone isOver={overDropZone === DROP_ZONE_NEW_COL} />
+                    </div>
                   </div>
-                </div>
+                </SortableContext>
+
                 <DragOverlay>
-                  {draggingColumn && (
-                    <div style={{ opacity: 0.8, transform: 'rotate(2deg)', pointerEvents: 'none' }}>
+                  {draggingCategory && (
+                    <div style={{ opacity: 0.85, transform: 'rotate(1.5deg)', pointerEvents: 'none' }}>
                       <TaskColumn
-                        category={draggingColumn}
-                        tasks={tasksByCategory[draggingColumn] || []}
+                        category={draggingCategory}
+                        tasks={tasksByCategory[draggingCategory] || []}
                         onOpenTask={() => {}}
                         onCompleteTask={() => {}}
                         onCreateTask={() => {}}
                         currentUserEmail={effectiveEmail}
-                        dormantTasks={dormantByCategory[draggingColumn] || []}
+                        dormantTasks={dormantByCategory[draggingCategory] || []}
                       />
                     </div>
                   )}
@@ -395,11 +644,9 @@ export default function TasksPage() {
       {showHistory && (
         <HistoryPanel onClose={() => setShowHistory(false)} ownerEmail={effectiveEmail} />
       )}
-
       {showDevGar && (
         <DevGarPanel onClose={() => setShowDevGar(false)} />
       )}
-
       {showTemplates && (
         <TaskTemplatesPanel onClose={() => setShowTemplates(false)} />
       )}
@@ -462,7 +709,24 @@ const styles = {
   mainArea: { flex: 1, display: 'flex', overflow: 'hidden', gap: 0 },
   columnsArea: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   columnsWrapper: { flex: 1, overflow: 'auto' },
-  columns: { display: 'flex', gap: 16, padding: '4px 4px 24px', minWidth: 'max-content', alignItems: 'flex-start' },
+  columnsGrid: {
+    display: 'flex',
+    flexDirection: 'row',
+    gap: 16,
+    padding: '4px 4px 24px',
+    alignItems: 'flex-start',
+    minWidth: 'max-content',
+    minHeight: '100%',
+  },
+  invisibleColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+    alignItems: 'stretch',
+    minWidth: 260,
+    width: 260,
+    flexShrink: 0,
+  },
   sidebarArea: { flexShrink: 0, height: '100%', overflow: 'hidden' },
   loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#5f6368', fontSize: 14 },
 };
