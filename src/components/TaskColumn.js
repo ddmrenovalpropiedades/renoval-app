@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, RefreshCw, ChevronDown, ChevronRight, Clock, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, ChevronDown, ChevronRight, Clock, Trash2, ChevronsDown } from 'lucide-react';
 import { supabase, USER_INITIALS } from '../supabaseClient';
 import AnimatedCheckbox from './AnimatedCheckbox';
 import SubtaskPanel from './SubtaskPanel';
@@ -16,8 +16,9 @@ const CATEGORY_COLORS = {
 };
 
 const WORKERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
+const VISIBLE_LIMIT = 8; // máximo items (tareas + subtareas) antes de truncar
 
-// ── Efectos secundarios al completar subtareas ────────────────
+// ── Efectos secundarios al completar subtareas ────────────────────────────────
 async function runSubtaskSideEffects(subtaskTitle, parentTaskTitle) {
   const title = (subtaskTitle || '').trim();
   const propMatch = (parentTaskTitle || '').match(/^(?:Arriendo|Dev Gar)\s+(.+)$/i);
@@ -58,7 +59,8 @@ function SubtaskItem({ subtask, onComplete, onOpen }) {
   );
 }
 
-function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
+// ── TaskItem: devuelve su "peso" en items (1 tarea + N subtareas si expandida) ──
+function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey, onWeightChange }) {
   const [subtasks, setSubtasks] = useState([]);
   const [expanded, setExpanded] = useState(true);
   const [selectedSubtask, setSelectedSubtask] = useState(null);
@@ -75,11 +77,16 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey }) {
 
   useEffect(() => { loadSubtasks(); }, [loadSubtasks, reloadKey]);
 
+  // Notificar al padre el peso de este item (1 tarea + subtareas visibles)
+  useEffect(() => {
+    if (onWeightChange) {
+      onWeightChange(task.id, 1 + (expanded ? subtasks.length : 0));
+    }
+  }, [task.id, subtasks.length, expanded, onWeightChange]);
+
   const handleCompleteSubtask = async (subtask) => {
-    // Efectos secundarios según título de subtarea
     await runSubtaskSideEffects(subtask.title, task.title);
 
-    // Mirrors Equipo/Solicitudes
     if (task.category === 'Equipo' && subtask.solicitud_id) {
       await supabase.from('tasks').delete().eq('id', subtask.solicitud_id);
     }
@@ -160,14 +167,14 @@ function SolicitudesHistory({ currentUserEmail }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchHistory = async () => {
       const { data } = await supabase.from('tasks_history')
         .select('*').eq('owner_email', currentUserEmail).eq('category', 'Solicitudes')
         .order('completed_at', { ascending: false }).limit(10);
       setItems(data || []);
       setLoading(false);
     };
-    fetch();
+    fetchHistory();
   }, [currentUserEmail]);
 
   if (loading) return <div style={styles.historyEmpty}>Cargando...</div>;
@@ -229,10 +236,16 @@ function AssignModal({ onConfirm, onCancel, currentUserEmail }) {
   );
 }
 
-export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask, currentUserEmail, subtaskReloadTrigger = 0, columnDragHandleProps = {}, customColor, canDelete = false, onDelete }) {
+// ── Componente principal TaskColumn ──────────────────────────────────────────
+export default function TaskColumn({
+  category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask,
+  currentUserEmail, subtaskReloadTrigger = 0, columnDragHandleProps = {},
+  customColor, canDelete = false, onDelete, onSubtaskCompleted,
+}) {
   const colors = customColor
     ? { header: customColor, light: customColor + '22' }
     : (CATEGORY_COLORS[category] || { header: '#37474F', light: '#ECEFF1' });
+
   const [newTitle, setNewTitle] = useState('');
   const [adding, setAdding] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -240,7 +253,44 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
   const [showHistory, setShowHistory] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [subtaskReloadKey, setSubtaskReloadKey] = useState(0);
+
+  // ── Truncamiento ───────────────────────────────────────────────────────────
+  const [expanded, setExpanded] = useState(false);
+  // Mapa taskId → peso (1 + subtareas visibles)
+  const [taskWeights, setTaskWeights] = useState({});
+
   useEffect(() => { setSubtaskReloadKey(k => k + 1); }, [subtaskReloadTrigger]);
+
+  const handleWeightChange = useCallback((taskId, weight) => {
+    setTaskWeights(prev => {
+      if (prev[taskId] === weight) return prev;
+      return { ...prev, [taskId]: weight };
+    });
+  }, []);
+
+  // Calcular cuántas tareas mostrar respetando el límite de VISIBLE_LIMIT items
+  const { visibleTasks, hiddenCount, needsTruncation } = React.useMemo(() => {
+    if (expanded || tasks.length === 0) {
+      return { visibleTasks: tasks, hiddenCount: 0, needsTruncation: false };
+    }
+    let count = 0;
+    let cutoff = tasks.length;
+    for (let i = 0; i < tasks.length; i++) {
+      const weight = taskWeights[tasks[i].id] ?? 1;
+      count += weight;
+      if (count > VISIBLE_LIMIT) {
+        cutoff = i;
+        break;
+      }
+    }
+    const hidden = tasks.length - cutoff;
+    return {
+      visibleTasks: tasks.slice(0, cutoff),
+      hiddenCount: hidden,
+      needsTruncation: hidden > 0,
+    };
+  }, [tasks, taskWeights, expanded]);
+
   const isSolicitudes = category === 'Solicitudes';
 
   const handleAdd = async (e) => {
@@ -266,7 +316,13 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
         <button onClick={() => setCollapsed(!collapsed)} style={styles.collapseToggle}>
           {collapsed ? <ChevronRight size={14} color={colors.header} /> : <ChevronDown size={14} color={colors.header} />}
         </button>
-        <span {...columnDragHandleProps} style={{ ...styles.categoryName, color: colors.header, cursor: 'grab', userSelect: 'none' }} title="Arrastrar columna">{category.toUpperCase()}</span>
+        <span
+          {...columnDragHandleProps}
+          style={{ ...styles.categoryName, color: colors.header, cursor: 'grab', userSelect: 'none' }}
+          title="Arrastrar listado"
+        >
+          {category.toUpperCase()}
+        </span>
         <span style={styles.taskCount}>{tasks.length}</span>
         {isSolicitudes && (
           <button onClick={() => setShowHistory(!showHistory)} style={{ ...styles.addBtn, color: colors.header }} title="Historial de solicitudes">
@@ -285,14 +341,42 @@ export default function TaskColumn({ category, tasks, dormantTasks = [], onOpenT
 
       {!collapsed && (
         <div style={styles.taskList}>
-          <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-            {tasks.map(task => (
-              <TaskItem key={task.id} task={task}
-                onOpen={onOpenTask} onComplete={onCompleteTask}
+          <SortableContext items={visibleTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+            {visibleTasks.map(task => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                onOpen={onOpenTask}
+                onComplete={onCompleteTask}
                 currentUserEmail={currentUserEmail}
-                reloadKey={subtaskReloadKey} />
+                reloadKey={subtaskReloadKey}
+                onWeightChange={handleWeightChange}
+              />
             ))}
           </SortableContext>
+
+          {/* Botón expandir si hay tareas ocultas */}
+          {needsTruncation && !expanded && (
+            <button
+              onClick={() => setExpanded(true)}
+              style={styles.expandAllBtn}
+            >
+              <ChevronsDown size={13} color={colors.header} />
+              <span style={{ ...styles.expandAllLabel, color: colors.header }}>
+                Ver {hiddenCount} tarea{hiddenCount !== 1 ? 's' : ''} más
+              </span>
+            </button>
+          )}
+          {/* Botón colapsar si está expandido y superaba el límite */}
+          {expanded && tasks.length > VISIBLE_LIMIT && (
+            <button
+              onClick={() => setExpanded(false)}
+              style={styles.expandAllBtn}
+            >
+              <ChevronRight size={13} color="#9aa0a6" style={{ transform: 'rotate(-90deg)' }} />
+              <span style={{ ...styles.expandAllLabel, color: '#9aa0a6' }}>Colapsar lista</span>
+            </button>
+          )}
 
           {adding && !isSolicitudes ? (
             <form onSubmit={handleAdd} style={styles.addForm}>
@@ -379,6 +463,13 @@ const styles = {
   subtaskList: { paddingLeft: 36, paddingBottom: 6 },
   subtaskItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px 4px 0' },
   subtaskLabel: { fontSize: 13, color: '#5f6368', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  expandAllBtn: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    width: '100%', padding: '7px 14px',
+    background: 'none', border: 'none', cursor: 'pointer',
+    borderTop: '1px dashed #e8eaed',
+  },
+  expandAllLabel: { fontSize: 12, fontWeight: 600 },
   addForm: { padding: '8px 12px', borderTop: '1px solid #f1f3f4' },
   addInput: { width: '100%', border: '1px solid #1a73e8', borderRadius: 8, padding: '8px 10px', fontSize: 14, outline: 'none', fontFamily: 'inherit', marginBottom: 8 },
   addFormActions: { display: 'flex', gap: 8 },
