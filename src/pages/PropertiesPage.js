@@ -1,37 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Search, Edit2, X, Check, Users, Trash2 } from 'lucide-react';
+import { Plus, Search, Edit2, X, Check, Users, Trash2, Download } from 'lucide-react';
 import PropertyAttributesTab from '../components/PropertyAttributesTab';
+import { useExcelExport } from '../hooks/useExcelExport';
 
 const ENCARGADOS = ['DD', 'FD', 'EA', 'FG', 'AM'];
-const ENCARGADO_COLORS = {
-  DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100', AM: '#37474F'
-};
+const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100', AM: '#37474F' };
 
 function Badge({ value }) {
   if (!value) return null;
   return (
-    <span style={{
-      display: 'inline-block',
-      background: `${ENCARGADO_COLORS[value] || '#9aa0a6'}22`,
-      color: ENCARGADO_COLORS[value] || '#9aa0a6',
-      border: `1px solid ${ENCARGADO_COLORS[value] || '#9aa0a6'}44`,
-      borderRadius: 20, padding: '2px 10px',
-      fontSize: 12, fontWeight: 700,
-    }}>{value}</span>
+    <span style={{ display: 'inline-block', background: `${ENCARGADO_COLORS[value] || '#9aa0a6'}22`, color: ENCARGADO_COLORS[value] || '#9aa0a6', border: `1px solid ${ENCARGADO_COLORS[value] || '#9aa0a6'}44`, borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{value}</span>
   );
 }
 
 function PropertyModal({ property, onClose, onSave }) {
-  const [form, setForm] = useState({
-    propiedad: property?.propiedad || '',
-    propietario: property?.propietario || '',
-    e1: property?.e1 || '',
-    e2: property?.e2 || '',
-  });
+  const [form, setForm] = useState({ propiedad: property?.propiedad || '', propietario: property?.propietario || '', e1: property?.e1 || '', e2: property?.e2 || '' });
   const [saving, setSaving] = useState(false);
-
   const handleSave = async () => {
     if (!form.propiedad.trim()) return;
     setSaving(true);
@@ -39,7 +25,6 @@ function PropertyModal({ property, onClose, onSave }) {
     setSaving(false);
     onClose();
   };
-
   return (
     <div style={styles.modalOverlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={styles.modal}>
@@ -48,41 +33,15 @@ function PropertyModal({ property, onClose, onSave }) {
           <button onClick={onClose} style={styles.modalClose}><X size={18} color="#5f6368" /></button>
         </div>
         <div style={styles.modalBody}>
-          <div style={styles.field}>
-            <label style={styles.label}>Propiedad *</label>
-            <input value={form.propiedad} onChange={e => setForm({...form, propiedad: e.target.value})}
-              placeholder="Dirección completa" style={styles.input} autoFocus />
-          </div>
-          <div style={styles.field}>
-            <label style={styles.label}>Propietario</label>
-            <input value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})}
-              placeholder="Nombre del propietario" style={styles.input} />
-          </div>
+          <div style={styles.field}><label style={styles.label}>Propiedad *</label><input value={form.propiedad} onChange={e => setForm({...form, propiedad: e.target.value})} placeholder="Dirección completa" style={styles.input} autoFocus /></div>
+          <div style={styles.field}><label style={styles.label}>Propietario</label><input value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} placeholder="Nombre del propietario" style={styles.input} /></div>
           <div style={styles.fieldRow}>
-            <div style={styles.fieldHalf}>
-              <label style={styles.label}>Encargado 1 (pagos/dueño)</label>
-              <select value={form.e1} onChange={e => setForm({...form, e1: e.target.value})} style={styles.select}>
-                <option value="">— Sin asignar —</option>
-                {ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
-            <div style={styles.fieldHalf}>
-              <label style={styles.label}>Encargado 2 (arriendo)</label>
-              <select value={form.e2} onChange={e => setForm({...form, e2: e.target.value})} style={styles.select}>
-                <option value="">— Sin asignar —</option>
-                {ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
+            <div style={styles.fieldHalf}><label style={styles.label}>Encargado 1 (pagos/dueño)</label><select value={form.e1} onChange={e => setForm({...form, e1: e.target.value})} style={styles.select}><option value="">— Sin asignar —</option>{ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}</select></div>
+            <div style={styles.fieldHalf}><label style={styles.label}>Encargado 2 (arriendo)</label><select value={form.e2} onChange={e => setForm({...form, e2: e.target.value})} style={styles.select}><option value="">— Sin asignar —</option>{ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}</select></div>
           </div>
         </div>
         <div style={styles.modalFooter}>
-          <button onClick={handleSave} disabled={saving || !form.propiedad.trim()} style={{
-            ...styles.saveBtn,
-            ...(!form.propiedad.trim() ? styles.saveBtnDisabled : {})
-          }}>
-            <Check size={15} style={{ marginRight: 6 }} />
-            {saving ? 'Guardando...' : 'Guardar'}
-          </button>
+          <button onClick={handleSave} disabled={saving || !form.propiedad.trim()} style={{ ...styles.saveBtn, ...(!form.propiedad.trim() ? styles.saveBtnDisabled : {}) }}><Check size={15} style={{ marginRight: 6 }} />{saving ? 'Guardando...' : 'Guardar'}</button>
           <button onClick={onClose} style={styles.cancelBtn}>Cancelar</button>
         </div>
       </div>
@@ -101,6 +60,7 @@ export default function PropertiesPage() {
   const [showCounters, setShowCounters] = useState(false);
   const isOwner = profile?.isOwner;
   const [activeTab, setActiveTab] = useState('cartera');
+  const { exportToExcel } = useExcelExport();
 
   useEffect(() => { fetchProperties(); }, []);
 
@@ -113,20 +73,8 @@ export default function PropertiesPage() {
 
   const filtered = useMemo(() => {
     let result = properties;
-    if (search.trim()) {
-      const s = search.trim().toLowerCase();
-      result = result.filter(p =>
-        [p.propiedad, p.propietario, p.e1, p.e2]
-          .some(v => v && v.toLowerCase().includes(s))
-      );
-    }
-    if (filterE.length > 0) {
-      result = result.filter(p => {
-        const propEncargados = [p.e1, p.e2].filter(Boolean);
-        // Mostrar filas que contengan TODOS los encargados seleccionados
-        return filterE.every(e => propEncargados.includes(e));
-      });
-    }
+    if (search.trim()) { const s = search.trim().toLowerCase(); result = result.filter(p => [p.propiedad, p.propietario, p.e1, p.e2].some(v => v && v.toLowerCase().includes(s))); }
+    if (filterE.length > 0) result = result.filter(p => filterE.every(e => [p.e1, p.e2].filter(Boolean).includes(e)));
     return result;
   }, [properties, search, filterE]);
 
@@ -140,123 +88,84 @@ export default function PropertiesPage() {
     return c;
   }, [properties]);
 
-  const toggleFilter = (e) => {
-    setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
-  };
+  const toggleFilter = (e) => setFilterE(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
 
-const handleSave = async (form) => {
-    if (editingProp) {
-      await supabase.from('properties').update(form).eq('id', editingProp.id);
-    } else {
-      await supabase.from('properties').insert(form);
-      await supabase.from('property_attributes').insert({ propiedad: form.propiedad });
-    }
+  const handleSave = async (form) => {
+    if (editingProp) { await supabase.from('properties').update(form).eq('id', editingProp.id); }
+    else { await supabase.from('properties').insert(form); await supabase.from('property_attributes').insert({ propiedad: form.propiedad }); }
     await fetchProperties();
     setEditingProp(null);
   };
 
   const handleEdit = (prop) => { setEditingProp(prop); setShowModal(true); };
-
   const handleDelete = async (prop) => {
-  const confirmar = window.confirm(`¿Eliminar "${prop.propiedad}"? Esta acción también eliminará sus atributos y no se puede deshacer.`);
-  if (!confirmar) return;
-  await supabase.from('property_attributes').delete().eq('propiedad', prop.propiedad);
-  await supabase.from('properties').delete().eq('id', prop.id);
-  await fetchProperties();
-};
+    const confirmar = window.confirm(`¿Eliminar "${prop.propiedad}"? Esta acción también eliminará sus atributos y no se puede deshacer.`);
+    if (!confirmar) return;
+    await supabase.from('property_attributes').delete().eq('propiedad', prop.propiedad);
+    await supabase.from('properties').delete().eq('id', prop.id);
+    await fetchProperties();
+  };
+
+  const handleExportCartera = () => exportToExcel(filtered, [
+    { key: 'propiedad',   label: 'Propiedad' },
+    { key: 'propietario', label: 'Propietario' },
+    { key: 'e1',          label: 'E1' },
+    { key: 'e2',          label: 'E2' },
+  ], 'Cartera');
 
   return (
     <div style={styles.container}>
-      {/* Tabs */}
       <div style={styles.tabs}>
-        <button onClick={() => setActiveTab('cartera')}
-          style={{ ...styles.tab, ...(activeTab === 'cartera' ? styles.tabActive : {}) }}>
-          Cartera
-        </button>
-        <button onClick={() => setActiveTab('atributos')}
-          style={{ ...styles.tab, ...(activeTab === 'atributos' ? styles.tabActive : {}) }}>
-          Atributos
-        </button>
+        <button onClick={() => setActiveTab('cartera')} style={{ ...styles.tab, ...(activeTab === 'cartera' ? styles.tabActive : {}) }}>Cartera</button>
+        <button onClick={() => setActiveTab('atributos')} style={{ ...styles.tab, ...(activeTab === 'atributos' ? styles.tabActive : {}) }}>Atributos</button>
       </div>
 
       {activeTab === 'atributos' && <PropertyAttributesTab />}
       {activeTab === 'cartera' && <>
-
-      {/* Header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Cartera de Propiedades</h1>
           <p style={styles.subtitle}>{filtered.length} de {properties.length} propiedades</p>
         </div>
         <div style={styles.headerActions}>
-          <button onClick={() => setShowCounters(!showCounters)}
-            style={{ ...styles.iconBtn, ...(showCounters ? styles.iconBtnActive : {}) }}
-            title="Contadores por encargado">
-            <Users size={16} color={showCounters ? '#1a73e8' : '#5f6368'} />
+          <button onClick={handleExportCartera} disabled={loading} title="Exportar a Excel"
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:loading?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:loading?0.5:1 }}>
+            <Download size={14} color="#34a853" /> Excel
           </button>
-          {isOwner && (
-            <button onClick={() => { setEditingProp(null); setShowModal(true); }} style={styles.addBtn}>
-              <Plus size={16} style={{ marginRight: 6 }} /> Nueva propiedad
-            </button>
-          )}
+          <button onClick={() => setShowCounters(!showCounters)} style={{ ...styles.iconBtn, ...(showCounters ? styles.iconBtnActive : {}) }} title="Contadores por encargado"><Users size={16} color={showCounters ? '#1a73e8' : '#5f6368'} /></button>
+          {isOwner && <button onClick={() => { setEditingProp(null); setShowModal(true); }} style={styles.addBtn}><Plus size={16} style={{ marginRight: 6 }} /> Nueva propiedad</button>}
         </div>
       </div>
 
-      {/* Contadores */}
       {showCounters && (
         <div style={styles.countersRow}>
           {ENCARGADOS.filter(e => counters[e]?.total > 0).map(e => (
             <div key={e} style={{ ...styles.counterCard, borderTop: `3px solid ${ENCARGADO_COLORS[e]}` }}>
               <span style={{ ...styles.counterName, color: ENCARGADO_COLORS[e] }}>{e}</span>
               <span style={styles.counterTotal}>{counters[e].total}</span>
-              <div style={styles.counterDetail}>
-                <span>E1: {counters[e].e1}</span>
-                <span>E2: {counters[e].e2}</span>
-              </div>
+              <div style={styles.counterDetail}><span>E1: {counters[e].e1}</span><span>E2: {counters[e].e2}</span></div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Filtros */}
       <div style={styles.filtersRow}>
         <div style={styles.searchWrapper}>
           <Search size={15} color="#9aa0a6" style={styles.searchIcon} />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar en todas las columnas..."
-            style={styles.searchInput}
-          />
-          {search && (
-            <button onClick={() => setSearch('')} style={styles.clearSearch}>
-              <X size={13} color="#9aa0a6" />
-            </button>
-          )}
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar en todas las columnas..." style={styles.searchInput} />
+          {search && <button onClick={() => setSearch('')} style={styles.clearSearch}><X size={13} color="#9aa0a6" /></button>}
         </div>
         <div style={styles.encargadoFilters}>
           <span style={styles.filterLabel}>Filtrar por:</span>
           {ENCARGADOS.map(e => (
-            <button key={e} onClick={() => toggleFilter(e)} style={{
-              ...styles.filterBtn,
-              ...(filterE.includes(e) ? {
-                background: `${ENCARGADO_COLORS[e]}22`,
-                color: ENCARGADO_COLORS[e],
-                borderColor: ENCARGADO_COLORS[e],
-                fontWeight: 700,
-              } : {})
-            }}>{e}</button>
+            <button key={e} onClick={() => toggleFilter(e)} style={{ ...styles.filterBtn, ...(filterE.includes(e) ? { background: `${ENCARGADO_COLORS[e]}22`, color: ENCARGADO_COLORS[e], borderColor: ENCARGADO_COLORS[e], fontWeight: 700 } : {}) }}>{e}</button>
           ))}
-          {filterE.length > 0 && (
-            <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>
-          )}
+          {filterE.length > 0 && <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>}
         </div>
       </div>
 
-      {/* Tabla */}
       <div style={styles.tableWrapper}>
-        {loading ? (
-          <div style={styles.loading}>Cargando propiedades...</div>
-        ) : (
+        {loading ? <div style={styles.loading}>Cargando propiedades...</div> : (
           <table style={styles.table}>
             <thead>
               <tr>
@@ -269,9 +178,7 @@ const handleSave = async (form) => {
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={isOwner ? 5 : 4} style={styles.empty}>
-                  No se encontraron propiedades con ese criterio.
-                </td></tr>
+                <tr><td colSpan={isOwner ? 5 : 4} style={styles.empty}>No se encontraron propiedades con ese criterio.</td></tr>
               ) : (
                 filtered.map((prop, i) => (
                   <tr key={prop.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}
@@ -283,12 +190,8 @@ const handleSave = async (form) => {
                     <td style={{ ...styles.td, textAlign: 'center' }}><Badge value={prop.e2} /></td>
                     {isOwner && (
                       <td style={{ ...styles.td, textAlign: 'center' }}>
-                        <button onClick={() => handleEdit(prop)} style={styles.editBtn} title="Editar">
-                          <Edit2 size={14} color="#5f6368" />
-                        </button>
-                        <button onClick={() => handleDelete(prop)} style={styles.editBtn} title="Eliminar">
-                          <Trash2 size={14} color="#ea4335" />
-                        </button>
+                        <button onClick={() => handleEdit(prop)} style={styles.editBtn} title="Editar"><Edit2 size={14} color="#5f6368" /></button>
+                        <button onClick={() => handleDelete(prop)} style={styles.editBtn} title="Eliminar"><Trash2 size={14} color="#ea4335" /></button>
                       </td>
                     )}
                   </tr>
@@ -298,16 +201,9 @@ const handleSave = async (form) => {
           </table>
         )}
       </div>
-
       </>}
 
-      {showModal && (
-        <PropertyModal
-          property={editingProp}
-          onClose={() => { setShowModal(false); setEditingProp(null); }}
-          onSave={handleSave}
-        />
-      )}
+      {showModal && <PropertyModal property={editingProp} onClose={() => { setShowModal(false); setEditingProp(null); }} onSave={handleSave} />}
     </div>
   );
 }
@@ -342,7 +238,6 @@ const styles = {
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   editBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'inline-flex' },
-  // Modal
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 },
   modal: { background: '#fff', borderRadius: 16, width: 560, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif", overflow: 'hidden' },
   modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 16px' },
