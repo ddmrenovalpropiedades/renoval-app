@@ -7,13 +7,14 @@ import { supabase } from '../supabaseClient';
 import TaskColumn from '../components/TaskColumn';
 import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
-import { ChevronDown, History, Plus, X, Settings, Clock } from 'lucide-react';
+import { ChevronDown, History, Plus, X, Settings, Clock, Download } from 'lucide-react';
 import GallerySidebar, { unlockNextGalleryImage } from '../components/GallerySidebar';
 import PlanningPage from './PlanningPage';
 import HistoryPanel from '../components/HistoryPanel';
 import TaskTemplatesPanel from '../components/TaskTemplatesPanel';
 import DevGarPanel from '../components/DevGarPanel';
 import { USER_INITIALS } from '../supabaseClient';
+import { exportTareasAllUsers } from '../hooks/exportTareasAllUsers';
 
 const ALL_USERS = Object.entries(USER_INITIALS).map(([email, initials]) => ({ email, initials }));
 const DEFAULT_CATEGORIES = ['Llegada arrendatario', 'Publicar/Arrendar', 'Equipo', 'Solicitudes', 'Misceláneo', 'PAGOS'];
@@ -44,6 +45,7 @@ export default function TasksPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showDevGar, setShowDevGar] = useState(false);
   const [subtaskReloadTrigger, setSubtaskReloadTrigger] = useState(0);
+  const [exporting, setExporting] = useState(false);
 
   const effectiveEmail = viewingEmail || profile?.email;
   const effectiveInitials = USER_INITIALS[effectiveEmail] || profile?.initials;
@@ -67,6 +69,12 @@ export default function TasksPage() {
   const isOwner = profile?.isOwner;
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#0891b2');
+
+  const handleExportTareas = async () => {
+    setExporting(true);
+    await exportTareasAllUsers();
+    setExporting(false);
+  };
 
   React.useEffect(() => {
     if (!profile?.email) return;
@@ -273,6 +281,10 @@ export default function TasksPage() {
           </button>
           <button onClick={() => setShowHistory(true)} style={styles.refreshBtn} title="Historial">
             <History size={16} color="#5f6368" />
+          </button>
+          <button onClick={handleExportTareas} disabled={exporting} title="Exportar tareas a Excel"
+            style={{ ...styles.refreshBtn, padding:'8px 10px', opacity:exporting?0.6:1, cursor:exporting?'not-allowed':'pointer' }}>
+            <Download size={15} color="#34a853" />
           </button>
           <button onClick={() => setShowNewCategory(true)} style={{ ...styles.refreshBtn, display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'#e8f0fe', border:'1px solid #1a73e8', color:'#1a73e8', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }} title="Nueva lista">
             <Plus size={14} /> Nueva lista
