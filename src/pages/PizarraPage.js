@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Check, X, Home, Trash2, Link2, Calendar } from 'lucide-react';
+import { Plus, Check, X, Home, Trash2, Link2, Calendar, Download } from 'lucide-react';
+import { useExcelExport } from '../hooks/useExcelExport';
 import UrlPublicacionModal from '../components/pizarra/UrlPublicacionModal';
 import DisponibilidadSidebar from '../components/pizarra/DisponibilidadSidebar';
 
@@ -785,6 +786,25 @@ export default function PizarraPage() {
   const [filterE, setFilterE] = useState([]);
   const uf = useUFValue();
 
+  const { exportToExcel } = useExcelExport();
+
+  const handleExport = () => exportToExcel(rows, [
+    { key: 'propiedad',    label: 'Propiedad' },
+    { key: 'precio',       label: 'Precio' },
+    { key: 'promo',        label: 'Promo' },
+    { key: 'status',       label: 'Publicación' },
+    { key: 'e1',           label: 'E1' },
+    { key: 'e2',           label: 'E2' },
+    { key: 'db',           label: 'D/B' },
+    { key: 'eb',           label: 'E/B' },
+    { key: 'comuna',       label: 'Comuna' },
+    { key: 'fecha_salida', label: 'Fecha Salida' },
+    { key: 'aviso',        label: 'Aviso' },
+    { key: 'respaldo',     label: 'Respaldo' },
+    { key: 'tipo',         label: 'Tipo' },
+    { key: 'admin',        label: 'Admin' },
+  ], 'Pizarra');
+
   const fetchRows = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('pizarra').select('*')
@@ -915,6 +935,10 @@ export default function PizarraPage() {
             ))}
             {filterE.length > 0 && <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>}
           </div>
+          <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:loading?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:loading?0.5:1 }}>
+            <Download size={14} color="#34a853" /> Excel
+          </button>
           <button onClick={() => setAddingNew(true)} style={styles.addBtn} disabled={addingNew}>
             <Plus size={15} style={{ marginRight: 5 }} /> Nueva propiedad
           </button>
