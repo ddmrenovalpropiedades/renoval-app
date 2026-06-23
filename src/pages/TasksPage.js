@@ -55,14 +55,15 @@ function removeFromLayout(layout, name) {
 
 // IDs de zonas drop especiales
 // ── Componente columna sortable (drag handle en el nombre del listado) ────────
-function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis, ...props }) {
+function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis, isDraggingAnyCategory, ...props }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: category,
     data: { type: 'listCard', category, colIndex, rowIndex },
   });
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    // Suprimir transform/transition mientras se arrastra una categoría para evitar animaciones confusas
+    transform: isDraggingAnyCategory ? undefined : CSS.Transform.toString(transform),
+    transition: isDraggingAnyCategory ? undefined : transition,
     opacity: isDraggingThis ? 0.3 : 1,
   };
   return (
@@ -389,11 +390,30 @@ export default function TasksPage() {
 
     // ── Soltar sobre una columna existente ────────────────────────────────────
     if (typeof targetCol === 'number') {
-      // Misma columna con 1 solo listado → no hacer nada
-      if (targetCol === src.colIndex && layout[src.colIndex].length === 1) return;
+      // Misma columna: reorden interno (mover al final si tiene 2)
+      if (targetCol === src.colIndex) {
+        if (layout[src.colIndex].length < 2) return; // nada que reordenar
+        // Mover el listado al otro slot dentro de la misma columna
+        const newLayout = layout.map((c, i) => {
+          if (i !== src.colIndex) return [...c];
+          const newCol = [...c];
+          // Swap dentro de la misma columna
+          [newCol[0], newCol[1]] = [newCol[1], newCol[0]];
+          return newCol;
+        });
+        saveLayout(newLayout);
+        return;
+      }
+
+      // Columna distinta: quitar de origen, insertar en destino
+      // La columna origen desaparece solo si quedaba con 0 elementos
+      const srcHasTwo = layout[src.colIndex].length === 2;
+      // Construir nuevo layout quitando el dragged
       const newLayout = layout.map(col => col.filter(n => n !== draggedCat)).filter(col => col.length > 0);
-      // Ajustar índice: si la columna fuente era anterior al destino, el destino se corre -1
-      const adjustedIdx = src.colIndex < targetCol ? targetCol - 1 : targetCol;
+      // Si la columna origen tenía 2 listados, sigue existiendo (no se corre el índice)
+      // Si tenía 1, desaparece y las columnas posteriores se corren -1
+      const srcDisappears = !srcHasTwo;
+      const adjustedIdx = (srcDisappears && src.colIndex < targetCol) ? targetCol - 1 : targetCol;
       if (newLayout[adjustedIdx]) {
         newLayout[adjustedIdx] = [...newLayout[adjustedIdx], draggedCat];
       } else {
@@ -542,6 +562,7 @@ export default function TasksPage() {
                               rowIndex={rowIndex}
                               layout={layout}
                               isDraggingThis={draggingCategory === category}
+                              isDraggingAnyCategory={!!draggingCategory}
                               tasks={tasksByCategory[category] || []}
                               onOpenTask={setSelectedTask}
                               onCompleteTask={handleCompleteTask}
