@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   DndContext, KeyboardSensor, PointerSensor,
   useSensor, useSensors, DragOverlay, pointerWithin,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   sortableKeyboardCoordinates, arrayMove,
@@ -55,8 +56,7 @@ function removeFromLayout(layout, name) {
 
 // IDs de zonas drop especiales
 const DROP_ZONE_NEW_COL = '__NEW_COL__';
-function colTopId(colIdx) { return `__COL_TOP_${colIdx}__`; }
-function colBottomId(colIdx) { return `__COL_BOTTOM_${colIdx}__`; }
+function colDropId(colIdx) { return `__COL_DROP_${colIdx}__`; }
 
 // ── Componente columna sortable (drag handle en el nombre del listado) ────────
 function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis, ...props }) {
@@ -80,37 +80,36 @@ function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis
   );
 }
 
-// ── Zona de drop para nueva columna ──────────────────────────────────────────
-function NewColumnDropZone({ isOver }) {
-  const { setNodeRef } = useSortable({ id: DROP_ZONE_NEW_COL, data: { type: 'newCol' } });
+// ── Zona drop: columna invisible completa (useDroppable) ─────────────────────
+function DroppableColumn({ colIdx, isOver, children, style }) {
+  const { setNodeRef } = useDroppable({ id: colDropId(colIdx) });
   return (
     <div ref={setNodeRef} style={{
-      minWidth: 80, width: 80, height: '100%', minHeight: 120,
-      border: `2px dashed ${isOver ? '#1a73e8' : '#dadce0'}`,
-      borderRadius: 12,
-      background: isOver ? '#e8f0fe' : 'transparent',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexShrink: 0, alignSelf: 'stretch',
+      ...style,
+      outline: isOver ? '2px dashed #1a73e8' : '2px dashed transparent',
+      borderRadius: 14,
+      background: isOver ? 'rgba(26,115,232,0.04)' : 'transparent',
       transition: 'all 0.15s',
     }}>
-      {isOver && <Plus size={22} color="#1a73e8" />}
+      {children}
     </div>
   );
 }
 
-// ── Zona drop top/bottom dentro de una columna ────────────────────────────────
-function ColDropZone({ id, isOver, position }) {
-  const { setNodeRef } = useSortable({ id, data: { type: position === 'top' ? 'colTop' : 'colBottom' } });
+// ── Zona drop: nueva columna al final ─────────────────────────────────────────
+function NewColumnDropZone({ isOver }) {
+  const { setNodeRef } = useDroppable({ id: DROP_ZONE_NEW_COL });
   return (
     <div ref={setNodeRef} style={{
-      height: isOver ? 48 : 8,
+      minWidth: 80, width: 80, alignSelf: 'stretch', minHeight: 120,
+      border: `2px dashed ${isOver ? '#1a73e8' : '#dadce0'}`,
+      borderRadius: 12,
       background: isOver ? '#e8f0fe' : 'transparent',
-      borderRadius: 8,
-      border: isOver ? '2px dashed #1a73e8' : '2px dashed transparent',
-      transition: 'all 0.15s',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0,
+      transition: 'all 0.15s',
     }}>
-      {isOver && <Plus size={14} color="#1a73e8" />}
+      {isOver && <Plus size={22} color="#1a73e8" />}
     </div>
   );
 }
@@ -346,38 +345,23 @@ export default function TasksPage() {
       return;
     }
 
-    const overId = over.id;
+    const overId = String(over.id);
     const src = findInLayout(layout, draggedCat);
     if (!src) return;
 
     // ── Soltar en zona "nueva columna" ────────────────────────────────────────
     if (overId === DROP_ZONE_NEW_COL) {
       const withoutDrag = removeFromLayout(layout, draggedCat);
-      const newLayout = [...withoutDrag, [draggedCat]];
-      saveLayout(newLayout);
+      saveLayout([...withoutDrag, [draggedCat]]);
       return;
     }
 
-    // ── Soltar en zona top de una columna ─────────────────────────────────────
-    const topMatch = String(overId).match(/^__COL_TOP_(\d+)__$/);
-    if (topMatch) {
-      const colIdx = parseInt(topMatch[1]);
-      // Quitar el dragged del layout y ajustar índice destino si la col fuente era anterior
-      const newLayout = layout.map(col => col.filter(n => n !== draggedCat)).filter(col => col.length > 0);
-      const adjustedIdx = src.colIndex < colIdx ? colIdx - 1 : colIdx;
-      if (newLayout[adjustedIdx]) {
-        newLayout[adjustedIdx] = [draggedCat, ...newLayout[adjustedIdx]];
-      } else {
-        newLayout.push([draggedCat]);
-      }
-      saveLayout(newLayout);
-      return;
-    }
-
-    // ── Soltar en zona bottom de una columna ──────────────────────────────────
-    const bottomMatch = String(overId).match(/^__COL_BOTTOM_(\d+)__$/);
-    if (bottomMatch) {
-      const colIdx = parseInt(bottomMatch[1]);
+    // ── Soltar sobre columna invisible (useDroppable) → agregar al final de esa col ──
+    const colDropMatch = overId.match(/^__COL_DROP_(\d+)__$/);
+    if (colDropMatch) {
+      const colIdx = parseInt(colDropMatch[1]);
+      // Si es la misma columna y tiene 1 elemento, no hacer nada
+      if (src.colIndex === colIdx && layout[colIdx].length === 1) return;
       const newLayout = layout.map(col => col.filter(n => n !== draggedCat)).filter(col => col.length > 0);
       const adjustedIdx = src.colIndex < colIdx ? colIdx - 1 : colIdx;
       if (newLayout[adjustedIdx]) {
@@ -389,12 +373,11 @@ export default function TasksPage() {
       return;
     }
 
-    // ── Soltar sobre otro listado (intercambiar posiciones) ────────────────────
+    // ── Soltar sobre otro listado → swap de posiciones ────────────────────────
     if (flattenLayout(layout).includes(overId) && overId !== draggedCat) {
       const dst = findInLayout(layout, overId);
       if (!dst) return;
       const newLayout = layout.map(col => [...col]);
-      // Swap
       newLayout[src.colIndex][src.rowIndex] = overId;
       newLayout[dst.colIndex][dst.rowIndex] = draggedCat;
       saveLayout(newLayout);
@@ -420,14 +403,8 @@ export default function TasksPage() {
 
   const totalTasks = Object.values(tasksByCategory).flat().length;
 
-  // IDs sortables: todos los listados + zonas de drop
-  const allSortableIds = layout
-    ? [
-        ...flattenLayout(layout),
-        DROP_ZONE_NEW_COL,
-        ...(layout.map((_, i) => [colTopId(i), colBottomId(i)]).flat()),
-      ]
-    : [];
+  // IDs sortables: solo los listados (las zonas drop usan useDroppable, no useSortable)
+  const allSortableIds = layout ? flattenLayout(layout) : [];
 
   return (
     <div style={styles.container}>
@@ -528,13 +505,12 @@ export default function TasksPage() {
                   <div style={styles.columnsWrapper}>
                     <div style={styles.columnsGrid}>
                       {layout.map((col, colIndex) => (
-                        <div key={colIndex} style={styles.invisibleColumn}>
-                          {/* Zona drop top de columna */}
-                          <ColDropZone
-                            id={colTopId(colIndex)}
-                            isOver={overDropZone === colTopId(colIndex)}
-                            position="top"
-                          />
+                        <DroppableColumn
+                          key={colIndex}
+                          colIdx={colIndex}
+                          isOver={overDropZone === colDropId(colIndex)}
+                          style={styles.invisibleColumn}
+                        >
                           {col.map((category, rowIndex) => (
                             <SortableListCard
                               key={category}
@@ -556,15 +532,7 @@ export default function TasksPage() {
                               onSubtaskCompleted={handleSubtaskCompleted}
                             />
                           ))}
-                          {/* Zona drop bottom de columna (solo si tiene 1 listado) */}
-                          {col.length < 2 && (
-                            <ColDropZone
-                              id={colBottomId(colIndex)}
-                              isOver={overDropZone === colBottomId(colIndex)}
-                              position="bottom"
-                            />
-                          )}
-                        </div>
+                        </DroppableColumn>
                       ))}
                       {/* Zona drop nueva columna */}
                       <NewColumnDropZone isOver={overDropZone === DROP_ZONE_NEW_COL} />
