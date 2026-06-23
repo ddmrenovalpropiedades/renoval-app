@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search, Download } from 'lucide-react';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
+import { useExcelExport } from '../hooks/useExcelExport';
 
 const normalize = (str) =>
   String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
 
 const PAGADO_POR_OPTIONS = ['DD', 'FD'];
 const ESTADO_OPTIONS = ['P', 'D', 'PG'];
@@ -41,7 +40,6 @@ const ESTADO_COLORS = {
   PG: { bg: '#fff3e0', color: '#f57c00' },
 };
 
-// ─── Money input ───────────────────────────────────────────────────────────────
 function MoneyInput({ value, onChange, style = {}, alwaysVisible = false }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
@@ -77,7 +75,6 @@ function MoneyInput({ value, onChange, style = {}, alwaysVisible = false }) {
   );
 }
 
-// ─── Inline text cell ──────────────────────────────────────────────────────────
 function InlineText({ value, onChange }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState(value || '');
@@ -96,7 +93,6 @@ function InlineText({ value, onChange }) {
   );
 }
 
-// ─── Inline select ─────────────────────────────────────────────────────────────
 function InlineSelect({ value, options, onChange }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}
@@ -107,7 +103,6 @@ function InlineSelect({ value, options, onChange }) {
   );
 }
 
-// ─── Date picker dd/mm/yyyy ────────────────────────────────────────────────────
 function DatePicker({ value, onChange, style = {} }) {
   const ref = React.useRef(null);
   const fmt = (iso) => {
@@ -131,15 +126,9 @@ function DatePicker({ value, onChange, style = {} }) {
   );
 }
 
-// ─── Notes panel ──────────────────────────────────────────────────────────────
 function NotesPanel({ pago, onClose, onSave }) {
   const [text, setText] = useState(pago.notas || '');
-
-  const handleSave = () => {
-    onSave(pago.id, text);
-    onClose();
-  };
-
+  const handleSave = () => { onSave(pago.id, text); onClose(); };
   return (
     <div style={panelStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={panelStyles.panel}>
@@ -180,7 +169,6 @@ const panelStyles = {
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
-// ─── Metrics view ─────────────────────────────────────────────────────────────
 function MetricsView({ onClose }) {
   const [pagos, setPagos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -208,18 +196,13 @@ function MetricsView({ onClose }) {
   const noD = pagos.filter(p => p.estado !== 'D');
   const soloDescontado = pagos.filter(p => p.estado === 'D').reduce((s, p) => s + (p.cxc || 0), 0);
   const total = noD.reduce((s, p) => s + (p.cxc || 0), 0);
-
   const recientes = noD.filter(p => antiguedad(p.fecha) === '- 3 meses');
   const antiguos  = noD.filter(p => antiguedad(p.fecha) === '+ 3 meses');
-
   const cxcRecientes = recientes.reduce((s, p) => s + (p.cxc || 0), 0);
   const cxcAntiguos  = antiguos.reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcAntiguosRecientes = cxcAntiguos; // ya excluye D, son los mismos
-
   const dd = noD.filter(p => p.pagado_por === 'DD');
   const fd = noD.filter(p => p.pagado_por === 'FD');
   const nn = noD.filter(p => !p.pagado_por);
-
   const cxcDDAnt = dd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
   const cxcDDRec = dd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
   const cxcFDAnt = fd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
@@ -249,32 +232,12 @@ function MetricsView({ onClose }) {
           <div style={{ padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 }}>Cargando métricas...</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <MetricCard title="Totales" rows={[
-              ['Total fuera', fmt(total), '#ea4335'],
-              ['CxC totales', fmt(total)],
-              ['Solo descontado', fmt(soloDescontado)],
-            ]} />
-            <MetricCard title="Recientes" rows={[
-              ['CxC -3 meses', fmt(cxcRecientes)],
-            ]} />
-            <MetricCard title="Antiguos" rows={[
-              ['CxC antiguas', fmt(cxcAntiguos)],
-              ['CxC +3 meses reciente', fmt(cxcAntiguosRecientes)],
-              ['CxC +3 meses', fmt(cxcAntiguos), '#ea4335'],
-            ]} />
-            <MetricCard title="DD" rows={[
-              ['CxC antiguas', fmt(cxcDDAnt)],
-              ['CxC recientes', fmt(cxcDDRec)],
-            ]} />
-            <MetricCard title="FD" rows={[
-              ['CxC antiguas', fmt(cxcFDAnt)],
-              ['CxC recientes', fmt(cxcFDRec)],
-            ]} />
-            {cxcNNAnt > 0 && (
-              <MetricCard title="N/N" rows={[
-                ['CxC antiguas', fmt(cxcNNAnt)],
-              ]} />
-            )}
+            <MetricCard title="Totales" rows={[['Total fuera', fmt(total), '#ea4335'],['CxC totales', fmt(total)],['Solo descontado', fmt(soloDescontado)]]} />
+            <MetricCard title="Recientes" rows={[['CxC -3 meses', fmt(cxcRecientes)]]} />
+            <MetricCard title="Antiguos" rows={[['CxC antiguas', fmt(cxcAntiguos)],['CxC +3 meses reciente', fmt(cxcAntiguos)],['CxC +3 meses', fmt(cxcAntiguos), '#ea4335']]} />
+            <MetricCard title="DD" rows={[['CxC antiguas', fmt(cxcDDAnt)],['CxC recientes', fmt(cxcDDRec)]]} />
+            <MetricCard title="FD" rows={[['CxC antiguas', fmt(cxcFDAnt)],['CxC recientes', fmt(cxcFDRec)]]} />
+            {cxcNNAnt > 0 && <MetricCard title="N/N" rows={[['CxC antiguas', fmt(cxcNNAnt)]]} />}
           </div>
         )}
       </div>
@@ -282,7 +245,6 @@ function MetricsView({ onClose }) {
   );
 }
 
-// ─── Row ───────────────────────────────────────────────────────────────────────
 function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -299,8 +261,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
 
   return (
     <tr style={{ background: hovered ? '#f8f9fa' : '#fff', transition: 'background 0.1s' }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}>
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <td style={s.td}><InlineText value={pago.propiedad} onChange={v => update('propiedad', v.toUpperCase())} /></td>
       <td style={s.td}><InlineText value={pago.descripcion} onChange={v => update('descripcion', v.toUpperCase())} /></td>
       <td style={s.tdCenter}><MoneyInput value={pago.cxc} onChange={v => update('cxc', v)} /></td>
@@ -317,63 +278,31 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
       <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: 600, color: ant === '+ 3 meses' ? '#ea4335' : '#34a853', whiteSpace: 'nowrap' }}>{ant}</td>
       <td style={s.tdCenter}><InlineText value={pago.caja} onChange={v => update('caja', v)} /></td>
       <td style={s.tdActions}>
-        <button onClick={() => onOpenNotes(pago)}
-          style={{ ...s.actionBtn, background: hasNotes ? '#e8f0fe' : 'none', color: hasNotes ? '#1a73e8' : '#9aa0a6' }}
-          title="Notas">
-          <FileText size={13} />
-        </button>
+        <button onClick={() => onOpenNotes(pago)} style={{ ...s.actionBtn, background: hasNotes ? '#e8f0fe' : 'none', color: hasNotes ? '#1a73e8' : '#9aa0a6' }} title="Notas"><FileText size={13} /></button>
         {confirmDelete ? (
           <>
-            <button onClick={async () => { await supabase.from('pagos').delete().eq('id', pago.id); onDelete(pago.id); }}
-              style={{ ...s.actionBtn, background: '#fce8e6', color: '#ea4335' }} title="Confirmar">
-              <Trash2 size={13} />
-            </button>
-            <button onClick={() => setConfirmDelete(false)} style={{ ...s.actionBtn, color: '#5f6368' }} title="Cancelar">
-              <X size={12} />
-            </button>
+            <button onClick={async () => { await supabase.from('pagos').delete().eq('id', pago.id); onDelete(pago.id); }} style={{ ...s.actionBtn, background: '#fce8e6', color: '#ea4335' }} title="Confirmar"><Trash2 size={13} /></button>
+            <button onClick={() => setConfirmDelete(false)} style={{ ...s.actionBtn, color: '#5f6368' }} title="Cancelar"><X size={12} /></button>
           </>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} style={{ ...s.actionBtn, color: '#9aa0a6' }} title="Eliminar">
-            <Trash2 size={13} />
-          </button>
+          <button onClick={() => setConfirmDelete(true)} style={{ ...s.actionBtn, color: '#9aa0a6' }} title="Eliminar"><Trash2 size={13} /></button>
         )}
       </td>
     </tr>
   );
 }
 
-// ─── New row ───────────────────────────────────────────────────────────────────
 function NewPagoRow({ onSave, onCancel }) {
-  const [form, setForm] = useState({
-    propiedad: '', descripcion: '', cxc: '', estado: 'P',
-    orden: '', fecha: today(), pagado_por: '', tipo: '',
-    comision: '', fecha_caja: '', caja: '', notas: '',
-  });
-
+  const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), pagado_por: '', tipo: '', comision: '', fecha_caja: '', caja: '', notas: '' });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-
   const handleSave = async () => {
     if (!form.propiedad.trim()) return;
-    const { data } = await supabase.from('pagos').insert({
-      propiedad: form.propiedad.trim(),
-      descripcion: form.descripcion || null,
-      cxc: parseCLP(form.cxc),
-      estado: form.estado || null,
-      orden: form.orden || null,
-      fecha: form.fecha || today(),
-      pagado_por: form.pagado_por || null,
-      tipo: form.tipo || null,
-      comision: parseCLP(form.comision),
-      fecha_caja: form.fecha_caja || null,
-      caja: form.caja || null,
-      notas: form.notas || null,
-    }).select().single();
+    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, caja: form.caja || null, notas: form.notas || null }).select().single();
     if (data) onSave(data);
   };
-
   return (
     <tr style={{ background: '#f0f7ff' }}>
-      <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} placeholder="Propiedad *" hasError={!form.propiedad.trim() && false} /></td>
+      <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} placeholder="Propiedad *" hasError={false} /></td>
       <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value.toUpperCase())} placeholder="Descripción" style={inputStyle} /></td>
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} alwaysVisible /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
@@ -395,43 +324,23 @@ function NewPagoRow({ onSave, onCancel }) {
 const inputStyle = { border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' };
 const selectStyle = { border: '1px solid #dadce0', borderRadius: 5, padding: '3px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff' };
 
-// ─── Pagination controls ───────────────────────────────────────────────────────
 function Pagination({ page, totalCount, pageSize, onPageChange }) {
   const totalPages = Math.ceil(totalCount / pageSize);
   if (totalPages <= 1) return null;
-
   const from = page * pageSize + 1;
   const to = Math.min((page + 1) * pageSize, totalCount);
-
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', borderTop: '1px solid #e8eaed', flexShrink: 0, background: '#fafafa' }}>
       <span style={{ fontSize: 12, color: '#5f6368' }}>{from}–{to} de {totalCount}</span>
-      <button
-        onClick={() => onPageChange(page - 1)}
-        disabled={page === 0}
-        style={{ ...paginationBtn, opacity: page === 0 ? 0.35 : 1 }}>
-        <ChevronLeft size={15} />
-      </button>
-      <span style={{ fontSize: 12, color: '#3c4043', minWidth: 60, textAlign: 'center' }}>
-        Página {page + 1} de {totalPages}
-      </span>
-      <button
-        onClick={() => onPageChange(page + 1)}
-        disabled={page >= totalPages - 1}
-        style={{ ...paginationBtn, opacity: page >= totalPages - 1 ? 0.35 : 1 }}>
-        <ChevronRight size={15} />
-      </button>
+      <button onClick={() => onPageChange(page - 1)} disabled={page === 0} style={{ ...paginationBtn, opacity: page === 0 ? 0.35 : 1 }}><ChevronLeft size={15} /></button>
+      <span style={{ fontSize: 12, color: '#3c4043', minWidth: 60, textAlign: 'center' }}>Página {page + 1} de {totalPages}</span>
+      <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages - 1} style={{ ...paginationBtn, opacity: page >= totalPages - 1 ? 0.35 : 1 }}><ChevronRight size={15} /></button>
     </div>
   );
 }
 
-const paginationBtn = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 28, height: 28, border: '1px solid #dadce0', borderRadius: 6,
-  background: '#fff', cursor: 'pointer', color: '#5f6368', padding: 0,
-};
+const paginationBtn = { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, border: '1px solid #dadce0', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#5f6368', padding: 0 };
 
-// ─── Main ──────────────────────────────────────────────────────────────────────
 export default function PagosPage() {
   const [pagos, setPagos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -440,196 +349,126 @@ export default function PagosPage() {
   const [showMetrics, setShowMetrics] = useState(false);
   const [filterPor, setFilterPor] = useState([]);
   const [filterEstado, setFilterEstado] = useState([]);
-  const [filterAntiguedad, setFilterAntiguedad] = useState(''); // '' | 'reciente' | 'antigua'
+  const [filterAntiguedad, setFilterAntiguedad] = useState('');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const { exportToExcel } = useExcelExport();
 
   const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter) => {
     setLoading(true);
-
     let query = supabase.from('pagos').select('*', { count: 'exact' });
-
     if (porFilter.length === 1) query = query.eq('pagado_por', porFilter[0]);
     else if (porFilter.length > 1) query = query.in('pagado_por', porFilter);
-
     if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
     else if (estadoFilter.length > 1) query = query.in('estado', estadoFilter);
-
     if (antiguedadFilter) {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 90);
+      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
       const cutoffStr = cutoff.toISOString().split('T')[0];
       if (antiguedadFilter === 'reciente') query = query.gte('fecha', cutoffStr);
       else if (antiguedadFilter === 'antigua') query = query.lt('fecha', cutoffStr);
     }
-
     if (searchText.trim()) {
       const words = normalize(searchText.trim()).split(/\s+/).filter(Boolean);
       const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo', 'caja'];
-      for (const word of words) {
-        query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
-      }
+      for (const word of words) query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
     }
-
     const from = currentPage * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    const { data, count } = await query
-      .order('position', { ascending: true })
-      .range(from, to);
-
+    const { data, count } = await query.order('position', { ascending: true }).range(from, from + PAGE_SIZE - 1);
     setPagos(data || []);
     setTotalCount(count || 0);
     setLoading(false);
   }, []);
 
+  useEffect(() => { fetchPagos(page, filterPor, filterEstado, search, filterAntiguedad); }, [fetchPagos, page, filterPor, filterEstado, search, filterAntiguedad]);
   useEffect(() => {
-    fetchPagos(page, filterPor, filterEstado, search, filterAntiguedad);
-  }, [fetchPagos, page, filterPor, filterEstado, search, filterAntiguedad]);
-
-  // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(0);
-    }, 300);
+    const timer = setTimeout(() => { setSearch(searchInput); setPage(0); }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const toggleFilter = (arr, setArr, val) => {
-    const next = arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
-    setArr(next);
-    setPage(0);
-  };
-
+  const toggleFilter = (arr, setArr, val) => { setArr(arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]); setPage(0); };
   const handleUpdate = (updated) => setPagos(prev => prev.map(p => p.id === updated.id ? updated : p));
-  const handleDelete = (id) => {
-    setPagos(prev => prev.filter(p => p.id !== id));
-    setTotalCount(prev => prev - 1);
-  };
-  const handleSaveNew = (newPago) => {
-    setPagos(prev => [newPago, ...prev]);
-    setTotalCount(prev => prev + 1);
-    setAddingNew(false);
-  };
+  const handleDelete = (id) => { setPagos(prev => prev.filter(p => p.id !== id)); setTotalCount(prev => prev - 1); };
+  const handleSaveNew = (newPago) => { setPagos(prev => [newPago, ...prev]); setTotalCount(prev => prev + 1); setAddingNew(false); };
+  const handleSaveNotes = async (id, notas) => { await supabase.from('pagos').update({ notas }).eq('id', id); setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p)); };
+  const handlePageChange = (newPage) => { setPage(newPage); const wrapper = document.getElementById('pagos-table-wrapper'); if (wrapper) wrapper.scrollTop = 0; };
 
-  const handleSaveNotes = async (id, notas) => {
-    await supabase.from('pagos').update({ notas }).eq('id', id);
-    setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p));
-  };
-
-  const handlePageChange = (newPage) => {
-    setPage(newPage);
-    // Scroll table to top on page change
-    const wrapper = document.getElementById('pagos-table-wrapper');
-    if (wrapper) wrapper.scrollTop = 0;
+  // Export: fetch todos los registros sin paginación
+  const handleExport = async () => {
+    setExporting(true);
+    let all = [];
+    let from = 0;
+    while (true) {
+      const { data } = await supabase.from('pagos').select('*').order('position', { ascending: true }).range(from, from + 999);
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    exportToExcel(all, [
+      { key: 'propiedad',   label: 'Propiedad' },
+      { key: 'descripcion', label: 'Descripción' },
+      { key: 'cxc',         label: 'CxC' },
+      { key: 'estado',      label: 'Estado' },
+      { key: 'fecha',       label: 'Fecha' },
+      { key: 'pagado_por',  label: 'Pagado Por' },
+      { key: 'tipo',        label: 'Tipo' },
+      { key: 'comision',    label: 'Comisión' },
+      { key: 'fecha_caja',  label: 'Fecha Caja' },
+      { key: 'caja',        label: 'Caja' },
+      { key: 'notas',       label: 'Notas' },
+    ], 'Pagos');
+    setExporting(false);
   };
 
   const activeFilters = filterPor.length > 0 || filterEstado.length > 0 || filterAntiguedad || search.trim().length > 0;
-
   const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
 
   return (
     <div style={s.container}>
-      {/* Header */}
       <div style={s.header}>
         <div>
           <h1 style={s.title}>Pagos</h1>
-          <p style={s.subtitle}>
-            {activeFilters
-              ? `${totalCount} registros (filtrados)`
-              : `${totalCount} registros`
-            }
-          </p>
+          <p style={s.subtitle}>{activeFilters ? `${totalCount} registros (filtrados)` : `${totalCount} registros`}</p>
         </div>
         <div style={s.headerRight}>
-          {/* Búsqueda texto libre */}
           <div style={s.searchWrapper}>
             <Search size={14} color="#9aa0a6" style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
-            <input
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              placeholder="Buscar propiedad, descripción..."
-              style={s.searchInput}
-            />
-            {searchInput && (
-              <button onClick={() => { setSearchInput(''); setSearch(''); setPage(0); }} style={s.clearSearch}>
-                <X size={12} />
-              </button>
-            )}
+            <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Buscar propiedad, descripción..." style={s.searchInput} />
+            {searchInput && <button onClick={() => { setSearchInput(''); setSearch(''); setPage(0); }} style={s.clearSearch}><X size={12} /></button>}
           </div>
-          {/* Filtro por Pagado por */}
-          <div style={s.filterGroup}>
-            {PAGADO_POR_OPTIONS.map(v => (
-              <button key={v} onClick={() => toggleFilter(filterPor, setFilterPor, v)}
-                style={{ ...s.filterBtn, ...(filterPor.includes(v) ? s.filterBtnActive : {}) }}>{v}</button>
-            ))}
-          </div>
-          {/* Filtro por Estado */}
-          <div style={s.filterGroup}>
-            {ESTADO_OPTIONS.map(v => (
-              <button key={v} onClick={() => toggleFilter(filterEstado, setFilterEstado, v)}
-                style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>
-            ))}
-          </div>
-          {/* Filtro por Antigüedad */}
-          <div style={s.filterGroup}>
-            {[{ val: 'reciente', label: '- 3m' }, { val: 'antigua', label: '+ 3m' }].map(({ val, label }) => (
-              <button key={val}
-                onClick={() => { setFilterAntiguedad(prev => prev === val ? '' : val); setPage(0); }}
-                style={{ ...s.filterBtn, ...(filterAntiguedad === val ? s.filterBtnActive : {}) }}>{label}</button>
-            ))}
-          </div>
-          {activeFilters && (
-            <button onClick={() => { setFilterPor([]); setFilterEstado([]); setFilterAntiguedad(''); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>
-          )}
-          <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}>
-            <BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas
+          <div style={s.filterGroup}>{PAGADO_POR_OPTIONS.map(v => <button key={v} onClick={() => toggleFilter(filterPor, setFilterPor, v)} style={{ ...s.filterBtn, ...(filterPor.includes(v) ? s.filterBtnActive : {}) }}>{v}</button>)}</div>
+          <div style={s.filterGroup}>{ESTADO_OPTIONS.map(v => <button key={v} onClick={() => toggleFilter(filterEstado, setFilterEstado, v)} style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>)}</div>
+          <div style={s.filterGroup}>{[{ val: 'reciente', label: '- 3m' }, { val: 'antigua', label: '+ 3m' }].map(({ val, label }) => <button key={val} onClick={() => { setFilterAntiguedad(prev => prev === val ? '' : val); setPage(0); }} style={{ ...s.filterBtn, ...(filterAntiguedad === val ? s.filterBtnActive : {}) }}>{label}</button>)}</div>
+          {activeFilters && <button onClick={() => { setFilterPor([]); setFilterEstado([]); setFilterAntiguedad(''); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>}
+          <button onClick={handleExport} disabled={exporting} title="Exportar todos los pagos a Excel"
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:exporting?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:exporting?0.6:1 }}>
+            <Download size={14} color="#34a853" />{exporting ? 'Exportando...' : 'Excel'}
           </button>
-          <button onClick={() => setAddingNew(true)} disabled={addingNew} style={s.addBtn}>
-            <Plus size={14} style={{ marginRight: 5 }} /> Nuevo pago
-          </button>
+          <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}><BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas</button>
+          <button onClick={() => setAddingNew(true)} disabled={addingNew} style={s.addBtn}><Plus size={14} style={{ marginRight: 5 }} /> Nuevo pago</button>
         </div>
       </div>
 
-      {/* Table */}
       <div id="pagos-table-wrapper" style={s.tableWrapper}>
-        {loading ? (
-          <div style={s.loading}>Cargando pagos...</div>
-        ) : (
+        {loading ? <div style={s.loading}>Cargando pagos...</div> : (
           <table style={s.table}>
-            <thead>
-              <tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 2 ? 'left' : 'center' }}>{h}</th>)}</tr>
-            </thead>
+            <thead><tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 2 ? 'left' : 'center' }}>{h}</th>)}</tr></thead>
             <tbody>
               {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} />}
               {pagos.length === 0 && !addingNew
                 ? <tr><td colSpan={13} style={s.empty}>No hay pagos registrados.</td></tr>
-                : pagos.map(p => (
-                  <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor} />
-                ))
+                : pagos.map(p => <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor} />)
               }
             </tbody>
           </table>
         )}
       </div>
 
-      {/* Pagination */}
-      <Pagination
-        page={page}
-        totalCount={totalCount}
-        pageSize={PAGE_SIZE}
-        onPageChange={handlePageChange}
-      />
-
-      {/* Notes panel */}
-      {notesFor && (
-        <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} />
-      )}
-
-      {/* Metrics */}
+      <Pagination page={page} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={handlePageChange} />
+      {notesFor && <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} />}
       {showMetrics && <MetricsView onClose={() => setShowMetrics(false)} />}
     </div>
   );
