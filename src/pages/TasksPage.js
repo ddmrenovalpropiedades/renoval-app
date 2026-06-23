@@ -54,7 +54,6 @@ function removeFromLayout(layout, name) {
 }
 
 // IDs de zonas drop especiales
-const DROP_ZONE_NEW_COL = '__NEW_COL__';
 // ── Componente columna sortable (drag handle en el nombre del listado) ────────
 function SortableListCard({ category, colIndex, rowIndex, layout, isDraggingThis, ...props }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
@@ -341,10 +340,6 @@ export default function TasksPage() {
 
   const handleDragMove = (event) => {
     if (!draggingCategory) return;
-    const point = event.activatorEvent;
-    // Usar la posición del puntero desde el evento nativo
-    const nativeEvent = event.activatorEvent;
-    // La posición actual viene de active.rect
     const rect = event.active.rect.current?.translated;
     if (!rect) return;
     const cx = rect.left + rect.width / 2;
@@ -355,7 +350,6 @@ export default function TasksPage() {
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
-    const finalHovered = hoveredColIdx;
     setDraggingCategory(null);
     setHoveredColIdx(null);
 
