@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import { Save, Search, X } from 'lucide-react';
+import { Save, Search, X, Download } from 'lucide-react';
+import { useExcelExport } from '../hooks/useExcelExport';
 
 const SI_NO = ['', 'Sí', 'No'];
 
@@ -107,6 +108,7 @@ export default function PropertyAttributesTab() {
   const [attrs, setAttrs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const { exportToExcel } = useExcelExport();
 
   useEffect(() => { fetchAttrs(); }, []);
 
@@ -132,6 +134,31 @@ export default function PropertyAttributesTab() {
     return attrs.filter(a => a.propiedad?.toLowerCase().includes(s));
   }, [attrs, search]);
 
+  const handleExport = () => {
+    const toBool = v => v === true ? 'Sí' : v === false ? 'No' : '';
+    const data = filtered.map(a => ({
+      ...a,
+      tiene_agua: toBool(a.tiene_agua),
+      tiene_luz:  toBool(a.tiene_luz),
+      tiene_gas:  toBool(a.tiene_gas),
+      tiene_gc:   toBool(a.tiene_gc),
+    }));
+    exportToExcel(data, [
+      { key: 'propiedad',    label: 'Propiedad' },
+      { key: 'tiene_agua',   label: 'Agua' },
+      { key: 'tiene_luz',    label: 'Luz' },
+      { key: 'tiene_gas',    label: 'Gas' },
+      { key: 'tiene_gc',     label: 'GC' },
+      { key: 'umbral1_agua', label: 'U1 Agua' },
+      { key: 'umbral2_agua', label: 'U2 Agua' },
+      { key: 'umbral1_luz',  label: 'U1 Luz' },
+      { key: 'umbral2_luz',  label: 'U2 Luz' },
+      { key: 'umbral1_gas',  label: 'U1 Gas' },
+      { key: 'umbral2_gas',  label: 'U2 Gas' },
+      { key: 'gc_promedio',  label: 'GC Promedio' },
+    ], 'Atributos');
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.searchWrapper}>
@@ -141,6 +168,10 @@ export default function PropertyAttributesTab() {
           style={styles.searchInput} />
         {search && <button onClick={() => setSearch('')} style={styles.clearSearch}><X size={13} color="#9aa0a6" /></button>}
         <span style={styles.count}>{filtered.length} de {attrs.length}</span>
+        <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
+          style={{ marginLeft: 12, display:'flex', alignItems:'center', padding:'6px 8px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1 }}>
+          <Download size={14} color="#34a853" />
+        </button>
       </div>
 
       <div style={styles.tableWrapper}>
