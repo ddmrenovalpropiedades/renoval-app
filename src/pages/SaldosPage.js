@@ -80,7 +80,7 @@ const getCellStyle = (val, tipo, attr, emptyWhite=false) => {
   const base = { padding:0, fontSize:12, textAlign:'center', width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:4 };
   const u1 = { background:'#FFE0B2', color:'#202124', borderRadius:6 }; // naranja suave — supera umbral 1
   const u2 = { background:'#FFCDD2', color:'#202124', borderRadius:6 }; // rojo suave  — supera umbral 2
-  if (!val||val==='') return { ...base, background: emptyWhite?'#fff':'#FAF3E0' };
+  if (!val||val==='') return { ...base, background: emptyWhite?'#fff':'#fff', border: emptyWhite?'none':'1px solid #dadce0', borderRadius:4 };
   if (isPagada(val)) return { ...base, background:'#fff', color:'#bdbdbd' };
   const n = parseAmount(val);
   if (n===null) return { ...base, background:'#fff', color:'#202124' };
