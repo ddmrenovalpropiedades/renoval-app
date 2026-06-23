@@ -272,7 +272,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
 
   const COL_HEADER_COLORS = {
     agua: { bg: '#E3F2FD', color: '#1565C0' }, // azul DD
-    luz:  { bg: '#FFFDE7', color: '#F9A825' }, // amarillo
+    luz:  { bg: '#FFFDE7', color: '#F57F17' }, // amarillo más cargado
     gas:  { bg: '#FFF3E0', color: '#E65100' }, // naranja FG
     gc:   { bg: '#E8F5E9', color: '#2E7D32' }, // verde FD
   };
