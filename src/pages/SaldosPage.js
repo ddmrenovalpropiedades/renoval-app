@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2 } from 'lucide-react';
+import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2, Download } from 'lucide-react';
+import { useExcelExport } from '../hooks/useExcelExport';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -868,6 +869,28 @@ export default function SaldosPage() {
   const [lastUploads, setLastUploads] = useState({});
   const [showUpload, setShowUpload] = useState(false);
 
+  const { exportToExcel } = useExcelExport();
+
+  const handleExport = () => {
+    if (tab === 'saldos') {
+      exportToExcel(rows.filter(r => r.last_cuentas_ac || r.last_cuentas_an || r.last_arriendos), [
+        { key: 'propiedad',      label: 'Propiedad' },
+        { key: 'propietario',    label: 'Propietario' },
+        { key: 'e1',             label: 'E1' },
+        { key: 'e2',             label: 'E2' },
+        { key: 'agua_ac',        label: 'Agua Ac' },
+        { key: 'agua_an',        label: 'Agua An' },
+        { key: 'luz_ac',         label: 'Luz Ac' },
+        { key: 'luz_an',         label: 'Luz An' },
+        { key: 'gas_ac',         label: 'Gas Ac' },
+        { key: 'gas_an',         label: 'Gas An' },
+        { key: 'gc_ac',          label: 'GC Ac' },
+        { key: 'gc_an',          label: 'GC An' },
+        { key: 'deuda_arriendo', label: 'Deuda Arriendo' },
+      ], 'Saldos');
+    }
+  };
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [{ data: saldos }, { data: uploads }, { data: attrData }] = await Promise.all([
@@ -1031,6 +1054,10 @@ export default function SaldosPage() {
               <span style={{fontSize:13,color:'#3c4043'}}>{loadingGC?'Cargando...':'Cargar GC'}</span>
             </button>
           )}
+          <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:loading?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:loading?0.5:1 }}>
+            <Download size={14} color="#34a853" /> Excel
+          </button>
           <button onClick={fetchData} style={st.iconBtn} title="Actualizar"><RefreshCw size={16} color="#5f6368"/></button>
           {tab==='saldos'&&<button onClick={()=>setShowUpload(!showUpload)} style={{...st.iconBtn,...(showUpload?{background:'#e8f0fe',borderColor:'#1a73e8'}:{})}}><Upload size={16} color={showUpload?'#1a73e8':'#5f6368'}/></button>}
         </div>
