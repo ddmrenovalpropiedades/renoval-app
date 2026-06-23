@@ -270,6 +270,13 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
     return result;
   }, [rows,search,filterE,filterUmbral,attrsMap]);
 
+  const COL_HEADER_COLORS = {
+    agua: { bg: '#E3F2FD', color: '#1565C0' }, // azul DD
+    luz:  { bg: '#FFFDE7', color: '#F9A825' }, // amarillo
+    gas:  { bg: '#FFF3E0', color: '#E65100' }, // naranja FG
+    gc:   { bg: '#E8F5E9', color: '#2E7D32' }, // verde FD
+  };
+
   const COLS = [
     {key:'agua_ac',label:'AGUA Ac',tipo:'agua',alerta:'alerta_agua',groupStart:true},
     {key:'agua_an',label:'AGUA An',tipo:'agua',alerta:null,groupEnd:true},
@@ -318,7 +325,17 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
             <thead><tr>
               <th style={{...st.th,minWidth:280,textAlign:'left'}}>PROPIEDAD</th>
               <th style={{...st.th,minWidth:160,textAlign:'center'}}>PROPIETARIO</th>
-              {COLS.map(c=><th key={c.key} style={{...st.th,minWidth:70,textAlign:'center',...(c.groupStart?{borderLeft:'2px solid #bdbdbd'}:{}),...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{})}}>{c.label}</th>)}
+              {COLS.map(c => {
+                const hc = COL_HEADER_COLORS[c.tipo] || {};
+                return (
+                  <th key={c.key} style={{
+                    ...st.th, minWidth:70, textAlign:'center',
+                    ...(c.groupStart?{borderLeft:'2px solid #bdbdbd'}:{}),
+                    ...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{}),
+                    ...(hc.bg ? { background: hc.bg, color: hc.color } : {}),
+                  }}>{c.label}</th>
+                );
+              })}
               <th style={{...st.th,minWidth:40}}></th>
               <th style={{...st.th,minWidth:50,textAlign:'center'}}>E1</th>
               <th style={{...st.th,minWidth:50,textAlign:'center'}}>E2</th>
