@@ -562,25 +562,27 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     setForm(prev => ({ ...prev, [k]: v }));
   };
 
-  const handleSave = async () => {
-    await supabase.from('pizarra').update({
-      propiedad: form.propiedad || null,
-      precio: form.precio || null,
-      promo: form.promo || null,
-      status: form.status || null,
-      e1: form.e1 || null,
-      e2: form.e2 || null,
-      db: form.db || null,
-      eb: form.eb || null,
-      comuna: form.comuna || null,
-      fecha_salida: form.fecha_salida || null,
-      aviso: form.aviso || null,
-      respaldo: form.respaldo || null,
-      tipo: form.tipo || null,
-      admin: form.admin || null,
-    }).eq('id', row.id);
-    onSave({ ...row, ...form });
-  };
+ const handleSave = async () => {
+  await supabase.from('pizarra').update({
+    propiedad: form.propiedad || null,
+    precio: form.precio || null,
+    promo: form.promo || null,
+    status: form.status || null,
+    e1: form.e1 || null,
+    e2: form.e2 || null,
+    db: form.db || null,
+    eb: form.eb || null,
+    comuna: form.comuna || null,
+    fecha_salida: form.fecha_salida || null,
+    aviso: form.aviso || null,
+    respaldo: form.respaldo || null,
+    tipo: form.tipo || null,
+    admin: form.admin || null,
+    url_publicacion: form.url_publicacion || null,
+    conv_asignar_a: form.conv_asignar_a || null,
+  }).eq('id', row.id);
+  onSave({ ...row, ...form });
+};
 
   const handleNewSave = async () => {
     setAttempted(true);
