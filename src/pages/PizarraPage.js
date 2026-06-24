@@ -865,10 +865,16 @@ export default function PizarraPage() {
     setRows(prev => prev.filter(r => r.id !== id));
   };
 
-  const handleSaveUrl = async (url) => {
+  const handleSaveUrl = async (url, asignarA) => {
     if (!urlModalRow) return;
-    await supabase.from('pizarra').update({ url_publicacion: url }).eq('id', urlModalRow.id);
-    setRows(prev => prev.map(r => r.id === urlModalRow.id ? { ...r, url_publicacion: url } : r));
+    await supabase.from('pizarra')
+      .update({ url_publicacion: url, conv_asignar_a: asignarA || 'e2' })
+      .eq('id', urlModalRow.id);
+    setRows(prev => prev.map(r =>
+      r.id === urlModalRow.id
+        ? { ...r, url_publicacion: url, conv_asignar_a: asignarA || 'e2' }
+        : r
+    ));
   };
 
   const handleRentedConfirm = async ({ comision, entrega, meses }) => {
