@@ -40,6 +40,9 @@ const ESTADO_COLORS = {
   PG: { bg: '#fff3e0', color: '#f57c00' },
 };
 
+// ── MoneyInput ─────────────────────────────────────────────────
+// - Doble clic para entrar en modo edición (permite copiar con clic simple)
+// - Ancho fijo del input para no expandir la columna
 function MoneyInput({ value, onChange, style = {}, alwaysVisible = false }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
@@ -58,19 +61,37 @@ function MoneyInput({ value, onChange, style = {}, alwaysVisible = false }) {
 
   if (editing) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', minWidth: 90 }}>
+      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', width: 110, boxSizing: 'border-box', flexShrink: 0 }}>
         <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2 }}>$</span>
-        <input autoFocus value={raw ? parseInt(raw || '0').toLocaleString('es-CL') : ''}
+        <input
+          autoFocus
+          value={raw ? parseInt(raw || '0').toLocaleString('es-CL') : ''}
           onChange={e => setRaw(e.target.value.replace(/[^0-9]/g, ''))}
           onBlur={commit}
           onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-          style={{ border: 'none', outline: 'none', width: 100, fontSize: 12, fontFamily: 'inherit' }} />
+          style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }}
+        />
       </div>
     );
   }
+
   return (
-    <div onClick={start} style={{ cursor: 'text', fontSize: 12, padding: '2px 6px', borderRadius: 6, minWidth: 80, border: alwaysVisible ? '1px solid #dadce0' : 'none', background: alwaysVisible ? '#fff' : 'transparent', ...style }}>
-      {value != null && value !== '' ? formatCLP(value) : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0' }}>{alwaysVisible ? '$—' : '—'}</span>}
+    <div
+      onDoubleClick={start}
+      title="Doble clic para editar"
+      style={{
+        cursor: 'text', fontSize: 12, padding: '2px 6px', borderRadius: 6,
+        width: 110, boxSizing: 'border-box', flexShrink: 0,
+        border: alwaysVisible ? '1px solid #dadce0' : 'none',
+        background: alwaysVisible ? '#fff' : 'transparent',
+        userSelect: 'text',
+        ...style,
+      }}
+    >
+      {value != null && value !== ''
+        ? formatCLP(value)
+        : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0' }}>{alwaysVisible ? '$—' : '—'}</span>
+      }
     </div>
   );
 }
@@ -395,7 +416,6 @@ export default function PagosPage() {
   const handleSaveNotes = async (id, notas) => { await supabase.from('pagos').update({ notas }).eq('id', id); setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p)); };
   const handlePageChange = (newPage) => { setPage(newPage); const wrapper = document.getElementById('pagos-table-wrapper'); if (wrapper) wrapper.scrollTop = 0; };
 
-  // Export: fetch todos los registros sin paginación
   const handleExport = async () => {
     setExporting(true);
     let all = [];
