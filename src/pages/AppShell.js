@@ -21,7 +21,7 @@ const NAV_ITEMS_TOP = [
   { id: 'pizarra',    label: 'Pizarra',                icon: LayoutGrid,    ownerOnly: false },
   { id: 'arrendadas', label: 'Propiedades Arrendadas', icon: Building2,     ownerOnly: false },
   { id: 'servicios',  label: 'Saldos',                 icon: Zap,           ownerOnly: false },
-  { id: 'contratos',  label: 'Contratos',              icon: FileText,      ownerOnly: false },
+  { id: 'contratos',  label: 'Documentos',             icon: FileText,      ownerOnly: false },
   { id: 'tareas',     label: 'Tareas Pendientes',      icon: CheckSquare,   ownerOnly: false },
 ];
 
