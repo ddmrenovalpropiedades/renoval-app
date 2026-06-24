@@ -17,16 +17,15 @@ function extractUrl(text) {
   return match ? match[0] : null;
 }
 
-// ─── Buscar propiedad por URL y obtener agent_id de e2 ───────────────────────
+// ─── Buscar propiedad por URL y obtener agent_id según conv_asignar_a ─────────
 async function findPropiedadByUrl(url) {
   if (!url) return null;
 
-  // Normalizar URL: quitar trailing slash y query params para mayor tolerancia
   const urlNorm = url.split('?')[0].replace(/\/$/, '').toLowerCase();
 
   const { data: propiedades } = await supabase
     .from('pizarra')
-    .select('id, propiedad, e2, url_publicacion')
+    .select('id, propiedad, e1, e2, url_publicacion, conv_asignar_a')
     .not('url_publicacion', 'is', null);
 
   if (!propiedades || propiedades.length === 0) return null;
@@ -39,13 +38,16 @@ async function findPropiedadByUrl(url) {
 
   if (!match) return null;
 
-  // Obtener agent_id del encargado e2
+  // Determinar a qué encargado asignar según conv_asignar_a (default: e2)
+  const asignarA  = match.conv_asignar_a || 'e2';
+  const iniciales = asignarA === 'e1' ? match.e1 : match.e2;
+
   let agentId = null;
-  if (match.e2) {
+  if (iniciales) {
     const { data: agente } = await supabase
       .from('app_users')
       .select('id')
-      .eq('iniciales', match.e2)
+      .eq('iniciales', iniciales)
       .single();
     agentId = agente?.id || null;
   }
@@ -53,7 +55,7 @@ async function findPropiedadByUrl(url) {
   return {
     propiedadId: match.id,
     propiedad:   match.propiedad,
-    e2:          match.e2,
+    iniciales,
     agentId,
   };
 }
@@ -102,9 +104,9 @@ async function sendMenuMessage(to) {
           },
           action: {
             buttons: [
-              { type: 'reply', reply: { id: 'AGENDAR_VISITA',   title: 'Agendar visita'    } },
-              { type: 'reply', reply: { id: 'MAS_INFORMACION',  title: 'Más información'   } },
-              { type: 'reply', reply: { id: 'HABLAR_EJECUTIVO', title: 'Hablar ejecutivo'  } },
+              { type: 'reply', reply: { id: 'AGENDAR_VISITA',   title: 'Agendar visita'   } },
+              { type: 'reply', reply: { id: 'MAS_INFORMACION',  title: 'Más información'  } },
+              { type: 'reply', reply: { id: 'HABLAR_EJECUTIVO', title: 'Hablar ejecutivo' } },
             ],
           },
         },
@@ -118,7 +120,6 @@ async function sendMenuMessage(to) {
 
 // ─── Obtener o crear conversación ─────────────────────────────────────────────
 async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch) {
-  // Buscar conversación activa
   const { data: existing } = await supabase
     .from('wa_conversaciones')
     .select('*')
@@ -130,7 +131,6 @@ async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch)
 
   if (existing) return existing;
 
-  // Crear nueva conversación con propiedad y agente si hubo match
   const { data: nueva, error } = await supabase
     .from('wa_conversaciones')
     .insert({
@@ -138,7 +138,7 @@ async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch)
       contact_name:  contactName || null,
       estado:        'bot_activo',
       propiedad_id:  propiedadMatch?.propiedadId || null,
-      agent_id:      propiedadMatch?.agentId || null,
+      agent_id:      propiedadMatch?.agentId     || null,
     })
     .select()
     .single();
@@ -211,7 +211,6 @@ module.exports = async function handler(req, res) {
       const value    = changes?.value;
       const messages = value?.messages;
 
-      // Ignorar status updates
       if (!messages || messages.length === 0) {
         return res.status(200).end();
       }
@@ -221,7 +220,6 @@ module.exports = async function handler(req, res) {
       const wamid       = message.id;
       const contactName = value?.contacts?.[0]?.profile?.name || null;
 
-      // ── Determinar texto del mensaje entrante ─────────────────────────────
       let inboundText    = null;
       let inboundType    = message.type;
       let selectedOption = null;
@@ -236,14 +234,14 @@ module.exports = async function handler(req, res) {
 
       console.log('INBOUND from:', from, 'type:', inboundType, 'text:', inboundText);
 
-      // ── Matching de URL (solo en mensajes de texto nuevos) ────────────────
+      // ── Matching de URL ───────────────────────────────────────────────────
       let propiedadMatch = null;
       if (message.type === 'text' && inboundText) {
         const url = extractUrl(inboundText);
         if (url) {
           propiedadMatch = await findPropiedadByUrl(url);
           if (propiedadMatch) {
-            console.log('URL match found:', propiedadMatch.propiedad, '→ agente:', propiedadMatch.e2);
+            console.log('URL match:', propiedadMatch.propiedad, '→ asignado a:', propiedadMatch.iniciales);
           }
         }
       }
@@ -264,7 +262,6 @@ module.exports = async function handler(req, res) {
           .eq('id', convId);
       }
 
-      // Guardar mensaje entrante
       await saveMessage({
         conversacionId: convId,
         wamid,
@@ -276,12 +273,10 @@ module.exports = async function handler(req, res) {
       // ── Lógica del bot ────────────────────────────────────────────────────
       const estado = conversacion.estado;
 
-      // Si ya tiene agente asignado y está activo, no responde el bot
       if (estado === 'con_agente') {
         return res.status(200).end();
       }
 
-      // Si está esperando agente, recordar al contacto
       if (estado === 'esperando_agente') {
         const outText  = 'Un ejecutivo te responderá a la brevedad. 🙏';
         const outWamid = await sendTextMessage(from, outText);
@@ -296,9 +291,7 @@ module.exports = async function handler(req, res) {
         return res.status(200).end();
       }
 
-      // ── Estado: bot_activo ────────────────────────────────────────────────
-
-      // Primer mensaje o texto libre → enviar menú
+      // Estado: bot_activo
       if (!selectedOption) {
         const outWamid = await sendMenuMessage(from);
         await saveMessage({
@@ -312,10 +305,7 @@ module.exports = async function handler(req, res) {
         return res.status(200).end();
       }
 
-      // ── Respuestas a opciones del menú ────────────────────────────────────
       if (selectedOption === 'AGENDAR_VISITA') {
-        // Fase 3.4: mostrar bloques disponibles de la propiedad
-        // Por ahora placeholder hasta implementar 3.4
         const outText  = '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!';
         const outWamid = await sendTextMessage(from, outText);
         await saveMessage({
