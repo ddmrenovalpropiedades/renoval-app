@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import PropertyAutocomplete from '../components/pizarra/PropertyAutocomplete';
 import { Plus, Trash2, Download, ChevronLeft, Eye } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
          AlignmentType, ImageRun, Header, BorderStyle, WidthType, ShadingType,
@@ -22,6 +23,7 @@ const formatFechaLarga = (d) => {
   const [y, m, dd] = d.split('-');
   return `${parseInt(dd)} de ${MESES_CAP[parseInt(m) - 1]} de ${y}`;
 };
+
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -477,9 +479,13 @@ export default function GarantiaPage() {
             <Field label="Fecha del documento">
               <Input value={fecha} onChange={setFecha} type="date" />
             </Field>
-            <Field label="Dirección de la propiedad" span2>
-              <Input value={datos.direccion} onChange={v => setD('direccion', v)}
-                placeholder="Av. Ejemplo 123, Departamento 45, Las Condes" />
+            <Field label="Dirección" span2>
+              <PropertyAutocomplete
+                value={datos.direccion}
+                onChange={v => setD('direccion', v)}
+                placeholder="Av. Ejemplo 123, Departamento 45, Las Condes"
+                inputStyle={{ padding: '8px 10px', fontSize: 13, borderRadius: 7, height: 'auto' }}
+              />
             </Field>
             <Field label="Monto de garantía recibida">
               <MoneyInput value={datos.garantia} onChange={v => setD('garantia', v)} />
