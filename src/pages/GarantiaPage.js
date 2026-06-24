@@ -215,14 +215,14 @@ function ItemRow({ item, onChange, onRemove }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <input
           value={item.label}
-          onChange={e => set('label', e.target.value.toUpperCase())}
-          placeholder="DESCRIPCIÓN DEL ÍTEM"
+          onChange={e => set('label', e.target.value)}
+          placeholder="Descripción del ítem"
           style={{ ...fs.input, fontSize: 13 }}
         />
         <input
           value={item.detalle}
-          onChange={e => set('detalle', e.target.value.toUpperCase())}
-          placeholder="DETALLE ADICIONAL (OPCIONAL)"
+          onChange={e => set('detalle', e.target.value)}
+          placeholder="Detalle adicional (opcional)"
           style={{ ...fs.input, fontSize: 12, color: '#5f6368', background: '#fafafa' }}
         />
       </div>
@@ -399,6 +399,8 @@ function buildGarantiaDoc({ datos, items, fecha }) {
     br(),
     table,
     br(),
+    justified([run('Si tienes alguna duda o consulta respecto al monto detallado en este documento, puedes contactar a tu ejecutivo de Renoval.')]),
+    br(),
   ];
 
   return new Document({
@@ -571,14 +573,6 @@ export default function GarantiaPage() {
         <div style={fs.section}>
           <div style={fs.sectionHeader}>
             <span style={fs.sectionTitle}>Abonos y descuentos</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => addItem('abono')} style={{ ...fs.addBtn, background: '#e6f4ea', color: '#1e6f3e' }}>
-                <Plus size={13} style={{ marginRight: 4 }} />Agregar abono
-              </button>
-              <button onClick={() => addItem('descuento')} style={{ ...fs.addBtn, background: '#fde8e8', color: '#c0392b' }}>
-                <Plus size={13} style={{ marginRight: 4 }} />Agregar descuento
-              </button>
-            </div>
           </div>
 
           {/* Column headers */}
@@ -596,8 +590,17 @@ export default function GarantiaPage() {
           ))}
 
           {items.length === 0 && (
-            <p style={{ color: '#9aa0a6', fontSize: 13, padding: '6px 0' }}>No hay ítems — agrega abonos o descuentos arriba</p>
+            <p style={{ color: '#9aa0a6', fontSize: 13, padding: '6px 0' }}>No hay ítems — agrega abonos o descuentos abajo</p>
           )}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button onClick={() => addItem('abono')} style={{ ...fs.addBtn, background: '#e6f4ea', color: '#1e6f3e' }}>
+              <Plus size={13} style={{ marginRight: 4 }} />Agregar abono
+            </button>
+            <button onClick={() => addItem('descuento')} style={{ ...fs.addBtn, background: '#fde8e8', color: '#c0392b' }}>
+              <Plus size={13} style={{ marginRight: 4 }} />Agregar descuento
+            </button>
+          </div>
         </div>
 
         {/* Resumen */}
