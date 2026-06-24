@@ -290,7 +290,7 @@ export default function TaskColumn({
       hiddenCount: hidden,
       needsTruncation: hidden > 0,
     };
-  }, [tasks, taskWeights, expanded]);
+  }, [tasks, taskWeights, expanded, isFirstInMultiCol]);
 
   const isSolicitudes = category === 'Solicitudes';
 
