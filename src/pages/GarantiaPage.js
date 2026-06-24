@@ -431,12 +431,6 @@ function PreviewPage({ datos, items, fecha, onBack }) {
   const garantiaN = parseInt(parseMiles(datos.garantia) || 0);
   const saldo = garantiaN + totalAbonos - totalDescuentos;
 
-  const formatN = (n) => {
-    const abs = Math.abs(n);
-    const f = '$' + abs.toLocaleString('es-CL');
-    return n < 0 ? `(${f})` : f;
-  };
-
   const handleDownload = async () => {
     setGenerating(true);
     try {
