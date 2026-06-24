@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import PropertyAutocomplete from '../components/pizarra/PropertyAutocomplete';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { supabase } from '../supabaseClient';
 import { Plus, Trash2, Download, ChevronLeft, Eye } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
          AlignmentType, ImageRun, Header, BorderStyle, WidthType, ShadingType,
@@ -27,6 +27,138 @@ const formatFechaLarga = (d) => {
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
+const formatDateCL = (iso) => {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+};
+
+const slugDireccion = (dir) =>
+  (dir || 'PROPIEDAD')
+    .toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+// ── DateField con picker nativo y display dd/mm/yyyy ──────────
+function DateFieldGarantia({ value, onChange }) {
+  const ref = useRef(null);
+  return (
+    <div
+      onClick={() => ref.current && ref.current.showPicker && ref.current.showPicker()}
+      style={{ ...fs_date.wrapper, cursor: 'pointer', position: 'relative' }}
+    >
+      <span style={{ fontSize: 13, color: value ? '#202124' : '#9aa0a6', userSelect: 'none' }}>
+        {value ? formatDateCL(value) : 'dd/mm/aaaa'}
+      </span>
+      <input
+        ref={ref} type="date" value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
+      />
+    </div>
+  );
+}
+
+const fs_date = {
+  wrapper: {
+    border: '1px solid #dadce0', borderRadius: 7, padding: '8px 10px',
+    fontSize: 13, fontFamily: 'inherit', background: '#fff',
+    display: 'flex', alignItems: 'center', minHeight: 38, boxSizing: 'border-box',
+  },
+};
+
+// ── DireccionAutocomplete (inline, no depende de prop externo) ─
+const normalizeStr = (str) =>
+  str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+const transformAddress = (full) => {
+  const short = full.split(',')[0].trim();
+  return short
+    .replace(/\bDepartamento\s+/gi, 'D')
+    .replace(/\bCasa\s+/gi, 'C');
+};
+
+function DireccionAutocomplete({ value, onChange }) {
+  const [properties, setProperties] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const load = async () => {
+      let all = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase.from('properties').select('propiedad').range(from, from + 999);
+        if (error || !data || data.length === 0) break;
+        all = [...all, ...data.map(p => p.propiedad)];
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+      setProperties(all);
+    };
+    load();
+  }, []);
+
+  const suggestions = useMemo(() => {
+    if (!value || value.trim().length < 2) return [];
+    const words = normalizeStr(value.trim()).split(/\s+/).filter(Boolean);
+    return properties
+      .filter(p => { const n = normalizeStr(p); return words.every(w => n.includes(w)); })
+      .slice(0, 8);
+  }, [value, properties]);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const showDropdown = open && focused && suggestions.length > 0;
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <input
+        value={value}
+        onChange={e => { onChange(e.target.value.toUpperCase()); setOpen(true); }}
+        onFocus={() => { setFocused(true); setOpen(true); }}
+        onBlur={() => setTimeout(() => setFocused(false), 150)}
+        placeholder="AV. EJEMPLO 123, DEPARTAMENTO 45"
+        style={fs.input}
+      />
+      {showDropdown && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0,
+          background: '#fff', border: '1px solid #dadce0', borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 9999,
+          marginTop: 2, overflow: 'hidden',
+        }}>
+          {suggestions.map((prop, i) => (
+            <div
+              key={i}
+              onMouseDown={() => { onChange(transformAddress(prop).toUpperCase()); setOpen(false); }}
+              style={{
+                padding: '8px 12px', fontSize: 12, cursor: 'pointer',
+                borderBottom: i < suggestions.length - 1 ? '1px solid #f1f3f4' : 'none',
+                color: '#202124', lineHeight: 1.4,
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f0f7ff'}
+              onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+            >
+              <div style={{ fontWeight: 600 }}>{transformAddress(prop).toUpperCase()}</div>
+              <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 1 }}>{prop}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── Default items ─────────────────────────────────────────────
 const DEFAULT_DESCUENTOS = [
   { id: 'd1', tipo: 'descuento', label: 'Cuenta de luz',        monto: '', detalle: '' },
@@ -43,11 +175,6 @@ const Field = ({ label, children, span2 }) => (
     <label style={fs.label}>{label}</label>
     {children}
   </div>
-);
-
-const Input = ({ value, onChange, placeholder = '', type = 'text' }) => (
-  <input value={value} onChange={e => onChange(e.target.value)}
-    placeholder={placeholder} type={type} style={fs.input} />
 );
 
 function MoneyInput({ value, onChange, placeholder = '0' }) {
@@ -88,14 +215,14 @@ function ItemRow({ item, onChange, onRemove }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <input
           value={item.label}
-          onChange={e => set('label', e.target.value)}
-          placeholder="Descripción del ítem"
+          onChange={e => set('label', e.target.value.toUpperCase())}
+          placeholder="DESCRIPCIÓN DEL ÍTEM"
           style={{ ...fs.input, fontSize: 13 }}
         />
         <input
           value={item.detalle}
-          onChange={e => set('detalle', e.target.value)}
-          placeholder="Detalle adicional (opcional)"
+          onChange={e => set('detalle', e.target.value.toUpperCase())}
+          placeholder="DETALLE ADICIONAL (OPCIONAL)"
           style={{ ...fs.input, fontSize: 12, color: '#5f6368', background: '#fafafa' }}
         />
       </div>
@@ -272,32 +399,6 @@ function buildGarantiaDoc({ datos, items, fecha }) {
     br(),
     table,
     br(),
-    ...(saldo >= 0
-      ? [justified([
-          run('En consecuencia, la suma de '),
-          bold(formatMilesNum(saldo)),
-          run(` será transferida a la cuenta bancaria indicada por el arrendatario dentro de los 60 días siguientes a la restitución del inmueble, de acuerdo a lo establecido en la cláusula octava del contrato de arrendamiento.`),
-        ])]
-      : [justified([
-          run('Dado que los descuentos aplicados exceden el monto de la garantía, se solicita a '),
-          bold(datos.arrendatario || 'ARRENDATARIO'),
-          run(` que proceda a transferir la suma de `),
-          bold(formatMilesNum(Math.abs(saldo))),
-          run(` a la cuenta corriente N° 27624332 del Banco Santander, a nombre de Renoval Gestión Inmobiliaria Limitada, RUT: 78.299.346-1, dentro de los 10 días siguientes a la recepción de esta liquidación.`),
-        ])]
-    ),
-    br(),
-    justified([run('Ante cualquier consulta o discrepancia respecto de la presente liquidación, las partes se comprometen a resolverla de buena fe dentro de los 10 días siguientes a su recepción.')]),
-    br(), br(),
-    justified([run(`Santiago, ${formatFechaLarga(fecha)}.`)]),
-    br(), br(), br(), br(), br(),
-    centered([run('_________________________________________________')]),
-    centered([bold('RENOVAL GESTIÓN INMOBILIARIA LIMITADA')]),
-    centered([run('En representación de la parte Arrendadora')]),
-    br(), br(), br(), br(), br(),
-    centered([run('_________________________________________________')]),
-    centered([bold(datos.arrendatario?.toUpperCase() || 'NOMBRE ARRENDATARIO')]),
-    centered([run('Parte Arrendataria')]),
   ];
 
   return new Document({
@@ -341,8 +442,7 @@ function PreviewPage({ datos, items, fecha, onBack }) {
     try {
       const doc = buildGarantiaDoc({ datos, items, fecha });
       const blob = await Packer.toBlob(doc);
-      const nombre = datos.arrendatario?.split(' ')[0] || 'Arrendatario';
-      saveAs(blob, `Liquidacion_Garantia_${nombre}.docx`);
+      saveAs(blob, `LIQ_GAR_${slugDireccion(datos.direccion)}.docx`);
     } catch (e) { alert('Error: ' + e.message); }
     setGenerating(false);
   };
@@ -404,24 +504,6 @@ function PreviewPage({ datos, items, fecha, onBack }) {
             </tr>
           </tbody>
         </table>
-
-        {saldo >= 0
-          ? <p style={{ fontSize: 12, textAlign: 'justify', lineHeight: 1.7, color: '#202124' }}>
-              La suma de <strong>{formatN(saldo)}</strong> será transferida dentro de los 60 días siguientes a la restitución del inmueble.
-            </p>
-          : <p style={{ fontSize: 12, textAlign: 'justify', lineHeight: 1.7, color: '#c0392b' }}>
-              Los descuentos exceden el monto de garantía. Se solicita transferir <strong>{formatN(Math.abs(saldo))}</strong> dentro de 10 días.
-            </p>
-        }
-
-        <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 48 }}>
-          {['RENOVAL G.I. LTDA.\nArrendadora', `${datos.arrendatario?.toUpperCase() || 'ARRENDATARIO'}\nParte Arrendataria`].map((sig, i) => (
-            <div key={i} style={{ textAlign: 'center', width: 220 }}>
-              <div style={{ borderBottom: '1px solid #202124', marginBottom: 8, height: 40 }} />
-              {sig.split('\n').map((l, j) => <div key={j} style={{ fontSize: 11, fontWeight: j === 0 ? 700 : 400, color: j === 0 ? '#202124' : '#5f6368' }}>{l}</div>)}
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -477,14 +559,12 @@ export default function GarantiaPage() {
                 placeholder="NOMBRE COMPLETO" style={fs.input} />
             </Field>
             <Field label="Fecha del documento">
-              <Input value={fecha} onChange={setFecha} type="date" />
+              <DateFieldGarantia value={fecha} onChange={setFecha} />
             </Field>
             <Field label="Dirección" span2>
-              <PropertyAutocomplete
+              <DireccionAutocomplete
                 value={datos.direccion}
                 onChange={v => setD('direccion', v)}
-                placeholder="Av. Ejemplo 123, Departamento 45, Las Condes"
-                inputStyle={{ padding: '8px 10px', fontSize: 13, borderRadius: 7, height: 'auto' }}
               />
             </Field>
             <Field label="Monto de garantía recibida">
