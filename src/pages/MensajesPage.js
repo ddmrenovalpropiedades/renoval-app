@@ -14,11 +14,15 @@ export default function MensajesPage({ currentUser }) {
     loadingMensajes,
     filtroEstado,
     setFiltroEstado,
+    filtroUsuario,
+    setFiltroUsuario,
     sendError,
+    isAdmin,
     selectConversacion,
     enviarMensaje,
     cerrarConversacion,
     tomarConversacion,
+    asignarConversacion,
   } = useMensajes(currentUser);
 
   const [exporting, setExporting] = useState(false);
@@ -33,7 +37,7 @@ export default function MensajesPage({ currentUser }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      {/* Barra superior con título y botón descarga */}
+      {/* Barra superior */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '10px 16px', borderBottom: '1px solid #e5e7eb',
@@ -66,11 +70,16 @@ export default function MensajesPage({ currentUser }) {
             conversaciones={conversaciones}
             selectedId={selectedId}
             onSelect={selectConversacion}
-            filtro={filtroEstado}
-            onFiltroChange={setFiltroEstado}
+            filtroEstado={filtroEstado}
+            onFiltroEstadoChange={setFiltroEstado}
+            filtroUsuario={filtroUsuario}
+            onFiltroUsuarioChange={setFiltroUsuario}
+            isAdmin={isAdmin}
+            currentUser={currentUser}
             loading={loading}
           />
         </div>
+
         {/* Panel derecho */}
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <HiloConversacion
@@ -81,6 +90,7 @@ export default function MensajesPage({ currentUser }) {
             onEnviar={enviarMensaje}
             onTomar={tomarConversacion}
             onCerrar={cerrarConversacion}
+            onAsignar={asignarConversacion}
             currentUser={currentUser}
           />
         </div>
