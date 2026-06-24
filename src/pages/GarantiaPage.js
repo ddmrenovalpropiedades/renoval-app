@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Plus, Trash2, Download, ChevronLeft, Eye } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
          AlignmentType, ImageRun, Header, BorderStyle, WidthType, ShadingType,
@@ -21,12 +21,6 @@ const formatFechaLarga = (d) => {
   if (!d) return 'XX de XXXXXXXX de 20XX';
   const [y, m, dd] = d.split('-');
   return `${parseInt(dd)} de ${MESES_CAP[parseInt(m) - 1]} de ${y}`;
-};
-
-const formatFechaCorta = (d) => {
-  if (!d) return '';
-  const [y, m, dd] = d.split('-');
-  return `${dd}/${m}/${y}`;
 };
 
 const todayISO = () => new Date().toISOString().split('T')[0];
@@ -138,7 +132,6 @@ function buildGarantiaDoc({ datos, items, fecha }) {
   const border = { style: BorderStyle.SINGLE, size: 4, color: 'DDDDDD' };
   const borders = { top: border, bottom: border, left: border, right: border };
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
-  const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
 
   const cell = (children, opts = {}) => new TableCell({
     borders,
