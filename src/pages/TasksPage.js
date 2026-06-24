@@ -563,6 +563,7 @@ export default function TasksPage() {
                               layout={layout}
                               isDraggingThis={draggingCategory === category}
                               isDraggingAnyCategory={!!draggingCategory}
+                              isFirstInMultiCol={rowIndex === 0 && col.length >= 2}
                               tasks={tasksByCategory[category] || []}
                               onOpenTask={setSelectedTask}
                               onCompleteTask={handleCompleteTask}
@@ -719,6 +720,8 @@ const styles = {
     minWidth: 260,
     width: 260,
     flexShrink: 0,
+    minHeight: 180,  // área droppable amplia aunque el listado sea pequeño
+    paddingBottom: 24,
   },
   sidebarArea: { flexShrink: 0, height: '100%', overflow: 'hidden' },
   loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#5f6368', fontSize: 14 },
