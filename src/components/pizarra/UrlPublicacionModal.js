@@ -1,19 +1,25 @@
-
 import React, { useState } from 'react';
 import { ExternalLink, X } from 'lucide-react';
 
+const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100' };
+
 export default function UrlPublicacionModal({ row, onSave, onClose }) {
-  const [url, setUrl] = useState(row.url_publicacion || '');
-  const [saving, setSaving] = useState(false);
+  const [url, setUrl]           = useState(row.url_publicacion || '');
+  const [asignarA, setAsignarA] = useState(row.conv_asignar_a || 'e2');
+  const [saving, setSaving]     = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
-    await onSave(url.trim() || null);
+    await onSave(url.trim() || null, asignarA);
     setSaving(false);
     onClose();
   };
 
   const isValidUrl = !url || /^https?:\/\//i.test(url.trim());
+
+  // Determinar quién es E1 y E2 para mostrar sus iniciales
+  const e1 = row.e1 || 'E1';
+  const e2 = row.e2 || 'E2';
 
   return (
     <div style={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -22,7 +28,6 @@ export default function UrlPublicacionModal({ row, onSave, onClose }) {
           <h3 style={styles.title}>URL de publicación</h3>
           <button onClick={onClose} style={styles.closeBtn}><X size={18} /></button>
         </div>
-
         <p style={styles.prop}>{row.propiedad}</p>
 
         <label style={styles.label}>URL del portal inmobiliario</label>
@@ -34,17 +39,47 @@ export default function UrlPublicacionModal({ row, onSave, onClose }) {
           style={styles.textarea}
           autoFocus
         />
-
         {!isValidUrl && (
           <div style={styles.warning}>La URL debe comenzar con http:// o https://</div>
         )}
-
         {url.trim() && isValidUrl && (
           <a href={url.trim()} target="_blank" rel="noopener noreferrer" style={styles.preview}>
             <ExternalLink size={14} style={{ marginRight: 6, flexShrink: 0 }} />
             <span style={styles.previewText}>{url.trim()}</span>
           </a>
         )}
+
+        {/* Selector de asignación de conversaciones */}
+        <div style={styles.asignarSection}>
+          <label style={styles.label}>Asignar conversaciones entrantes a</label>
+          <div style={styles.asignarBtns}>
+            {[
+              { value: 'e1', label: e1, color: ENCARGADO_COLORS[e1] },
+              { value: 'e2', label: e2, color: ENCARGADO_COLORS[e2] },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setAsignarA(opt.value)}
+                style={{
+                  ...styles.asignarBtn,
+                  background:  asignarA === opt.value ? (opt.color + '22') : '#f8f9fa',
+                  border:      asignarA === opt.value ? `2px solid ${opt.color}` : '2px solid #dadce0',
+                  color:       asignarA === opt.value ? opt.color : '#5f6368',
+                  fontWeight:  asignarA === opt.value ? 700 : 400,
+                }}
+              >
+                {opt.label}
+                {opt.value === 'e2' && asignarA !== 'e1' && (
+                  <span style={styles.defaultBadge}>default</span>
+                )}
+              </button>
+            ))}
+          </div>
+          <p style={styles.asignarHint}>
+            Cuando llegue una consulta por esta propiedad, la conversación se asignará
+            automáticamente a <strong>{asignarA === 'e1' ? e1 : e2}</strong>.
+          </p>
+        </div>
 
         <div style={styles.actions}>
           <button
@@ -73,11 +108,11 @@ const styles = {
     background: '#fff', borderRadius: 16, padding: 24, width: 440,
     boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif",
   },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  title: { fontSize: 17, fontWeight: 700, color: '#202124', margin: 0 },
+  header:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  title:    { fontSize: 17, fontWeight: 700, color: '#202124', margin: 0 },
   closeBtn: { background: 'none', border: 'none', cursor: 'pointer', color: '#5f6368', padding: 4, display: 'flex' },
-  prop: { fontSize: 13, color: '#5f6368', margin: '0 0 16px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8 },
-  label: { fontSize: 12, fontWeight: 600, color: '#5f6368', display: 'block', marginBottom: 6 },
+  prop:     { fontSize: 13, color: '#5f6368', margin: '0 0 16px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8 },
+  label:    { fontSize: 12, fontWeight: 600, color: '#5f6368', display: 'block', marginBottom: 6 },
   textarea: {
     width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px',
     fontSize: 13, outline: 'none', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box',
@@ -88,10 +123,21 @@ const styles = {
     background: '#e8f0fe', borderRadius: 8, fontSize: 12, color: '#1a73e8',
     textDecoration: 'none', overflow: 'hidden',
   },
-  previewText: {
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  previewText: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  asignarSection: { marginTop: 20 },
+  asignarBtns: { display: 'flex', gap: 10, marginBottom: 8 },
+  asignarBtn: {
+    flex: 1, padding: '10px', borderRadius: 8, fontSize: 13,
+    cursor: 'pointer', fontFamily: 'inherit', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', gap: 6,
+    transition: 'all 0.15s',
   },
-  actions: { display: 'flex', gap: 8, marginTop: 20 },
+  defaultBadge: {
+    fontSize: 10, background: '#e8eaed', color: '#5f6368',
+    borderRadius: 10, padding: '1px 6px', fontWeight: 400,
+  },
+  asignarHint: { fontSize: 11, color: '#9aa0a6', margin: 0 },
+  actions:   { display: 'flex', gap: 8, marginTop: 20 },
   saveBtn: {
     flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none',
     borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
