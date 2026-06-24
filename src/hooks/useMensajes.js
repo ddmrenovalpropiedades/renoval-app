@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 
+const USER_INITIALS = {
+  'ddm@renovalpropiedades.com':      'DD',
+  'fdm@renovalpropiedades.com':      'FD',
+  'edith@renovalpropiedades.com':    'EA',
+  'fernanda@renovalpropiedades.com': 'FG',
+};
+
+const ADMIN_EMAILS = ['ddm@renovalpropiedades.com', 'fdm@renovalpropiedades.com'];
+
 export function useMensajes(currentUser) {
   const [conversaciones, setConversaciones] = useState([]);
   const [selectedId, setSelectedId]         = useState(null);
@@ -8,22 +17,40 @@ export function useMensajes(currentUser) {
   const [loading, setLoading]               = useState(true);
   const [loadingMensajes, setLoadingMensajes] = useState(false);
   const [filtroEstado, setFiltroEstado]     = useState('todas');
+  const [filtroUsuario, setFiltroUsuario]   = useState('mis_conv'); // default para todos
   const [sendError, setSendError]           = useState(null);
 
-  const isAdmin = currentUser?.isOwner === true;
+  const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
 
   // ── Cargar conversaciones ──────────────────────────────────────────────────
   const fetchConversaciones = useCallback(async () => {
+    if (!currentUser?.id) return;
     setLoading(true);
+
     let query = supabase
       .from('wa_conversaciones')
-      .select('*, app_users(full_name), wa_mensajes(message_text, created_at, direction)')
+      .select('*, app_users(id, full_name, iniciales), wa_mensajes(message_text, created_at, direction)')
       .order('updated_at', { ascending: false });
 
-    if (!isAdmin && currentUser?.id) {
+    // ── Filtro de visibilidad por rol ──────────────────────────────────────
+    if (!isAdmin) {
+      // Ejecutivas: solo sus conversaciones + sin asignar
       query = query.or(`agent_id.eq.${currentUser.id},agent_id.is.null`);
+    } else {
+      // Admins: aplicar filtro de usuario seleccionado
+      if (filtroUsuario === 'mis_conv') {
+        // Propias + sin asignar
+        query = query.or(`agent_id.eq.${currentUser.id},agent_id.is.null`);
+      } else if (filtroUsuario === 'sin_asignar') {
+        query = query.is('agent_id', null);
+      } else if (filtroUsuario !== 'todas') {
+        // filtroUsuario es un user_id (UUID)
+        query = query.eq('agent_id', filtroUsuario);
+      }
+      // 'todas' → sin filtro adicional
     }
 
+    // ── Filtro de estado ───────────────────────────────────────────────────
     if (filtroEstado !== 'todas') {
       query = query.eq('estado', filtroEstado);
     }
@@ -31,26 +58,13 @@ export function useMensajes(currentUser) {
     const { data, error } = await query;
     if (!error) setConversaciones(data || []);
     setLoading(false);
-  }, [isAdmin, currentUser?.id, filtroEstado]);
+  }, [currentUser?.id, isAdmin, filtroEstado, filtroUsuario]);
 
   useEffect(() => {
     fetchConversaciones();
   }, [fetchConversaciones]);
 
-  // ── Cargar hilo de mensajes ────────────────────────────────────────────────
-  const fetchMensajes = useCallback(async (id) => {
-    if (!id) return;
-    setLoadingMensajes(true);
-    const { data } = await supabase
-      .from('wa_mensajes')
-      .select('*')
-      .eq('conversacion_id', id)
-      .order('created_at', { ascending: true });
-    setMensajes(data || []);
-    setLoadingMensajes(false);
-  }, []);
-
-  // ── Realtime: nuevos mensajes y cambios de estado ─────────────────────────
+  // ── Realtime ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel('wa_cambios')
@@ -77,6 +91,19 @@ export function useMensajes(currentUser) {
     return () => supabase.removeChannel(channel);
   }, [selectedId, fetchConversaciones]);
 
+  // ── Cargar hilo de mensajes ────────────────────────────────────────────────
+  const fetchMensajes = useCallback(async (id) => {
+    if (!id) return;
+    setLoadingMensajes(true);
+    const { data } = await supabase
+      .from('wa_mensajes')
+      .select('*')
+      .eq('conversacion_id', id)
+      .order('created_at', { ascending: true });
+    setMensajes(data || []);
+    setLoadingMensajes(false);
+  }, []);
+
   const selectConversacion = useCallback(async (id) => {
     setSelectedId(id);
     setSendError(null);
@@ -87,9 +114,7 @@ export function useMensajes(currentUser) {
   const enviarMensaje = useCallback(async (texto) => {
     const conv = conversaciones.find(c => c.id === selectedId);
     if (!conv) return false;
-
     setSendError(null);
-
     try {
       const res = await fetch('/api/send-whatsapp', {
         method: 'POST',
@@ -101,19 +126,14 @@ export function useMensajes(currentUser) {
           agent_id:        currentUser?.id,
         }),
       });
-
       const data = await res.json().catch(() => ({}));
-
       if (!res.ok) {
         setSendError(data?.error || `Error al enviar (status ${res.status})`);
         return false;
       }
-
-      // Refrescar hilo y lista directamente (no depender solo de Realtime)
       await fetchMensajes(selectedId);
       await fetchConversaciones();
       return true;
-
     } catch (err) {
       setSendError(err.message || 'Error de red al enviar');
       return false;
@@ -138,6 +158,15 @@ export function useMensajes(currentUser) {
     fetchConversaciones();
   }, [selectedId, currentUser?.id, fetchConversaciones]);
 
+  // ── Asignar conversación a un usuario específico ───────────────────────────
+  const asignarConversacion = useCallback(async (conversacionId, agentId) => {
+    await supabase
+      .from('wa_conversaciones')
+      .update({ agent_id: agentId || null })
+      .eq('id', conversacionId);
+    fetchConversaciones();
+  }, [fetchConversaciones]);
+
   return {
     conversaciones,
     selectedId,
@@ -146,10 +175,16 @@ export function useMensajes(currentUser) {
     loadingMensajes,
     filtroEstado,
     setFiltroEstado,
+    filtroUsuario,
+    setFiltroUsuario,
     sendError,
+    isAdmin,
     selectConversacion,
     enviarMensaje,
     cerrarConversacion,
     tomarConversacion,
+    asignarConversacion,
+    fetchConversaciones,
+    USER_INITIALS,
   };
 }
