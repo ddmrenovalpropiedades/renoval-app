@@ -241,6 +241,7 @@ export default function TaskColumn({
   category, tasks, dormantTasks = [], onOpenTask, onCompleteTask, onCreateTask,
   currentUserEmail, subtaskReloadTrigger = 0, columnDragHandleProps = {},
   customColor, canDelete = false, onDelete, onSubtaskCompleted,
+  isFirstInMultiCol = false,
 }) {
   const colors = customColor
     ? { header: customColor, light: customColor + '22' }
@@ -268,9 +269,9 @@ export default function TaskColumn({
     });
   }, []);
 
-  // Calcular cuántas tareas mostrar respetando el límite de VISIBLE_LIMIT items
+  // Truncar solo cuando es el primer listado en columna con 2+ listados
   const { visibleTasks, hiddenCount, needsTruncation } = React.useMemo(() => {
-    if (expanded || tasks.length === 0) {
+    if (!isFirstInMultiCol || expanded || tasks.length === 0) {
       return { visibleTasks: tasks, hiddenCount: 0, needsTruncation: false };
     }
     let count = 0;
