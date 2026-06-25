@@ -21,7 +21,7 @@ export function useMensajes(currentUser) {
   const [sendError, setSendError]           = useState(null);
   const [lecturas, setLecturas]             = useState({}); // { conv_id: leida_en }
 
-  const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
+  const isAdmin  = ADMIN_EMAILS.includes(currentUser?.email);
   const audioRef = useRef(null);
 
   // ── Audio ──────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ export function useMensajes(currentUser) {
     audioRef.current.play().catch(() => {});
   }, []);
 
-  // ── Cargar lecturas del usuario actual ─────────────────────────────────────
+  // ── Cargar lecturas ────────────────────────────────────────────────────────
   const fetchLecturas = useCallback(async () => {
     if (!currentUser?.email) return;
     const { data } = await supabase
@@ -103,8 +103,6 @@ export function useMensajes(currentUser) {
   }, [fetchConversaciones]);
 
   // ── Badge count ────────────────────────────────────────────────────────────
-  // Cuenta conversaciones visibles donde hay mensajes inbound más nuevos
-  // que la última lectura del usuario, o que nunca fueron leídas.
   const badgeCount = conversaciones.reduce((acc, conv) => {
     const esPropia     = conv.agent_id === currentUser?.id;
     const esSinAsignar = conv.agent_id === null;
@@ -135,7 +133,7 @@ export function useMensajes(currentUser) {
       }, (payload) => {
         const nuevo = payload.new;
 
-        // Sonido solo para mensajes inbound que no sean de la conv abierta
+        // Sonido solo para mensajes inbound fuera de la conv abierta
         if (nuevo.direction === 'inbound' && nuevo.conversacion_id !== selectedId) {
           playNotification();
         }
@@ -145,7 +143,7 @@ export function useMensajes(currentUser) {
             const exists = prev.find(m => m.id === nuevo.id);
             return exists ? prev : [...prev, nuevo];
           });
-          // Hilo abierto → marcar como leída automáticamente
+          // Hilo abierto → marcar leída automáticamente
           marcarLeida(nuevo.conversacion_id);
         }
         fetchConversaciones();
