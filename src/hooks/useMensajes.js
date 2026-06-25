@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
 const USER_INITIALS = {
@@ -17,10 +17,55 @@ export function useMensajes(currentUser) {
   const [loading, setLoading]               = useState(true);
   const [loadingMensajes, setLoadingMensajes] = useState(false);
   const [filtroEstado, setFiltroEstado]     = useState('todas');
-  const [filtroUsuario, setFiltroUsuario]   = useState('mis_conv'); // default para todos
+  const [filtroUsuario, setFiltroUsuario]   = useState('mis_conv');
   const [sendError, setSendError]           = useState(null);
+  const [lecturas, setLecturas]             = useState({}); // { conv_id: leida_en }
 
   const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
+  const audioRef = useRef(null);
+
+  // ── Audio ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    audioRef.current = new Audio('/sounds/notification.mp3');
+    audioRef.current.volume = 0.5;
+  }, []);
+
+  const playNotification = useCallback(() => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = 0;
+    audioRef.current.play().catch(() => {});
+  }, []);
+
+  // ── Cargar lecturas del usuario actual ─────────────────────────────────────
+  const fetchLecturas = useCallback(async () => {
+    if (!currentUser?.email) return;
+    const { data } = await supabase
+      .from('wa_conv_lecturas')
+      .select('conv_id, leida_en')
+      .eq('user_id', currentUser.email);
+    if (data) {
+      const map = {};
+      data.forEach(r => { map[r.conv_id] = r.leida_en; });
+      setLecturas(map);
+    }
+  }, [currentUser?.email]);
+
+  useEffect(() => {
+    fetchLecturas();
+  }, [fetchLecturas]);
+
+  // ── Marcar conversación como leída ─────────────────────────────────────────
+  const marcarLeida = useCallback(async (convId) => {
+    if (!currentUser?.email || !convId) return;
+    const ahora = new Date().toISOString();
+    await supabase
+      .from('wa_conv_lecturas')
+      .upsert(
+        { conv_id: convId, user_id: currentUser.email, leida_en: ahora },
+        { onConflict: 'conv_id,user_id' }
+      );
+    setLecturas(prev => ({ ...prev, [convId]: ahora }));
+  }, [currentUser?.email]);
 
   // ── Cargar conversaciones ──────────────────────────────────────────────────
   const fetchConversaciones = useCallback(async () => {
@@ -32,25 +77,18 @@ export function useMensajes(currentUser) {
       .select('*, app_users(id, full_name, iniciales), wa_mensajes(message_text, created_at, direction)')
       .order('updated_at', { ascending: false });
 
-    // ── Filtro de visibilidad por rol ──────────────────────────────────────
     if (!isAdmin) {
-      // Ejecutivas: solo sus conversaciones + sin asignar
       query = query.or(`agent_id.eq.${currentUser.id},agent_id.is.null`);
     } else {
-      // Admins: aplicar filtro de usuario seleccionado
       if (filtroUsuario === 'mis_conv') {
-        // Propias + sin asignar
         query = query.or(`agent_id.eq.${currentUser.id},agent_id.is.null`);
       } else if (filtroUsuario === 'sin_asignar') {
         query = query.is('agent_id', null);
       } else if (filtroUsuario !== 'todas') {
-        // filtroUsuario es un user_id (UUID)
         query = query.eq('agent_id', filtroUsuario);
       }
-      // 'todas' → sin filtro adicional
     }
 
-    // ── Filtro de estado ───────────────────────────────────────────────────
     if (filtroEstado !== 'todas') {
       query = query.eq('estado', filtroEstado);
     }
@@ -63,6 +101,23 @@ export function useMensajes(currentUser) {
   useEffect(() => {
     fetchConversaciones();
   }, [fetchConversaciones]);
+
+  // ── Badge count ────────────────────────────────────────────────────────────
+  // Cuenta conversaciones visibles donde hay mensajes inbound más nuevos
+  // que la última lectura del usuario, o que nunca fueron leídas.
+  const badgeCount = conversaciones.reduce((acc, conv) => {
+    const esPropia     = conv.agent_id === currentUser?.id;
+    const esSinAsignar = conv.agent_id === null;
+    if (!esPropia && !esSinAsignar) return acc;
+
+    const ultimaLectura   = lecturas[conv.id] ? new Date(lecturas[conv.id]) : null;
+    const mensajesInbound = (conv.wa_mensajes || []).filter(m => m.direction === 'inbound');
+    if (!mensajesInbound.length) return acc;
+
+    const ultimoInbound = new Date(mensajesInbound[mensajesInbound.length - 1].created_at);
+    if (!ultimaLectura || ultimoInbound > ultimaLectura) return acc + 1;
+    return acc;
+  }, 0);
 
   // ── Realtime ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -78,18 +133,27 @@ export function useMensajes(currentUser) {
         schema: 'public',
         table: 'wa_mensajes',
       }, (payload) => {
-        if (payload.new.conversacion_id === selectedId) {
+        const nuevo = payload.new;
+
+        // Sonido solo para mensajes inbound que no sean de la conv abierta
+        if (nuevo.direction === 'inbound' && nuevo.conversacion_id !== selectedId) {
+          playNotification();
+        }
+
+        if (nuevo.conversacion_id === selectedId) {
           setMensajes(prev => {
-            const exists = prev.find(m => m.id === payload.new.id);
-            return exists ? prev : [...prev, payload.new];
+            const exists = prev.find(m => m.id === nuevo.id);
+            return exists ? prev : [...prev, nuevo];
           });
+          // Hilo abierto → marcar como leída automáticamente
+          marcarLeida(nuevo.conversacion_id);
         }
         fetchConversaciones();
       })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [selectedId, fetchConversaciones]);
+  }, [selectedId, fetchConversaciones, playNotification, marcarLeida]);
 
   // ── Cargar hilo de mensajes ────────────────────────────────────────────────
   const fetchMensajes = useCallback(async (id) => {
@@ -108,7 +172,8 @@ export function useMensajes(currentUser) {
     setSelectedId(id);
     setSendError(null);
     await fetchMensajes(id);
-  }, [fetchMensajes]);
+    await marcarLeida(id);
+  }, [fetchMensajes, marcarLeida]);
 
   // ── Enviar mensaje ─────────────────────────────────────────────────────────
   const enviarMensaje = useCallback(async (texto) => {
@@ -158,7 +223,7 @@ export function useMensajes(currentUser) {
     fetchConversaciones();
   }, [selectedId, currentUser?.id, fetchConversaciones]);
 
-  // ── Asignar conversación a un usuario específico ───────────────────────────
+  // ── Asignar conversación ───────────────────────────────────────────────────
   const asignarConversacion = useCallback(async (conversacionId, agentId) => {
     await supabase
       .from('wa_conversaciones')
@@ -179,12 +244,14 @@ export function useMensajes(currentUser) {
     setFiltroUsuario,
     sendError,
     isAdmin,
+    badgeCount,
     selectConversacion,
     enviarMensaje,
     cerrarConversacion,
     tomarConversacion,
     asignarConversacion,
     fetchConversaciones,
+    marcarLeida,
     USER_INITIALS,
   };
 }
