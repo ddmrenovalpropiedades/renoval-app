@@ -5,6 +5,7 @@ import {
   Zap, Users, LogOut,
   Building2, MessageCircle, CreditCard, Calculator
 } from 'lucide-react';
+import { useMensajes } from '../hooks/useMensajes';
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
 import PropertiesPage from './PropertiesPage';
@@ -37,6 +38,9 @@ export default function AppShell() {
   const [activeModule, setActiveModule] = useState('pizarra');
   const [hovered, setHovered] = useState(false);
 
+  // Badge global: corre aunque el usuario esté en otro módulo
+  const { badgeCount } = useMensajes(profile);
+
   const visibleNavTop    = NAV_ITEMS_TOP.filter(item => !item.ownerOnly || profile?.isOwner);
   const visibleNavBottom = NAV_ITEMS_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner);
 
@@ -66,6 +70,7 @@ export default function AppShell() {
               item={item}
               active={activeModule === item.id}
               collapsed={collapsed}
+              badge={item.id === 'mensajes' ? badgeCount : 0}
               onClick={() => setActiveModule(item.id)}
             />
           ))}
@@ -77,6 +82,7 @@ export default function AppShell() {
               item={item}
               active={activeModule === item.id}
               collapsed={collapsed}
+              badge={0}
               onClick={() => setActiveModule(item.id)}
             />
           ))}
@@ -100,7 +106,7 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main content — ancho fijo, sidebar se superpone encima */}
+      {/* Main content — sidebar se superpone encima */}
       <main style={{
         ...styles.main,
         paddingLeft: 64 + 32,
@@ -142,6 +148,66 @@ function ComingSoon({ module }) {
       <h2 style={styles.comingSoonTitle}>{labels[module] || module}</h2>
       <p style={styles.comingSoonText}>Este módulo está en construcción.</p>
     </div>
+  );
+}
+
+function NavButton({ item, active, collapsed, badge, onClick }) {
+  const [hov, setHov] = useState(false);
+  const Icon = item.icon;
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      title={collapsed ? item.label : ''}
+      style={{
+        ...styles.navItem,
+        ...(active ? styles.navItemActive : hov ? styles.navItemHover : {}),
+        justifyContent: collapsed ? 'center' : 'flex-start',
+      }}
+    >
+      {/* Ícono con badge */}
+      <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+        <Icon
+          size={20}
+          style={{
+            color: active ? '#1a73e8' : hov ? '#3c4043' : '#5f6368',
+            transition: 'color 0.15s',
+          }}
+        />
+        {badge > 0 && (
+          <span style={{
+            position: 'absolute',
+            top: -5,
+            right: -6,
+            background: '#e53935',
+            color: '#fff',
+            borderRadius: '50%',
+            fontSize: 9,
+            fontWeight: 700,
+            minWidth: 15,
+            height: 15,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 3px',
+            lineHeight: 1,
+            boxSizing: 'border-box',
+          }}>
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+      </span>
+      {!collapsed && (
+        <span style={{
+          ...styles.navLabel,
+          color: active ? '#1a73e8' : hov ? '#202124' : '#3c4043',
+          transition: 'color 0.15s',
+        }}>
+          {item.label}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -211,28 +277,3 @@ const styles = {
   comingSoonTitle: { fontSize: 22, fontWeight: 600, color: '#202124', margin: 0 },
   comingSoonText: { fontSize: 14, color: '#5f6368', margin: 0 },
 };
-
-function NavButton({ item, active, collapsed, onClick }) {
-  const [hov, setHov] = useState(false);
-  const Icon = item.icon;
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      title={collapsed ? item.label : ''}
-      style={{
-        ...styles.navItem,
-        ...(active ? styles.navItemActive : hov ? styles.navItemHover : {}),
-        justifyContent: collapsed ? 'center' : 'flex-start',
-      }}
-    >
-      <Icon size={20} style={{ flexShrink: 0, color: active ? '#1a73e8' : hov ? '#3c4043' : '#5f6368', transition: 'color 0.15s' }} />
-      {!collapsed && (
-        <span style={{ ...styles.navLabel, color: active ? '#1a73e8' : hov ? '#202124' : '#3c4043', transition: 'color 0.15s' }}>
-          {item.label}
-        </span>
-      )}
-    </button>
-  );
-}
