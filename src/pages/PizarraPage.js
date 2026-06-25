@@ -534,11 +534,14 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Normalizar null→'' para comparación correcta con EMPTY_FORM
-  const normalizeRow = (r) => Object.fromEntries(
-    Object.entries({ ...EMPTY_FORM, ...r }).map(([k, v]) => [k, v === null || v === undefined ? '' : v])
-  );
-  const hasEdits = !isNew && JSON.stringify(form) !== JSON.stringify(normalizeRow(row));
+  // Comparar solo los campos definidos en EMPTY_FORM, normalizando null→''
+  const FORM_KEYS = Object.keys(EMPTY_FORM);
+  const normalize = (obj) => FORM_KEYS.reduce((acc, k) => {
+    const v = obj[k];
+    acc[k] = (v === null || v === undefined) ? '' : v;
+    return acc;
+  }, {});
+  const hasEdits = !isNew && JSON.stringify(normalize(form)) !== JSON.stringify(normalize(row));
   const hasEditsRef = useRef(false);
   hasEditsRef.current = hasEdits;
 
