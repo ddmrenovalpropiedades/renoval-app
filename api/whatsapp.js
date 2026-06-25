@@ -1,5 +1,6 @@
 // api/whatsapp.js
 const { createClient } = require('@supabase/supabase-js');
+const webpush = require('web-push');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -9,6 +10,68 @@ const supabase = createClient(
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN;
 const VERIFY_TOKEN    = process.env.WHATSAPP_VERIFY_TOKEN;
+
+webpush.setVapidDetails(
+  process.env.VAPID_EMAIL,
+  process.env.VAPID_PUBLIC_KEY,
+  process.env.VAPID_PRIVATE_KEY
+);
+
+// ─── Enviar push a todos los dispositivos de un usuario ───────────────────────
+async function sendPushToUser(userId, payload) {
+  const { data: subs } = await supabase
+    .from('wa_push_subscriptions')
+    .select('endpoint, p256dh, auth')
+    .eq('user_id', userId);
+
+  if (!subs || subs.length === 0) return;
+
+  const payloadStr = JSON.stringify(payload);
+
+  await Promise.allSettled(
+    subs.map(sub =>
+      webpush.sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        payloadStr
+      ).catch(async (err) => {
+        // Suscripción expirada o inválida → eliminar
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await supabase
+            .from('wa_push_subscriptions')
+            .delete()
+            .eq('endpoint', sub.endpoint);
+        }
+      })
+    )
+  );
+}
+
+// ─── Enviar push a todos los usuarios sin suscripción específica ───────────────
+async function sendPushToAll(payload) {
+  const { data: subs } = await supabase
+    .from('wa_push_subscriptions')
+    .select('user_id, endpoint, p256dh, auth');
+
+  if (!subs || subs.length === 0) return;
+
+  const payloadStr = JSON.stringify(payload);
+
+  await Promise.allSettled(
+    subs.map(sub =>
+      webpush.sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        payloadStr
+      ).catch(async (err) => {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await supabase
+            .from('wa_push_subscriptions')
+            .delete()
+            .eq('endpoint', sub.endpoint);
+        }
+      })
+    )
+  );
+}
 
 // ─── Extraer URL de un texto ──────────────────────────────────────────────────
 function extractUrl(text) {
@@ -38,7 +101,6 @@ async function findPropiedadByUrl(url) {
 
   if (!match) return null;
 
-  // Determinar a qué encargado asignar según conv_asignar_a (default: e2)
   const asignarA  = match.conv_asignar_a || 'e2';
   const iniciales = asignarA === 'e1' ? match.e1 : match.e2;
 
@@ -269,6 +331,28 @@ module.exports = async function handler(req, res) {
         messageType: inboundType,
         messageText: inboundText,
       });
+
+      // ── Enviar push notification ──────────────────────────────────────────
+      const pushPayload = {
+        title: contactName ? `Mensaje de ${contactName}` : 'Nuevo mensaje WhatsApp',
+        body:  inboundText || 'Nuevo mensaje recibido',
+        url:   '/',
+      };
+
+      if (conversacion.agent_id) {
+        // Conversación asignada → notificar solo al agente asignado
+        const { data: agente } = await supabase
+          .from('app_users')
+          .select('email')
+          .eq('id', conversacion.agent_id)
+          .single();
+        if (agente?.email) {
+          await sendPushToUser(agente.email, pushPayload);
+        }
+      } else {
+        // Sin asignar → notificar a todos
+        await sendPushToAll(pushPayload);
+      }
 
       // ── Lógica del bot ────────────────────────────────────────────────────
       const estado = conversacion.estado;
