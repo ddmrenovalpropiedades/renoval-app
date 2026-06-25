@@ -19,11 +19,10 @@ export default function ConversacionesList({
   filtroEstado, onFiltroEstadoChange,
   filtroUsuario, onFiltroUsuarioChange,
   isAdmin, currentUser,
-  loading,
+  loading, lecturas,
 }) {
   const [appUsers, setAppUsers] = useState([]);
 
-  // Cargar usuarios para el selector de admin
   useEffect(() => {
     if (!isAdmin) return;
     supabase.from('app_users').select('id, full_name, iniciales').then(({ data }) => {
@@ -120,6 +119,8 @@ export default function ConversacionesList({
               conv={conv}
               selected={conv.id === selectedId}
               onClick={() => onSelect(conv.id)}
+              lecturas={lecturas}
+              currentUserId={currentUser?.id}
             />
           ))
         )}
