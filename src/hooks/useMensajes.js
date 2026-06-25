@@ -268,6 +268,7 @@ export function useMensajes(currentUser) {
     sendError,
     isAdmin,
     badgeCount,
+    lecturas,
     unlockAudio,
     selectConversacion,
     enviarMensaje,
