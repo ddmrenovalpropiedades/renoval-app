@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { useMensajes } from '../hooks/useMensajes';
 import ConversacionesList from '../components/mensajes/ConversacionesList';
 import HiloConversacion from '../components/mensajes/HiloConversacion';
 import { exportMensajes } from '../hooks/exportMensajes';
 import { Download } from 'lucide-react';
 
-export default function MensajesPage({ currentUser }) {
+export default function MensajesPage({ currentUser, mensajesHook }) {
   const {
     conversaciones,
     selectedId,
@@ -23,7 +22,7 @@ export default function MensajesPage({ currentUser }) {
     cerrarConversacion,
     tomarConversacion,
     asignarConversacion,
-  } = useMensajes(currentUser);
+  } = mensajesHook;
 
   const [exporting, setExporting] = useState(false);
 
