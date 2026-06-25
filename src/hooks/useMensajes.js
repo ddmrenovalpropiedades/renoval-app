@@ -19,7 +19,7 @@ export function useMensajes(currentUser) {
   const [filtroEstado, setFiltroEstado]     = useState('todas');
   const [filtroUsuario, setFiltroUsuario]   = useState('mis_conv');
   const [sendError, setSendError]           = useState(null);
-  const [lecturas, setLecturas]             = useState({}); // { conv_id: leida_en }
+  const [lecturas, setLecturas]             = useState({});
 
   const isAdmin  = ADMIN_EMAILS.includes(currentUser?.email);
   const audioRef = useRef(null);
@@ -28,6 +28,15 @@ export function useMensajes(currentUser) {
   useEffect(() => {
     audioRef.current = new Audio('/sounds/notification.mp3');
     audioRef.current.volume = 0.5;
+  }, []);
+
+  // Llamar esto en el primer clic del usuario para desbloquear el contexto de audio
+  const unlockAudio = useCallback(() => {
+    if (!audioRef.current) return;
+    audioRef.current.play().then(() => {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }).catch(() => {});
   }, []);
 
   const playNotification = useCallback(() => {
@@ -143,7 +152,6 @@ export function useMensajes(currentUser) {
             const exists = prev.find(m => m.id === nuevo.id);
             return exists ? prev : [...prev, nuevo];
           });
-          // Hilo abierto → marcar leída automáticamente
           marcarLeida(nuevo.conversacion_id);
         }
         fetchConversaciones();
@@ -243,6 +251,7 @@ export function useMensajes(currentUser) {
     sendError,
     isAdmin,
     badgeCount,
+    unlockAudio,
     selectConversacion,
     enviarMensaje,
     cerrarConversacion,
