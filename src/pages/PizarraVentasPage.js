@@ -419,7 +419,8 @@ export default function PizarraVentasPage() {
     } else {
       const payload = { propiedad: form.propiedad.trim(), precio: form.precio || null, status: form.status || null, e1: form.e1 || null, e2: form.e2 || null, db: form.db || null, eb: form.eb || null, comuna: form.comuna || null };
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
-      const { data } = await supabase.from('pizarra_ventas').insert({ ...payload, position: minPos }).select().single();
+      const { data, error } = await supabase.from('pizarra_ventas').insert({ ...payload, position: minPos }).select().single();
+      console.log('INSERT result:', { data, error });
       if (data) setRows(prev => [data, ...prev]);
       setAddingNew(false);
     }
