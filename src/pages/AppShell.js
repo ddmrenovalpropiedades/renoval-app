@@ -38,8 +38,9 @@ export default function AppShell() {
   const [activeModule, setActiveModule] = useState('pizarra');
   const [hovered, setHovered] = useState(false);
 
-  // Badge global: corre aunque el usuario esté en otro módulo
-  const { badgeCount } = useMensajes(profile);
+  // ── Instancia única del hook de mensajes ───────────────────────────────────
+  const mensajesHook = useMensajes(profile);
+  const { badgeCount } = mensajesHook;
 
   const visibleNavTop    = NAV_ITEMS_TOP.filter(item => !item.ownerOnly || profile?.isOwner);
   const visibleNavBottom = NAV_ITEMS_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner);
@@ -49,12 +50,8 @@ export default function AppShell() {
 
   return (
     <div style={styles.root}>
-      {/* Sidebar — position absolute para superponerse al contenido */}
       <aside
-        style={{
-          ...styles.sidebar,
-          width: collapsed ? 64 : 240,
-        }}
+        style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
@@ -106,7 +103,6 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main content — sidebar se superpone encima */}
       <main style={{
         ...styles.main,
         paddingLeft: 64 + 32,
@@ -115,13 +111,13 @@ export default function AppShell() {
         paddingBottom: fullWidth ? 0 : 32,
         overflow: fullWidth ? 'hidden' : 'auto',
       }}>
-        <ModuleRenderer module={activeModule} profile={profile} />
+        <ModuleRenderer module={activeModule} profile={profile} mensajesHook={mensajesHook} />
       </main>
     </div>
   );
 }
 
-function ModuleRenderer({ module, profile }) {
+function ModuleRenderer({ module, profile, mensajesHook }) {
   switch (module) {
     case 'pizarra':      return <PizarraPage />;
     case 'arrendadas':   return <ArrendadasPage />;
@@ -130,7 +126,7 @@ function ModuleRenderer({ module, profile }) {
     case 'servicios':    return <SaldosPage />;
     case 'tareas':       return <TasksPage />;
     case 'pagos':        return <PagosPage />;
-    case 'mensajes':     return <MensajesPage currentUser={profile} />;
+    case 'mensajes':     return <MensajesPage currentUser={profile} mensajesHook={mensajesHook} />;
     case 'usuarios':     return <UserManagement />;
     case 'calculadora':  return <CalculadoraPage />;
     default:             return <ComingSoon module={module} />;
@@ -166,7 +162,6 @@ function NavButton({ item, active, collapsed, badge, onClick }) {
         justifyContent: collapsed ? 'center' : 'flex-start',
       }}
     >
-      {/* Ícono con badge */}
       <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
         <Icon
           size={20}
