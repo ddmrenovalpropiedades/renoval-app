@@ -21,13 +21,9 @@ export function useMensajes(currentUser) {
   const [sendError, setSendError]           = useState(null);
   const [lecturas, setLecturas]             = useState({});
 
-  const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
-
-  // Refs para el closure del canal Realtime
-  const selectedIdRef          = useRef(null);
-  const audioRef               = useRef(null);
-  const fetchConversacionesRef = useRef(null);
-  const marcarLeidaRef         = useRef(null);
+  const isAdmin      = ADMIN_EMAILS.includes(currentUser?.email);
+  const audioRef     = useRef(null);
+  const selectedIdRef = useRef(null);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
@@ -119,10 +115,6 @@ export function useMensajes(currentUser) {
 
   useEffect(() => { fetchConversaciones(); }, [fetchConversaciones]);
 
-  // Mantener refs siempre actualizados
-  useEffect(() => { fetchConversacionesRef.current = fetchConversaciones; }, [fetchConversaciones]);
-  useEffect(() => { marcarLeidaRef.current = marcarLeida; }, [marcarLeida]);
-
   // ── Badge count ────────────────────────────────────────────────────────────
   const badgeCount = conversaciones.reduce((acc, conv) => {
     const esPropia     = conv.agent_id === currentUser?.id;
@@ -139,28 +131,22 @@ export function useMensajes(currentUser) {
   }, 0);
 
   // ── Realtime ───────────────────────────────────────────────────────────────
-  // Se suscribe solo cuando currentUser.id está disponible.
-  // Usa refs para leer fetchConversaciones y marcarLeida actualizados
-  // sin necesidad de recrear el canal.
-  const currentUserId = currentUser?.id;
-
+  // Canal nombrado con el email del usuario → nunca colisiona entre instancias.
+  // Se recrea cuando cambia selectedId (para actualizar el hilo abierto)
+  // o cuando cambia fetchConversaciones (filtros).
   useEffect(() => {
-    if (!currentUserId) return; // esperar hasta que el perfil esté listo
+    if (!currentUser?.email) return;
 
-    // Asegurar que los refs tengan los valores más recientes antes de suscribir
-    // (los useEffect de los refs corren en el mismo ciclo, pero por seguridad
-    // asignamos directamente aquí también)
-    fetchConversacionesRef.current = fetchConversaciones;
-    marcarLeidaRef.current         = marcarLeida;
+    const channelName = `wa_cambios_${currentUser.email}`;
 
     const channel = supabase
-      .channel('wa_cambios')
+      .channel(channelName)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'wa_conversaciones',
       }, () => {
-        fetchConversacionesRef.current?.();
+        fetchConversaciones();
       })
       .on('postgres_changes', {
         event: 'INSERT',
@@ -182,15 +168,15 @@ export function useMensajes(currentUser) {
             const exists = prev.find(m => m.id === nuevo.id);
             return exists ? prev : [...prev, nuevo];
           });
-          marcarLeidaRef.current?.(nuevo.conversacion_id);
+          marcarLeida(nuevo.conversacion_id);
         }
 
-        fetchConversacionesRef.current?.();
+        fetchConversaciones();
       })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [currentUserId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUser?.email, selectedId, fetchConversaciones, marcarLeida]);
 
   // ── Cargar hilo de mensajes ────────────────────────────────────────────────
   const fetchMensajes = useCallback(async (id) => {
