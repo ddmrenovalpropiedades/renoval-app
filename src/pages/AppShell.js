@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutGrid, CheckSquare, FileText,
@@ -38,9 +38,22 @@ export default function AppShell() {
   const [activeModule, setActiveModule] = useState('pizarra');
   const [hovered, setHovered] = useState(false);
 
-  // ── Instancia única del hook de mensajes ───────────────────────────────────
+  // Instancia única del hook de mensajes
   const mensajesHook = useMensajes(profile);
-  const { badgeCount } = mensajesHook;
+  const { badgeCount, unlockAudio } = mensajesHook;
+
+  // Desbloquear audio en el primer clic del usuario en cualquier parte de la app
+  const audioUnlocked = useRef(false);
+  useEffect(() => {
+    const handleFirstClick = () => {
+      if (audioUnlocked.current) return;
+      audioUnlocked.current = true;
+      unlockAudio();
+      window.removeEventListener('click', handleFirstClick);
+    };
+    window.addEventListener('click', handleFirstClick);
+    return () => window.removeEventListener('click', handleFirstClick);
+  }, [unlockAudio]);
 
   const visibleNavTop    = NAV_ITEMS_TOP.filter(item => !item.ownerOnly || profile?.isOwner);
   const visibleNavBottom = NAV_ITEMS_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner);
