@@ -232,6 +232,10 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
   };
 
   const handleNewSave = async () => {
+    // Forzar blur para que PriceInput y otros inputs activos commiteen su valor
+    if (document.activeElement) document.activeElement.blur();
+    // Pequeño delay para que el blur se procese antes de leer form
+    await new Promise(r => setTimeout(r, 50));
     setAttempted(true);
     if (!form.propiedad.trim() || !form.e1 || !form.e2) return;
     await onSave(form);
@@ -417,11 +421,20 @@ export default function PizarraVentasPage() {
     if (form.id) {
       setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...form } : r));
     } else {
-      const payload = { propiedad: form.propiedad.trim(), precio: form.precio || null, status: form.status || null, e1: form.e1 || null, e2: form.e2 || null, db: form.db || null, eb: form.eb || null, comuna: form.comuna || null };
+      const payload = {
+        propiedad: form.propiedad.trim(),
+        precio: form.precio || null,
+        status: form.status || null,
+        e1: form.e1 || null,
+        e2: form.e2 || null,
+        db: form.db || null,
+        eb: form.eb || null,
+        comuna: form.comuna || null,
+      };
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
-      const { data, error } = await supabase.from('pizarra_ventas').insert({ ...payload, position: minPos }).select().single();
-      console.log('INSERT result:', { data, error });
-      if (data) setRows(prev => [data, ...prev]);
+      const { data } = await supabase.from('pizarra_ventas').insert({ ...payload, position: minPos }).select().single();
+      // Agregar manualmente y evitar duplicado del realtime ignorando si ya existe
+      if (data) setRows(prev => prev.some(r => r.id === data.id) ? prev : [data, ...prev]);
       setAddingNew(false);
     }
   };
