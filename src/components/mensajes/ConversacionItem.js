@@ -6,7 +6,6 @@ const ESTADO_COLOR = {
   con_agente:       '#3b82f6',
   cerrada:          '#9ca3af',
 };
-
 const ESTADO_LABEL = {
   bot_activo:       'Bot',
   esperando_agente: 'Esperando',
@@ -14,12 +13,20 @@ const ESTADO_LABEL = {
   cerrada:          'Cerrada',
 };
 
-export default function ConversacionItem({ conv, selected, onClick }) {
+export default function ConversacionItem({ conv, selected, onClick, lecturas, currentUserId }) {
   const mensajes = conv.wa_mensajes || [];
   const ultimo   = mensajes[mensajes.length - 1];
   const hora     = ultimo
     ? new Date(ultimo.created_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
     : '';
+
+  // ── Calcular mensajes no leídos ──────────────────────────────────────────
+  const ultimaLectura   = lecturas?.[conv.id] ? new Date(lecturas[conv.id]) : null;
+  const mensajesInbound = mensajes.filter(m => m.direction === 'inbound');
+  const noLeidos        = mensajesInbound.filter(m =>
+    !ultimaLectura || new Date(m.created_at) > ultimaLectura
+  ).length;
+  const hayNoLeidos = noLeidos > 0;
 
   return (
     <div
@@ -27,40 +34,80 @@ export default function ConversacionItem({ conv, selected, onClick }) {
       style={{
         padding:      '12px 16px',
         cursor:       'pointer',
-        background:   selected ? '#e8f5e9' : 'white',
+        background:   selected ? '#e8f5e9' : hayNoLeidos ? '#f0fdf4' : 'white',
         borderBottom: '1px solid #f0f0f0',
-        borderLeft:   selected ? '3px solid #25D366' : '3px solid transparent',
+        borderLeft:   selected ? '3px solid #25D366' : hayNoLeidos ? '3px solid #25D366' : '3px solid transparent',
       }}
     >
+      {/* Fila 1: nombre + hora */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 600, fontSize: '14px' }}>
+        <span style={{
+          fontWeight:  hayNoLeidos ? 700 : 600,
+          fontSize:    '14px',
+          color:       hayNoLeidos ? '#111' : '#1f2937',
+        }}>
           {conv.contact_name || conv.phone_number}
         </span>
-        <span style={{ fontSize: '11px', color: '#888' }}>{hora}</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
         <span style={{
-          fontSize:      '12px',
-          color:         '#666',
-          overflow:      'hidden',
-          textOverflow:  'ellipsis',
-          whiteSpace:    'nowrap',
-          maxWidth:      '160px',
+          fontSize:   '11px',
+          color:      hayNoLeidos ? '#25D366' : '#888',
+          fontWeight: hayNoLeidos ? 600 : 400,
+        }}>
+          {hora}
+        </span>
+      </div>
+
+      {/* Fila 2: preview mensaje + badge no leídos o estado */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+        <span style={{
+          fontSize:     '12px',
+          color:        hayNoLeidos ? '#111' : '#666',
+          fontWeight:   hayNoLeidos ? 600 : 400,
+          overflow:     'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace:   'nowrap',
+          maxWidth:     '160px',
         }}>
           {ultimo?.message_text || '—'}
         </span>
-        <span style={{
-          fontSize:     '10px',
-          fontWeight:   600,
-          color:        'white',
-          background:   ESTADO_COLOR[conv.estado] || '#9ca3af',
-          borderRadius: '10px',
-          padding:      '1px 7px',
-          whiteSpace:   'nowrap',
-        }}>
-          {ESTADO_LABEL[conv.estado] || conv.estado}
-        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+          {/* Badge de no leídos */}
+          {hayNoLeidos && (
+            <span style={{
+              background:   '#25D366',
+              color:        'white',
+              borderRadius: '50%',
+              fontSize:     '11px',
+              fontWeight:   700,
+              minWidth:     20,
+              height:       20,
+              display:      'flex',
+              alignItems:   'center',
+              justifyContent: 'center',
+              padding:      '0 5px',
+              boxSizing:    'border-box',
+            }}>
+              {noLeidos > 99 ? '99+' : noLeidos}
+            </span>
+          )}
+
+          {/* Badge de estado */}
+          <span style={{
+            fontSize:     '10px',
+            fontWeight:   600,
+            color:        'white',
+            background:   ESTADO_COLOR[conv.estado] || '#9ca3af',
+            borderRadius: '10px',
+            padding:      '1px 7px',
+            whiteSpace:   'nowrap',
+          }}>
+            {ESTADO_LABEL[conv.estado] || conv.estado}
+          </span>
+        </div>
       </div>
+
+      {/* Fila 3: teléfono */}
       <div style={{ fontSize: '11px', color: '#999', marginTop: '2px' }}>
         {conv.phone_number}
       </div>
