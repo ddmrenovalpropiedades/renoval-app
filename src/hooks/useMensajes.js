@@ -23,14 +23,13 @@ export function useMensajes(currentUser) {
 
   const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
 
-  // Ref para que el closure del Realtime siempre lea el selectedId actual
-  const selectedIdRef = useRef(null);
-  const audioRef      = useRef(null);
+  // Refs para que el closure del Realtime siempre lea valores actuales
+  const selectedIdRef          = useRef(null);
+  const audioRef               = useRef(null);
+  const fetchConversacionesRef = useRef(null);
+  const marcarLeidaRef         = useRef(null);
 
-  // Mantener ref sincronizado con el estado
-  useEffect(() => {
-    selectedIdRef.current = selectedId;
-  }, [selectedId]);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
   // ── Audio ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -49,7 +48,7 @@ export function useMensajes(currentUser) {
   const playNotification = useCallback(() => {
     if (!audioRef.current) return;
     audioRef.current.currentTime = 0;
-    audioRef.current.play().catch(() => {});
+    audioRef.current.play().catch((e) => console.warn('Audio bloqueado:', e));
   }, []);
 
   // ── Cargar lecturas ────────────────────────────────────────────────────────
@@ -66,9 +65,7 @@ export function useMensajes(currentUser) {
     }
   }, [currentUser?.email]);
 
-  useEffect(() => {
-    fetchLecturas();
-  }, [fetchLecturas]);
+  useEffect(() => { fetchLecturas(); }, [fetchLecturas]);
 
   // ── Marcar conversación como leída ─────────────────────────────────────────
   const marcarLeida = useCallback(async (convId) => {
@@ -83,6 +80,9 @@ export function useMensajes(currentUser) {
     setLecturas(prev => ({ ...prev, [convId]: ahora }));
   }, [currentUser?.email]);
 
+  // Mantener refs actualizados
+  useEffect(() => { marcarLeidaRef.current = marcarLeida; }, [marcarLeida]);
+
   // ── Cargar conversaciones ──────────────────────────────────────────────────
   const fetchConversaciones = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -90,7 +90,11 @@ export function useMensajes(currentUser) {
 
     let query = supabase
       .from('wa_conversaciones')
-      .select('*, app_users(id, full_name, iniciales), wa_mensajes(message_text, created_at, direction)')
+      .select(`
+        *,
+        app_users(id, full_name, iniciales),
+        wa_mensajes(message_text, created_at, direction)
+      `)
       .order('updated_at', { ascending: false });
 
     if (!isAdmin) {
@@ -110,13 +114,23 @@ export function useMensajes(currentUser) {
     }
 
     const { data, error } = await query;
-    if (!error) setConversaciones(data || []);
+    if (!error) {
+      // Ordenar wa_mensajes por fecha para que el preview muestre el último
+      const sorted = (data || []).map(conv => ({
+        ...conv,
+        wa_mensajes: [...(conv.wa_mensajes || [])].sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        ),
+      }));
+      setConversaciones(sorted);
+    }
     setLoading(false);
   }, [currentUser?.id, isAdmin, filtroEstado, filtroUsuario]);
 
-  useEffect(() => {
-    fetchConversaciones();
-  }, [fetchConversaciones]);
+  useEffect(() => { fetchConversaciones(); }, [fetchConversaciones]);
+
+  // Mantener ref actualizado
+  useEffect(() => { fetchConversacionesRef.current = fetchConversaciones; }, [fetchConversaciones]);
 
   // ── Badge count ────────────────────────────────────────────────────────────
   const badgeCount = conversaciones.reduce((acc, conv) => {
@@ -133,9 +147,7 @@ export function useMensajes(currentUser) {
     return acc;
   }, 0);
 
-  // ── Realtime ───────────────────────────────────────────────────────────────
-  // Se suscribe UNA sola vez. Usa selectedIdRef para leer el valor actual
-  // sin necesidad de re-suscribirse, evitando conflictos de canal duplicado.
+  // ── Realtime — canal único, usa refs para valores actuales ─────────────────
   useEffect(() => {
     const channel = supabase
       .channel('wa_cambios')
@@ -143,45 +155,38 @@ export function useMensajes(currentUser) {
         event: '*',
         schema: 'public',
         table: 'wa_conversaciones',
-      }, () => fetchConversaciones())
+      }, () => {
+        fetchConversacionesRef.current?.();
+      })
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'wa_mensajes',
       }, (payload) => {
-        const nuevo       = payload.new;
-        const currentSel  = selectedIdRef.current;
+        const nuevo      = payload.new;
+        const currentSel = selectedIdRef.current;
 
-        // Sonar siempre que llega un mensaje inbound, igual que WhatsApp Web
+        // Sonar siempre que llega un mensaje inbound
         if (nuevo.direction === 'inbound') {
-          playNotification();
+          audioRef.current.currentTime = 0;
+          audioRef.current.play().catch((e) => console.warn('Audio bloqueado:', e));
         }
 
-        // Si el hilo está abierto: agregar mensaje y marcar como leída
+        // Si el hilo está abierto: agregar mensaje y marcar leída
         if (nuevo.conversacion_id === currentSel) {
           setMensajes(prev => {
             const exists = prev.find(m => m.id === nuevo.id);
             return exists ? prev : [...prev, nuevo];
           });
-          marcarLeida(nuevo.conversacion_id);
+          marcarLeidaRef.current?.(nuevo.conversacion_id);
         }
 
-        fetchConversaciones();
+        fetchConversacionesRef.current?.();
       })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);  // Sin dependencias: el canal se crea una sola vez
-
-  // Mantener fetchConversaciones y marcarLeida accesibles desde el closure
-  // sin recrear el canal usando refs
-  const fetchConversacionesRef = useRef(fetchConversaciones);
-  const marcarLeidaRef         = useRef(marcarLeida);
-  const playNotificationRef    = useRef(playNotification);
-  useEffect(() => { fetchConversacionesRef.current = fetchConversaciones; }, [fetchConversaciones]);
-  useEffect(() => { marcarLeidaRef.current = marcarLeida; },               [marcarLeida]);
-  useEffect(() => { playNotificationRef.current = playNotification; },     [playNotification]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cargar hilo de mensajes ────────────────────────────────────────────────
   const fetchMensajes = useCallback(async (id) => {
