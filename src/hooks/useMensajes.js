@@ -106,7 +106,6 @@ export function useMensajes(currentUser) {
 
     const { data, error } = await query;
     if (!error) {
-      // Ordenar mensajes por fecha para que el preview muestre el último
       const sorted = (data || []).map(conv => ({
         ...conv,
         wa_mensajes: [...(conv.wa_mensajes || [])].sort(
@@ -120,7 +119,7 @@ export function useMensajes(currentUser) {
 
   useEffect(() => { fetchConversaciones(); }, [fetchConversaciones]);
 
-  // Mantener refs siempre actualizados — ANTES de que el canal los use
+  // Mantener refs siempre actualizados
   useEffect(() => { fetchConversacionesRef.current = fetchConversaciones; }, [fetchConversaciones]);
   useEffect(() => { marcarLeidaRef.current = marcarLeida; }, [marcarLeida]);
 
@@ -139,9 +138,18 @@ export function useMensajes(currentUser) {
     return acc;
   }, 0);
 
-  // ── Realtime — canal único, lee todo via refs ──────────────────────────────
+  // ── Realtime ───────────────────────────────────────────────────────────────
+  // Se suscribe solo cuando currentUser.id está disponible.
+  // Usa refs para leer fetchConversaciones y marcarLeida actualizados
+  // sin necesidad de recrear el canal.
+  const currentUserId = currentUser?.id;
+
   useEffect(() => {
-    // Inicializar refs con los valores actuales antes de suscribirse
+    if (!currentUserId) return; // esperar hasta que el perfil esté listo
+
+    // Asegurar que los refs tengan los valores más recientes antes de suscribir
+    // (los useEffect de los refs corren en el mismo ciclo, pero por seguridad
+    // asignamos directamente aquí también)
     fetchConversacionesRef.current = fetchConversaciones;
     marcarLeidaRef.current         = marcarLeida;
 
@@ -182,7 +190,7 @@ export function useMensajes(currentUser) {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cargar hilo de mensajes ────────────────────────────────────────────────
   const fetchMensajes = useCallback(async (id) => {
