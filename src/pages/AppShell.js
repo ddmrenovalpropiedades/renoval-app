@@ -6,6 +6,7 @@ import {
   Building2, MessageCircle, CreditCard, Calculator
 } from 'lucide-react';
 import { useMensajes } from '../hooks/useMensajes';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
 import PropertiesPage from './PropertiesPage';
@@ -42,7 +43,10 @@ export default function AppShell() {
   const mensajesHook = useMensajes(profile);
   const { badgeCount, unlockAudio } = mensajesHook;
 
-  // Desbloquear audio en el primer clic del usuario en cualquier parte de la app
+  // Push notifications — pide permiso y registra suscripción
+  usePushNotifications(profile);
+
+  // Desbloquear audio en el primer clic
   const audioUnlocked = useRef(false);
   useEffect(() => {
     const handleFirstClick = () => {
