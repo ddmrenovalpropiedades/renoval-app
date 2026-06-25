@@ -23,7 +23,7 @@ export function useMensajes(currentUser) {
 
   const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
 
-  // Refs para que el closure del Realtime siempre lea valores actuales
+  // Refs para el closure del canal Realtime
   const selectedIdRef          = useRef(null);
   const audioRef               = useRef(null);
   const fetchConversacionesRef = useRef(null);
@@ -74,9 +74,6 @@ export function useMensajes(currentUser) {
     setLecturas(prev => ({ ...prev, [convId]: ahora }));
   }, [currentUser?.email]);
 
-  // Mantener refs actualizados
-  useEffect(() => { marcarLeidaRef.current = marcarLeida; }, [marcarLeida]);
-
   // ── Cargar conversaciones ──────────────────────────────────────────────────
   const fetchConversaciones = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -109,7 +106,7 @@ export function useMensajes(currentUser) {
 
     const { data, error } = await query;
     if (!error) {
-      // Ordenar wa_mensajes por fecha para que el preview muestre el último
+      // Ordenar mensajes por fecha para que el preview muestre el último
       const sorted = (data || []).map(conv => ({
         ...conv,
         wa_mensajes: [...(conv.wa_mensajes || [])].sort(
@@ -123,8 +120,9 @@ export function useMensajes(currentUser) {
 
   useEffect(() => { fetchConversaciones(); }, [fetchConversaciones]);
 
-  // Mantener ref actualizado
+  // Mantener refs siempre actualizados — ANTES de que el canal los use
   useEffect(() => { fetchConversacionesRef.current = fetchConversaciones; }, [fetchConversaciones]);
+  useEffect(() => { marcarLeidaRef.current = marcarLeida; }, [marcarLeida]);
 
   // ── Badge count ────────────────────────────────────────────────────────────
   const badgeCount = conversaciones.reduce((acc, conv) => {
@@ -141,8 +139,12 @@ export function useMensajes(currentUser) {
     return acc;
   }, 0);
 
-  // ── Realtime — canal único, usa refs para valores actuales ─────────────────
+  // ── Realtime — canal único, lee todo via refs ──────────────────────────────
   useEffect(() => {
+    // Inicializar refs con los valores actuales antes de suscribirse
+    fetchConversacionesRef.current = fetchConversaciones;
+    marcarLeidaRef.current         = marcarLeida;
+
     const channel = supabase
       .channel('wa_cambios')
       .on('postgres_changes', {
@@ -161,9 +163,9 @@ export function useMensajes(currentUser) {
         const currentSel = selectedIdRef.current;
 
         // Sonar siempre que llega un mensaje inbound
-        if (nuevo.direction === 'inbound') {
+        if (nuevo.direction === 'inbound' && audioRef.current) {
           audioRef.current.currentTime = 0;
-          audioRef.current.play().catch((e) => console.warn('Audio bloqueado:', e));
+          audioRef.current.play().catch(() => {});
         }
 
         // Si el hilo está abierto: agregar mensaje y marcar leída
