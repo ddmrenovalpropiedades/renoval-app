@@ -232,10 +232,6 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
   };
 
   const handleNewSave = async () => {
-    // Forzar blur para que PriceInput y otros inputs activos commiteen su valor
-    if (document.activeElement) document.activeElement.blur();
-    // Pequeño delay para que el blur se procese antes de leer form
-    await new Promise(r => setTimeout(r, 50));
     setAttempted(true);
     if (!form.propiedad.trim() || !form.e1 || !form.e2) return;
     await onSave(form);
@@ -268,7 +264,14 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
   if (isNew) return (
     <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
       <td style={st.tdProp}><PropertyAutocomplete value={form.propiedad} onChange={v => setForm(p => ({ ...p, propiedad: v }))} onSelect={handlePropSelect} hasError={!!errors.propiedad} inputStyle={{ height: 28, boxSizing: 'border-box', fontSize: 12 }} /></td>
-      <td style={st.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} isNew={true} /></td>
+      <td style={st.tdCenter}>
+        <input
+          value={form.precio || ''}
+          onChange={e => setForm(p => ({ ...p, precio: e.target.value }))}
+          placeholder="$0 o UF 0"
+          style={{ ...newRowInput, minWidth: 90 }}
+        />
+      </td>
       <td style={st.tdCenter}><select value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} style={newRowSelect}><option value="">—</option><option value="Aún no">Aún no</option><option value="Listo">Listo</option></select></td>
       <td style={st.tdCenter}>
         <div style={{ ...reqWrapper('e1'), position: 'relative' }}>
@@ -396,7 +399,7 @@ export default function PizarraVentasPage() {
   useEffect(() => {
     const channel = supabase.channel('pizarra_ventas_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pizarra_ventas' }, (payload) => {
-        if (payload.eventType === 'INSERT') setRows(prev => [payload.new, ...prev]);
+        if (payload.eventType === 'INSERT') setRows(prev => prev.some(r => r.id === payload.new.id) ? prev : [payload.new, ...prev]);
         else if (payload.eventType === 'UPDATE') setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
         else if (payload.eventType === 'DELETE') setRows(prev => prev.filter(r => r.id !== payload.old.id));
       }).subscribe();
