@@ -45,12 +45,6 @@ export function useMensajes(currentUser) {
     }).catch(() => {});
   }, []);
 
-  const playNotification = useCallback(() => {
-    if (!audioRef.current) return;
-    audioRef.current.currentTime = 0;
-    audioRef.current.play().catch((e) => console.warn('Audio bloqueado:', e));
-  }, []);
-
   // ── Cargar lecturas ────────────────────────────────────────────────────────
   const fetchLecturas = useCallback(async () => {
     if (!currentUser?.email) return;
