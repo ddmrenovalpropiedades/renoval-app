@@ -17,6 +17,7 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
     setFiltroUsuario,
     sendError,
     isAdmin,
+    lecturas,
     selectConversacion,
     enviarMensaje,
     cerrarConversacion,
@@ -76,6 +77,7 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
             isAdmin={isAdmin}
             currentUser={currentUser}
             loading={loading}
+            lecturas={lecturas}
           />
         </div>
 
