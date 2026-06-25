@@ -31,7 +31,6 @@ function PropertyAutocomplete({ value, onChange, onSelect, placeholder = 'Direcc
       let all = [];
       let from = 0;
       while (true) {
-        // Cargar también e1 y e2 para autocompletar encargados
         const { data, error } = await supabase.from('properties').select('propiedad, e1, e2').range(from, from + 999);
         if (error || !data || data.length === 0) break;
         all = [...all, ...data];
@@ -64,7 +63,6 @@ function PropertyAutocomplete({ value, onChange, onSelect, placeholder = 'Direcc
 
   const handleSelect = (item) => {
     onChange(transformAddress(item.propiedad));
-    // Notificar e1/e2 al padre si se proveyó callback
     if (onSelect) onSelect({ e1: item.e1 || '', e2: item.e2 || '' });
     setOpen(false);
   };
@@ -172,7 +170,6 @@ const parsePrice = (val) => {
     const n = parseFloat(ufMatch[1].replace(',', '.'));
     return { amount: n, isUF: true };
   }
-  // Eliminar puntos de miles y símbolo $, luego parsear
   const n = parseFloat(str.replace(/\$/g, '').replace(/\./g, '').replace(',', '.'));
   return { amount: isNaN(n) ? null : n, isUF: false };
 };
@@ -183,9 +180,11 @@ const UrgentDot = () => (
   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#ea4335', color: '#fff', fontSize: 10, fontWeight: 900, flexShrink: 0, marginRight: 4 }}>!</span>
 );
 
+// ── FIX 1: Agregar conv_asignar_a a EMPTY_FORM ───────────────
 const EMPTY_FORM = {
   propiedad: '', precio: '', promo: '', status: '', e1: '', e2: '', db: '', eb: '', comuna: '',
-  fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '', url_publicacion: '',
+  fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
+  url_publicacion: '', conv_asignar_a: '',
 };
 
 // ── Auto task creation ────────────────────────────────────────
@@ -277,9 +276,6 @@ const slashInputStyle = {
 };
 
 // ── PriceInput ────────────────────────────────────────────────
-// Fixes:
-// 1. displayRaw nunca formatea con toLocaleString para evitar el loop de puntos
-// 2. onBlur guarda aunque raw esté vacío (permite dejar la celda vacía)
 function PriceInput({ value, onChange, uf, isNew }) {
   const [editing, setEditing] = useState(false);
   const [currency, setCurrency] = useState('CLP');
@@ -293,7 +289,6 @@ function PriceInput({ value, onChange, uf, isNew }) {
 
   const startEditing = () => {
     setCurrency(isUF ? 'UF' : 'CLP');
-    // raw siempre como número limpio sin puntos ni $
     setRaw(amount != null ? String(amount) : '');
     setEditing(true);
   };
@@ -301,7 +296,6 @@ function PriceInput({ value, onChange, uf, isNew }) {
   const commitEdit = () => {
     setEditing(false);
     if (raw === '') {
-      // Permitir dejar vacío
       onChange('');
     } else {
       onChange(currency === 'UF' ? `UF ${raw}` : raw);
@@ -540,12 +534,16 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const hasEdits = !isNew && JSON.stringify(form) !== JSON.stringify({ ...EMPTY_FORM, ...row });
+  // Normalizar null→'' para comparación correcta con EMPTY_FORM
+  const normalizeRow = (r) => Object.fromEntries(
+    Object.entries({ ...EMPTY_FORM, ...r }).map(([k, v]) => [k, v === null || v === undefined ? '' : v])
+  );
+  const hasEdits = !isNew && JSON.stringify(form) !== JSON.stringify(normalizeRow(row));
   const hasEditsRef = useRef(false);
   hasEditsRef.current = hasEdits;
 
   useEffect(() => {
-    // Solo sincronizar desde el servidor si no hay cambios locales pendientes
+    // Sincronizar desde el servidor si no hay cambios locales pendientes
     if (!hasEditsRef.current) setForm(prev => ({ ...prev, ...row }));
   }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -562,27 +560,28 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     setForm(prev => ({ ...prev, [k]: v }));
   };
 
- const handleSave = async () => {
-  await supabase.from('pizarra').update({
-    propiedad: form.propiedad || null,
-    precio: form.precio || null,
-    promo: form.promo || null,
-    status: form.status || null,
-    e1: form.e1 || null,
-    e2: form.e2 || null,
-    db: form.db || null,
-    eb: form.eb || null,
-    comuna: form.comuna || null,
-    fecha_salida: form.fecha_salida || null,
-    aviso: form.aviso || null,
-    respaldo: form.respaldo || null,
-    tipo: form.tipo || null,
-    admin: form.admin || null,
-    url_publicacion: form.url_publicacion || null,
-    conv_asignar_a: form.conv_asignar_a || null,
-  }).eq('id', row.id);
-  onSave({ ...row, ...form });
-};
+  // ── FIX 2: handleSave incluye url_publicacion y conv_asignar_a ──
+  const handleSave = async () => {
+    await supabase.from('pizarra').update({
+      propiedad: form.propiedad || null,
+      precio: form.precio || null,
+      promo: form.promo || null,
+      status: form.status || null,
+      e1: form.e1 || null,
+      e2: form.e2 || null,
+      db: form.db || null,
+      eb: form.eb || null,
+      comuna: form.comuna || null,
+      fecha_salida: form.fecha_salida || null,
+      aviso: form.aviso || null,
+      respaldo: form.respaldo || null,
+      tipo: form.tipo || null,
+      admin: form.admin || null,
+      url_publicacion: form.url_publicacion || null,
+      conv_asignar_a: form.conv_asignar_a || null,
+    }).eq('id', row.id);
+    onSave({ ...row, ...form });
+  };
 
   const handleNewSave = async () => {
     setAttempted(true);
@@ -592,7 +591,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     if (onCancelNew) onCancelNew();
   };
 
-  // Callback para autocompletar E1/E2 desde Cartera al seleccionar propiedad
   const handlePropSelect = ({ e1, e2 }) => {
     if (isNew) {
       setForm(prev => ({
@@ -867,13 +865,18 @@ export default function PizarraPage() {
     setRows(prev => prev.filter(r => r.id !== id));
   };
 
+  // ── FIX 3: cerrar modal antes de actualizar rows para que
+  //    hasEditsRef sea false cuando el useEffect de PropertyRow
+  //    recibe el nuevo row y pueda resincronizar form ────────────
   const handleSaveUrl = async (url, asignarA) => {
     if (!urlModalRow) return;
+    const id = urlModalRow.id;
+    setUrlModalRow(null); // cerrar modal primero
     await supabase.from('pizarra')
       .update({ url_publicacion: url, conv_asignar_a: asignarA || 'e2' })
-      .eq('id', urlModalRow.id);
+      .eq('id', id);
     setRows(prev => prev.map(r =>
-      r.id === urlModalRow.id
+      r.id === id
         ? { ...r, url_publicacion: url, conv_asignar_a: asignarA || 'e2' }
         : r
     ));
@@ -1009,7 +1012,7 @@ const styles = {
   addBtn: { display: 'flex', alignItems: 'center', padding: '9px 16px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' },
-  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
+  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 10, whiteSpace: 'nowrap' },
   td:        { padding: '0 10px', height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center', lineHeight: 1 },
   tdProp:    { padding: '0 10px', height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left', lineHeight: 1 },
   tdCenter:  { padding: '0 8px',  height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', lineHeight: 1 },
