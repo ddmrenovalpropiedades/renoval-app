@@ -535,9 +535,10 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Exponer setForm al padre via ref para que handleSaveUrl pueda actualizar form local
+  // setForm es estable (React garantiza que no cambia), por eso [] es suficiente
   useEffect(() => {
     if (formRef) formRef.current = setForm;
-  }); // sin deps intencional: siempre apunta al setForm más reciente
+  }, [formRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Comparar solo los campos definidos en EMPTY_FORM, normalizando null→''
   const FORM_KEYS = Object.keys(EMPTY_FORM);
