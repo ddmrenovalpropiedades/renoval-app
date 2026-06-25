@@ -529,10 +529,15 @@ function SlashInputNew({ value, onChange }) {
 }
 
 // ── PropertyRow ───────────────────────────────────────────────
-function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad }) {
+function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad, formRef }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Exponer setForm al padre via ref para que handleSaveUrl pueda actualizar form local
+  useEffect(() => {
+    if (formRef) formRef.current = setForm;
+  }); // sin deps intencional: siempre apunta al setForm más reciente
 
   // Comparar solo los campos definidos en EMPTY_FORM, normalizando null→''
   const FORM_KEYS = Object.keys(EMPTY_FORM);
@@ -545,8 +550,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const hasEditsRef = useRef(false);
   hasEditsRef.current = hasEdits;
 
+  // Sincronizar form cuando row cambia desde el servidor (solo si no hay edits locales)
   useEffect(() => {
-    // Sincronizar desde el servidor si no hay cambios locales pendientes
     if (!hasEditsRef.current) setForm(prev => ({ ...prev, ...row }));
   }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -749,7 +754,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       <td style={styles.tdCenter}><InlineSelectCell value={form.tipo} options={['Nuevo','Renovación']} onChange={v => set('tipo', v)} /></td>
       <td style={styles.tdCenter}><InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => set('admin', v)} /></td>
       <td style={styles.tdCenter}>
-        <button onClick={() => onOpenUrlModal(row)}
+        <button onClick={() => onOpenUrlModal({ ...row, url_publicacion: form.url_publicacion, conv_asignar_a: form.conv_asignar_a })}
           style={{ ...styles.urlBtn, ...(form.url_publicacion ? styles.urlBtnActive : styles.urlBtnInactive) }}
           title={form.url_publicacion ? 'URL cargada' : 'Sin URL'}>
           <Link2 size={13} />
@@ -868,6 +873,8 @@ export default function PizarraPage() {
     setRows(prev => prev.filter(r => r.id !== id));
   };
 
+  const formRefs = useRef({});
+
   // ── FIX 3: cerrar modal antes de actualizar rows para que
   //    hasEditsRef sea false cuando el useEffect de PropertyRow
   //    recibe el nuevo row y pueda resincronizar form ────────────
@@ -878,6 +885,14 @@ export default function PizarraPage() {
     await supabase.from('pizarra')
       .update({ url_publicacion: url, conv_asignar_a: asignarA || 'e2' })
       .eq('id', id);
+    // Actualizar form local de la fila directamente para evitar que hasEdits se dispare
+    if (formRefs.current[id]) {
+      formRefs.current[id](prev => ({
+        ...prev,
+        url_publicacion: url || '',
+        conv_asignar_a: asignarA || '',
+      }));
+    }
     setRows(prev => prev.map(r =>
       r.id === id
         ? { ...r, url_publicacion: url, conv_asignar_a: asignarA || 'e2' }
@@ -977,10 +992,18 @@ export default function PizarraPage() {
               )}
               {filtered.length === 0 && !addingNew
                 ? <tr><td colSpan={16} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
-                : filtered.map(row => (
-                  <PropertyRow key={row.id} row={row} onSave={handleSave} onDelete={handleDelete}
-                    onRented={r => setRentingRow(r)} uf={uf}
-                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow} />
+                : filtered.map(row => {
+                  if (!formRefs.current[row.id]) {
+                    formRefs.current[row.id] = { current: null };
+                  }
+                  return (
+                    <PropertyRow key={row.id} row={row} onSave={handleSave} onDelete={handleDelete}
+                      onRented={r => setRentingRow(r)} uf={uf}
+                      onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow}
+                      formRef={formRefs.current[row.id]}
+                    />
+                  );
+                })
                 ))
               }
             </tbody>
