@@ -21,8 +21,16 @@ export function useMensajes(currentUser) {
   const [sendError, setSendError]           = useState(null);
   const [lecturas, setLecturas]             = useState({});
 
-  const isAdmin  = ADMIN_EMAILS.includes(currentUser?.email);
-  const audioRef = useRef(null);
+  const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
+
+  // Ref para que el closure del Realtime siempre lea el selectedId actual
+  const selectedIdRef = useRef(null);
+  const audioRef      = useRef(null);
+
+  // Mantener ref sincronizado con el estado
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   // ── Audio ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -30,7 +38,6 @@ export function useMensajes(currentUser) {
     audioRef.current.volume = 0.5;
   }, []);
 
-  // Llamar esto en el primer clic del usuario para desbloquear el contexto de audio
   const unlockAudio = useCallback(() => {
     if (!audioRef.current) return;
     audioRef.current.play().then(() => {
@@ -127,6 +134,8 @@ export function useMensajes(currentUser) {
   }, 0);
 
   // ── Realtime ───────────────────────────────────────────────────────────────
+  // Se suscribe UNA sola vez. Usa selectedIdRef para leer el valor actual
+  // sin necesidad de re-suscribirse, evitando conflictos de canal duplicado.
   useEffect(() => {
     const channel = supabase
       .channel('wa_cambios')
@@ -140,26 +149,39 @@ export function useMensajes(currentUser) {
         schema: 'public',
         table: 'wa_mensajes',
       }, (payload) => {
-        const nuevo = payload.new;
+        const nuevo       = payload.new;
+        const currentSel  = selectedIdRef.current;
 
-        // Sonido solo para mensajes inbound fuera de la conv abierta
-        if (nuevo.direction === 'inbound' && nuevo.conversacion_id !== selectedId) {
+        // Sonar siempre que llega un mensaje inbound, igual que WhatsApp Web
+        if (nuevo.direction === 'inbound') {
           playNotification();
         }
 
-        if (nuevo.conversacion_id === selectedId) {
+        // Si el hilo está abierto: agregar mensaje y marcar como leída
+        if (nuevo.conversacion_id === currentSel) {
           setMensajes(prev => {
             const exists = prev.find(m => m.id === nuevo.id);
             return exists ? prev : [...prev, nuevo];
           });
           marcarLeida(nuevo.conversacion_id);
         }
+
         fetchConversaciones();
       })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [selectedId, fetchConversaciones, playNotification, marcarLeida]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // Sin dependencias: el canal se crea una sola vez
+
+  // Mantener fetchConversaciones y marcarLeida accesibles desde el closure
+  // sin recrear el canal usando refs
+  const fetchConversacionesRef = useRef(fetchConversaciones);
+  const marcarLeidaRef         = useRef(marcarLeida);
+  const playNotificationRef    = useRef(playNotification);
+  useEffect(() => { fetchConversacionesRef.current = fetchConversaciones; }, [fetchConversaciones]);
+  useEffect(() => { marcarLeidaRef.current = marcarLeida; },               [marcarLeida]);
+  useEffect(() => { playNotificationRef.current = playNotification; },     [playNotification]);
 
   // ── Cargar hilo de mensajes ────────────────────────────────────────────────
   const fetchMensajes = useCallback(async (id) => {
