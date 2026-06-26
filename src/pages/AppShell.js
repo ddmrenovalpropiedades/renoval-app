@@ -18,7 +18,6 @@ import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
 import CalculadoraPage from './CalculadoraPage';
 
-// Ítems principales — aparecen en sidebar PC y bottom bar móvil
 const NAV_ITEMS_TOP = [
   { id: 'mensajes',   label: 'Mensajes',   icon: MessageCircle, ownerOnly: false },
   { id: 'pizarra',    label: 'Pizarra',    icon: LayoutGrid,    ownerOnly: false },
@@ -28,7 +27,6 @@ const NAV_ITEMS_TOP = [
   { id: 'tareas',     label: 'Tareas',     icon: CheckSquare,   ownerOnly: false },
 ];
 
-// Ítems secundarios — solo en sidebar PC y en menú "Más" en móvil
 const NAV_ITEMS_BOTTOM = [
   { id: 'pagos',       label: 'Pagos',       icon: CreditCard, ownerOnly: true  },
   { id: 'calculadora', label: 'Calculadora', icon: Calculator, ownerOnly: false },
@@ -36,7 +34,6 @@ const NAV_ITEMS_BOTTOM = [
   { id: 'usuarios',    label: 'Usuarios',    icon: Users,      ownerOnly: true  },
 ];
 
-// Hook para detectar si es móvil
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   useEffect(() => {
@@ -59,6 +56,7 @@ export default function AppShell() {
 
   usePushNotifications(profile);
 
+  // Desbloquear audio en el primer clic
   const audioUnlocked = useRef(false);
   useEffect(() => {
     const handleFirstClick = () => {
@@ -70,6 +68,22 @@ export default function AppShell() {
     window.addEventListener('click', handleFirstClick);
     return () => window.removeEventListener('click', handleFirstClick);
   }, [unlockAudio]);
+
+  // Limpiar badge del ícono cuando el usuario abre o vuelve a la app
+  useEffect(() => {
+    const clearBadge = () => {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_BADGE' });
+      }
+      if (navigator.clearAppBadge) {
+        navigator.clearAppBadge().catch(() => {});
+      }
+    };
+    clearBadge();
+    const onVisibility = () => { if (document.visibilityState === 'visible') clearBadge(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   const visibleNavTop    = NAV_ITEMS_TOP.filter(item => !item.ownerOnly || profile?.isOwner);
   const visibleNavBottom = NAV_ITEMS_BOTTOM.filter(item => !item.ownerOnly || profile?.isOwner);
@@ -87,20 +101,16 @@ export default function AppShell() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f8f9fa', fontFamily: "'Google Sans', 'Segoe UI', sans-serif", position: 'relative' }}>
 
-        {/* Contenido principal */}
         <main style={{ flex: 1, overflow: 'auto', paddingBottom: 64 }}>
           <ModuleRenderer module={activeModule} profile={profile} mensajesHook={mensajesHook} />
         </main>
 
-        {/* Menú "Más" desplegable */}
         {moreOpen && (
           <>
-            {/* Overlay */}
             <div
               onClick={() => setMoreOpen(false)}
               style={{ position: 'fixed', inset: 0, zIndex: 150, background: 'rgba(0,0,0,0.3)' }}
             />
-            {/* Panel */}
             <div style={{
               position: 'fixed', bottom: 64, left: 0, right: 0,
               background: '#fff', borderTop: '1px solid #e8eaed',
@@ -133,7 +143,6 @@ export default function AppShell() {
                   </button>
                 );
               })}
-              {/* Cerrar sesión */}
               <button
                 onClick={signOut}
                 style={{
@@ -150,7 +159,6 @@ export default function AppShell() {
           </>
         )}
 
-        {/* Bottom navigation bar */}
         <nav style={{
           position: 'fixed', bottom: 0, left: 0, right: 0,
           height: 64, background: '#fff',
@@ -159,11 +167,10 @@ export default function AppShell() {
           zIndex: 200,
           boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
         }}>
-          {/* Mostrar los primeros 4 ítems principales + botón Más */}
           {visibleNavTop.slice(0, 4).map(item => {
-            const Icon    = item.icon;
-            const active  = activeModule === item.id;
-            const badge   = item.id === 'mensajes' ? badgeCount : 0;
+            const Icon   = item.icon;
+            const active = activeModule === item.id;
+            const badge  = item.id === 'mensajes' ? badgeCount : 0;
             return (
               <button
                 key={item.id}
@@ -197,7 +204,6 @@ export default function AppShell() {
             );
           })}
 
-          {/* Botón Más */}
           <button
             onClick={() => setMoreOpen(v => !v)}
             style={{
@@ -217,7 +223,7 @@ export default function AppShell() {
     );
   }
 
-  // ── PC: sidebar original ───────────────────────────────────────────────────
+  // ── PC: sidebar ────────────────────────────────────────────────────────────
   return (
     <div style={styles.root}>
       <aside
