@@ -39,6 +39,7 @@ export default function HiloConversacion({
   onCerrar,
   onAsignar,
   currentUser,
+  isMobile = false,
 }) {
   const [texto, setTexto]         = useState('');
   const [sending, setSending]     = useState(false);
@@ -50,7 +51,6 @@ export default function HiloConversacion({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [mensajes]);
 
-  // Cargar usuarios para el selector de asignación
   useEffect(() => {
     supabase.from('app_users').select('id, full_name, iniciales').then(({ data }) => {
       setAppUsers(data || []);
@@ -87,27 +87,77 @@ export default function HiloConversacion({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header */}
-      <div style={{
-        padding:        '12px 20px',
-        borderBottom:   '1px solid #e5e7eb',
-        background:     '#f9fafb',
-        display:        'flex',
-        justifyContent: 'space-between',
-        alignItems:     'flex-start',
-        gap:            12,
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: '15px' }}>
-            {conversacion.contact_name || conversacion.phone_number}
+
+      {/* Header — solo en PC; en móvil lo maneja MensajesPage */}
+      {!isMobile && (
+        <div style={{
+          padding:        '12px 20px',
+          borderBottom:   '1px solid #e5e7eb',
+          background:     '#f9fafb',
+          display:        'flex',
+          justifyContent: 'space-between',
+          alignItems:     'flex-start',
+          gap:            12,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: '15px' }}>
+              {conversacion.contact_name || conversacion.phone_number}
+            </div>
+            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+              {conversacion.phone_number}
+            </div>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {conversacion.agent_id ? (
+                <>
+                  <span>Asignado a:</span>
+                  {agentIniciales && (
+                    <span style={{
+                      fontSize: 11, fontWeight: 700,
+                      color: ENCARGADO_COLORS[agentIniciales] || '#5f6368',
+                      background: (ENCARGADO_COLORS[agentIniciales] || '#9aa0a6') + '22',
+                      border: `1px solid ${(ENCARGADO_COLORS[agentIniciales] || '#9aa0a6')}44`,
+                      borderRadius: 20, padding: '1px 8px',
+                    }}>
+                      {agentIniciales}
+                    </span>
+                  )}
+                  {!agentIniciales && <span>{agentName || conversacion.agent_id}</span>}
+                </>
+              ) : (
+                <span style={{ color: '#f59e0b', fontWeight: 600 }}>⚠ Sin asignar</span>
+              )}
+              <span style={{ color: '#d1d5db' }}>·</span>
+              <span>{ESTADO_LABEL[conversacion.estado] || conversacion.estado}</span>
+            </div>
           </div>
-          <div style={{ fontSize: '12px', color: '#6b7280' }}>
-            {conversacion.phone_number}
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {esBot && (
+              <button onClick={onTomar} style={btnStyle('#3b82f6')}>
+                Tomar conversación
+              </button>
+            )}
+            {puedeResponder && conversacion.estado === 'con_agente' && (
+              <button onClick={onCerrar} style={btnStyle('#9ca3af')}>
+                Cerrar
+              </button>
+            )}
           </div>
-          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        </div>
+      )}
+
+      {/* Barra de estado + acciones en móvil */}
+      {isMobile && (
+        <div style={{
+          padding: '8px 12px',
+          background: '#f9fafb',
+          borderBottom: '1px solid #e5e7eb',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexShrink: 0,
+        }}>
+          <div style={{ fontSize: 12, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
             {conversacion.agent_id ? (
               <>
-                <span>Asignado a:</span>
+                <span>Asignado:</span>
                 {agentIniciales && (
                   <span style={{
                     fontSize: 11, fontWeight: 700,
@@ -119,7 +169,6 @@ export default function HiloConversacion({
                     {agentIniciales}
                   </span>
                 )}
-                {!agentIniciales && <span>{agentName || conversacion.agent_id}</span>}
               </>
             ) : (
               <span style={{ color: '#f59e0b', fontWeight: 600 }}>⚠ Sin asignar</span>
@@ -127,33 +176,31 @@ export default function HiloConversacion({
             <span style={{ color: '#d1d5db' }}>·</span>
             <span>{ESTADO_LABEL[conversacion.estado] || conversacion.estado}</span>
           </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {esBot && (
+              <button onClick={onTomar} style={{ ...btnStyle('#3b82f6'), padding: '5px 10px', fontSize: 12 }}>
+                Tomar
+              </button>
+            )}
+            {puedeResponder && conversacion.estado === 'con_agente' && (
+              <button onClick={onCerrar} style={{ ...btnStyle('#9ca3af'), padding: '5px 10px', fontSize: 12 }}>
+                Cerrar
+              </button>
+            )}
+          </div>
         </div>
+      )}
 
-        <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {esBot && (
-            <button onClick={onTomar} style={btnStyle('#3b82f6')}>
-              Tomar conversación
-            </button>
-          )}
-          {puedeResponder && conversacion.estado === 'con_agente' && (
-            <button onClick={onCerrar} style={btnStyle('#9ca3af')}>
-              Cerrar
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Panel de asignación manual (visible cuando no hay agente asignado) */}
+      {/* Panel de asignación manual */}
       {sinAsignar && (
         <div style={{
-          padding: '10px 20px',
+          padding: '10px 12px',
           background: '#fffbeb',
           borderBottom: '1px solid #fde68a',
           display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          flexShrink: 0,
         }}>
-          <span style={{ fontSize: 13, color: '#92400e', fontWeight: 500 }}>
-            Asignar a:
-          </span>
+          <span style={{ fontSize: 13, color: '#92400e', fontWeight: 500 }}>Asignar a:</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {appUsers.map(u => (
               <button
@@ -161,14 +208,13 @@ export default function HiloConversacion({
                 onClick={() => handleAsignar(u.id)}
                 disabled={asignando}
                 style={{
-                  padding: '4px 12px',
-                  borderRadius: 20,
+                  padding: '4px 12px', borderRadius: 20,
                   border: `1px solid ${ENCARGADO_COLORS[u.iniciales] || '#dadce0'}`,
                   background: (ENCARGADO_COLORS[u.iniciales] || '#9aa0a6') + '15',
                   color: ENCARGADO_COLORS[u.iniciales] || '#5f6368',
-                  fontSize: 12, fontWeight: 700, cursor: asignando ? 'not-allowed' : 'pointer',
-                  opacity: asignando ? 0.6 : 1,
-                  fontFamily: 'inherit',
+                  fontSize: 12, fontWeight: 700,
+                  cursor: asignando ? 'not-allowed' : 'pointer',
+                  opacity: asignando ? 0.6 : 1, fontFamily: 'inherit',
                 }}
               >
                 {u.iniciales || u.full_name}
@@ -178,7 +224,7 @@ export default function HiloConversacion({
         </div>
       )}
 
-      {/* Hilo */}
+      {/* Hilo de mensajes */}
       <div style={{
         flex:             1,
         overflowY:        'auto',
@@ -200,13 +246,13 @@ export default function HiloConversacion({
 
       {/* Caja de respuesta */}
       {puedeResponder ? (
-        <div style={{ borderTop: '1px solid #e5e7eb', background: 'white' }}>
+        <div style={{ borderTop: '1px solid #e5e7eb', background: 'white', flexShrink: 0 }}>
           {sendError && (
             <div style={{ padding: '8px 16px', fontSize: '12px', color: '#dc2626', background: '#fef2f2' }}>
               {sendError}
             </div>
           )}
-          <div style={{ padding: '12px 16px', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+          <div style={{ padding: '10px 12px', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
             <textarea
               value={texto}
               onChange={e => setTexto(e.target.value)}
@@ -228,7 +274,7 @@ export default function HiloConversacion({
           </div>
         </div>
       ) : (
-        <div style={{ padding: '12px', textAlign: 'center', color: '#9ca3af', fontSize: '13px', borderTop: '1px solid #e5e7eb' }}>
+        <div style={{ padding: '12px', textAlign: 'center', color: '#9ca3af', fontSize: '13px', borderTop: '1px solid #e5e7eb', flexShrink: 0 }}>
           Conversación cerrada
         </div>
       )}
