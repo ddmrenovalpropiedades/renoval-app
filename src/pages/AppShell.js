@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutGrid, CheckSquare, FileText,
   Zap, Users, LogOut,
-  Building2, MessageCircle, CreditCard, Calculator, MoreHorizontal, X,
+  Building2, MessageCircle, CreditCard, Calculator,
+  MoreHorizontal, X, MessageSquare,
 } from 'lucide-react';
 import { useMensajes } from '../hooks/useMensajes';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -17,6 +18,7 @@ import SaldosPage from './SaldosPage';
 import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
 import CalculadoraPage from './CalculadoraPage';
+import RespuestasRapidasPage from './RespuestasRapidasPage';
 
 const NAV_ITEMS_TOP = [
   { id: 'mensajes',   label: 'Mensajes',   icon: MessageCircle, ownerOnly: false },
@@ -28,10 +30,11 @@ const NAV_ITEMS_TOP = [
 ];
 
 const NAV_ITEMS_BOTTOM = [
-  { id: 'pagos',       label: 'Pagos',       icon: CreditCard, ownerOnly: true  },
-  { id: 'calculadora', label: 'Calculadora', icon: Calculator, ownerOnly: false },
-  { id: 'cartera',     label: 'Cartera',     icon: Building2,  ownerOnly: false },
-  { id: 'usuarios',    label: 'Usuarios',    icon: Users,      ownerOnly: true  },
+  { id: 'pagos',       label: 'Pagos',              icon: CreditCard,   ownerOnly: true  },
+  { id: 'calculadora', label: 'Calculadora',         icon: Calculator,   ownerOnly: false },
+  { id: 'cartera',     label: 'Cartera',             icon: Building2,    ownerOnly: false },
+  { id: 'respuestas',  label: 'Respuestas Rápidas',  icon: MessageSquare, ownerOnly: true },
+  { id: 'usuarios',    label: 'Usuarios',            icon: Users,        ownerOnly: true  },
 ];
 
 function useIsMobile() {
@@ -305,6 +308,7 @@ function ModuleRenderer({ module, profile, mensajesHook }) {
     case 'mensajes':     return <MensajesPage currentUser={profile} mensajesHook={mensajesHook} />;
     case 'usuarios':     return <UserManagement />;
     case 'calculadora':  return <CalculadoraPage />;
+    case 'respuestas':   return <RespuestasRapidasPage />;
     default:             return <ComingSoon module={module} />;
   }
 }
