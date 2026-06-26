@@ -17,16 +17,58 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY
 );
 
+// ─── Calcular badge real para un usuario ──────────────────────────────────────
+// Cuenta conversaciones visibles para el usuario donde hay mensajes inbound
+// más nuevos que su última lectura (o nunca leídas).
+async function calcularBadgeParaUsuario(userEmail, userId) {
+  // Obtener lecturas del usuario
+  const { data: lecturas } = await supabase
+    .from('wa_conv_lecturas')
+    .select('conv_id, leida_en')
+    .eq('user_id', userEmail);
+
+  const lecturasMap = {};
+  (lecturas || []).forEach(l => { lecturasMap[l.conv_id] = l.leida_en; });
+
+  // Obtener conversaciones visibles para este usuario (propias + sin asignar)
+  const { data: convs } = await supabase
+    .from('wa_conversaciones')
+    .select('id, agent_id, wa_mensajes(created_at, direction)')
+    .or(`agent_id.eq.${userId},agent_id.is.null`)
+    .neq('estado', 'cerrada');
+
+  if (!convs) return 0;
+
+  let count = 0;
+  for (const conv of convs) {
+    const ultimaLectura   = lecturasMap[conv.id] ? new Date(lecturasMap[conv.id]) : null;
+    const mensajesInbound = (conv.wa_mensajes || []).filter(m => m.direction === 'inbound');
+    if (!mensajesInbound.length) continue;
+
+    const ultimoInbound = new Date(
+      mensajesInbound.reduce((max, m) =>
+        new Date(m.created_at) > new Date(max) ? m.created_at : max,
+        mensajesInbound[0].created_at
+      )
+    );
+
+    if (!ultimaLectura || ultimoInbound > ultimaLectura) count++;
+  }
+
+  return count;
+}
+
 // ─── Enviar push a todos los dispositivos de un usuario ───────────────────────
-async function sendPushToUser(userId, payload) {
+async function sendPushToUser(userEmail, userId, payload) {
   const { data: subs } = await supabase
     .from('wa_push_subscriptions')
     .select('endpoint, p256dh, auth')
-    .eq('user_id', userId);
+    .eq('user_id', userEmail);
 
   if (!subs || subs.length === 0) return;
 
-  const payloadStr = JSON.stringify(payload);
+  const badge      = await calcularBadgeParaUsuario(userEmail, userId);
+  const payloadStr = JSON.stringify({ ...payload, badge });
 
   await Promise.allSettled(
     subs.map(sub =>
@@ -34,7 +76,6 @@ async function sendPushToUser(userId, payload) {
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         payloadStr
       ).catch(async (err) => {
-        // Suscripción expirada o inválida → eliminar
         if (err.statusCode === 404 || err.statusCode === 410) {
           await supabase
             .from('wa_push_subscriptions')
@@ -46,19 +87,39 @@ async function sendPushToUser(userId, payload) {
   );
 }
 
-// ─── Enviar push a todos los usuarios sin suscripción específica ───────────────
+// ─── Enviar push a todos los usuarios (conv sin asignar) ──────────────────────
 async function sendPushToAll(payload) {
+  // Obtener todos los usuarios suscritos con su user_id (email) y app_users id
   const { data: subs } = await supabase
     .from('wa_push_subscriptions')
     .select('user_id, endpoint, p256dh, auth');
 
   if (!subs || subs.length === 0) return;
 
-  const payloadStr = JSON.stringify(payload);
+  // Obtener ids de app_users para calcular badge
+  const { data: appUsers } = await supabase
+    .from('app_users')
+    .select('id, email');
+
+  const emailToId = {};
+  (appUsers || []).forEach(u => { emailToId[u.email] = u.id; });
+
+  // Calcular badge por usuario y enviar
+  const userEmails = [...new Set(subs.map(s => s.user_id))];
+  const badges = {};
+  await Promise.all(
+    userEmails.map(async email => {
+      const userId  = emailToId[email];
+      if (!userId) return;
+      badges[email] = await calcularBadgeParaUsuario(email, userId);
+    })
+  );
 
   await Promise.allSettled(
-    subs.map(sub =>
-      webpush.sendNotification(
+    subs.map(sub => {
+      const badge      = badges[sub.user_id] || 1;
+      const payloadStr = JSON.stringify({ ...payload, badge });
+      return webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         payloadStr
       ).catch(async (err) => {
@@ -68,8 +129,8 @@ async function sendPushToAll(payload) {
             .delete()
             .eq('endpoint', sub.endpoint);
         }
-      })
-    )
+      });
+    })
   );
 }
 
@@ -312,8 +373,6 @@ module.exports = async function handler(req, res) {
       const conversacion = await getOrCreateConversacion(from, contactName, propiedadMatch);
       const convId       = conversacion.id;
 
-      // Si la conversación ya existía pero ahora encontramos match de URL,
-      // actualizar propiedad y agente si aún no estaban asignados
       if (propiedadMatch && !conversacion.propiedad_id) {
         await supabase
           .from('wa_conversaciones')
@@ -332,7 +391,7 @@ module.exports = async function handler(req, res) {
         messageText: inboundText,
       });
 
-      // ── Enviar push notification ──────────────────────────────────────────
+      // ── Enviar push notification con badge real ───────────────────────────
       const pushPayload = {
         title: contactName ? `Mensaje de ${contactName}` : 'Nuevo mensaje WhatsApp',
         body:  inboundText || 'Nuevo mensaje recibido',
@@ -340,17 +399,15 @@ module.exports = async function handler(req, res) {
       };
 
       if (conversacion.agent_id) {
-        // Conversación asignada → notificar solo al agente asignado
         const { data: agente } = await supabase
           .from('app_users')
-          .select('email')
+          .select('id, email')
           .eq('id', conversacion.agent_id)
           .single();
         if (agente?.email) {
-          await sendPushToUser(agente.email, pushPayload);
+          await sendPushToUser(agente.email, agente.id, pushPayload);
         }
       } else {
-        // Sin asignar → notificar a todos
         await sendPushToAll(pushPayload);
       }
 
@@ -375,7 +432,6 @@ module.exports = async function handler(req, res) {
         return res.status(200).end();
       }
 
-      // Estado: bot_activo
       if (!selectedOption) {
         const outWamid = await sendMenuMessage(from);
         await saveMessage({
