@@ -1,6 +1,4 @@
-// Service Worker — PWA Renoval
-// Habilita instalación y push notifications
-// Service Worker — PWA Renoval v2 — 25/06/2026
+// Service Worker — PWA Renoval v3 — 25/06/2026
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
@@ -13,20 +11,22 @@ self.addEventListener('push', (event) => {
     if (event.data) data = { ...data, ...event.data.json() };
   } catch (e) {}
 
-  // Actualizar contador rojo en el ícono de la app
-  if (navigator.setAppBadge) {
-    navigator.setAppBadge(data.badge || 1).catch(() => {});
-  }
-
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body:      data.body,
-      icon:      '/Logo_192.png',
-      badge:     'Icono_Notificacion.png',  // PNG monocromático 96x96 blanco sobre transparente
-      tag:       'wa-mensaje',     // reemplaza la anterior en vez de apilar
-      renotify:  true,
-      data:      { url: data.url },
-    })
+    Promise.all([
+      // Mostrar notificación
+      self.registration.showNotification(data.title, {
+        body:     data.body,
+        icon:     '/Logo_192.png',
+        badge:    '/Icono_Notificacion.png',
+        tag:      'wa-mensaje',
+        renotify: true,
+        data:     { url: data.url },
+      }),
+      // Actualizar contador rojo en el ícono de la app
+      navigator.setAppBadge
+        ? navigator.setAppBadge(data.badge || 1).catch(() => {})
+        : Promise.resolve(),
+    ])
   );
 });
 
@@ -34,7 +34,6 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = event.notification.data?.url || '/';
-
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const existing = clients.find(c => c.url.includes(self.location.origin));
