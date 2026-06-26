@@ -313,12 +313,13 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
   );
 }
 
-function NewPagoRow({ onSave, onCancel }) {
+function NewPagoRow({ onSave, onCancel, maxPosition }) {
   const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), pagado_por: '', tipo: '', comision: '', fecha_caja: '', caja: '', notas: '' });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const handleSave = async () => {
     if (!form.propiedad.trim()) return;
-    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, caja: form.caja || null, notas: form.notas || null }).select().single();
+    const newPosition = (maxPosition || 0) + 1;
+    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, caja: form.caja || null, notas: form.notas || null, position: newPosition }).select().single();
     if (data) onSave(data);
   };
   return (
@@ -397,7 +398,7 @@ export default function PagosPage() {
       for (const word of words) query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
     }
     const from = currentPage * PAGE_SIZE;
-    const { data, count } = await query.order('position', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+    const { data, count } = await query.order('position', { ascending: false }).range(from, from + PAGE_SIZE - 1);
     setPagos(data || []);
     setTotalCount(count || 0);
     setLoading(false);
@@ -413,6 +414,7 @@ export default function PagosPage() {
   const handleUpdate = (updated) => setPagos(prev => prev.map(p => p.id === updated.id ? updated : p));
   const handleDelete = (id) => { setPagos(prev => prev.filter(p => p.id !== id)); setTotalCount(prev => prev - 1); };
   const handleSaveNew = (newPago) => { setPagos(prev => [newPago, ...prev]); setTotalCount(prev => prev + 1); setAddingNew(false); };
+  const maxPosition = pagos.length > 0 ? Math.max(...pagos.map(p => p.position ?? 0)) : 0;
   const handleSaveNotes = async (id, notas) => { await supabase.from('pagos').update({ notas }).eq('id', id); setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p)); };
   const handlePageChange = (newPage) => { setPage(newPage); const wrapper = document.getElementById('pagos-table-wrapper'); if (wrapper) wrapper.scrollTop = 0; };
 
@@ -477,7 +479,7 @@ export default function PagosPage() {
           <table style={s.table}>
             <thead><tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 2 ? 'left' : 'center' }}>{h}</th>)}</tr></thead>
             <tbody>
-              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} />}
+              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={maxPosition} />}
               {pagos.length === 0 && !addingNew
                 ? <tr><td colSpan={13} style={s.empty}>No hay pagos registrados.</td></tr>
                 : pagos.map(p => <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor} />)
