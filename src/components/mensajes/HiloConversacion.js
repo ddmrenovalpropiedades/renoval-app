@@ -41,11 +41,16 @@ export default function HiloConversacion({
   currentUser,
   isMobile = false,
 }) {
-  const [texto, setTexto]         = useState('');
-  const [sending, setSending]     = useState(false);
-  const [appUsers, setAppUsers]   = useState([]);
-  const [asignando, setAsignando] = useState(false);
-  const bottomRef                 = useRef(null);
+  const [texto, setTexto]                     = useState('');
+  const [sending, setSending]                 = useState(false);
+  const [appUsers, setAppUsers]               = useState([]);
+  const [asignando, setAsignando]             = useState(false);
+  const [predefinidos, setPredefinidos]       = useState([]);
+  const [showPredefinidos, setShowPredefinidos] = useState(false);
+  const [filtroPred, setFiltroPred]           = useState('');
+  const [selectedPredIdx, setSelectedPredIdx] = useState(0);
+  const bottomRef  = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -56,6 +61,80 @@ export default function HiloConversacion({
       setAppUsers(data || []);
     });
   }, []);
+
+  // Cargar mensajes predefinidos
+  useEffect(() => {
+    supabase
+      .from('wa_mensajes_predefinidos')
+      .select('*')
+      .order('orden', { ascending: true })
+      .order('titulo', { ascending: true })
+      .then(({ data }) => setPredefinidos(data || []));
+  }, []);
+
+  // Filtrar predefinidos según lo que se escribe después del /
+  const predFiltrados = predefinidos.filter(p =>
+    filtroPred === '' ||
+    p.titulo.toLowerCase().includes(filtroPred.toLowerCase()) ||
+    p.contenido.toLowerCase().includes(filtroPred.toLowerCase())
+  );
+
+  // Resetear índice seleccionado cuando cambia el filtro
+  useEffect(() => {
+    setSelectedPredIdx(0);
+  }, [filtroPred]);
+
+  const handleTextoChange = (e) => {
+    const val = e.target.value;
+    setTexto(val);
+
+    // Detectar si el texto empieza con /
+    if (val.startsWith('/')) {
+      setFiltroPred(val.slice(1)); // lo que viene después del /
+      setShowPredefinidos(true);
+    } else {
+      setShowPredefinidos(false);
+      setFiltroPred('');
+    }
+  };
+
+  const seleccionarPredefinido = (pred) => {
+    setTexto(pred.contenido);
+    setShowPredefinidos(false);
+    setFiltroPred('');
+    textareaRef.current?.focus();
+  };
+
+  const handleKeyDown = (e) => {
+    if (showPredefinidos && predFiltrados.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedPredIdx(i => Math.min(i + 1, predFiltrados.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedPredIdx(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        if (e.key === 'Enter' && showPredefinidos) {
+          e.preventDefault();
+          seleccionarPredefinido(predFiltrados[selectedPredIdx]);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        setShowPredefinidos(false);
+        return;
+      }
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey && !showPredefinidos) {
+      e.preventDefault();
+      handleEnviar();
+    }
+  };
 
   const handleEnviar = async () => {
     if (!texto.trim() || sending) return;
@@ -88,24 +167,18 @@ export default function HiloConversacion({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-      {/* Header — solo en PC; en móvil lo maneja MensajesPage */}
+      {/* Header — solo en PC */}
       {!isMobile && (
         <div style={{
-          padding:        '12px 20px',
-          borderBottom:   '1px solid #e5e7eb',
-          background:     '#f9fafb',
-          display:        'flex',
-          justifyContent: 'space-between',
-          alignItems:     'flex-start',
-          gap:            12,
+          padding: '12px 20px', borderBottom: '1px solid #e5e7eb',
+          background: '#f9fafb', display: 'flex',
+          justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: '15px' }}>
               {conversacion.contact_name || conversacion.phone_number}
             </div>
-            <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              {conversacion.phone_number}
-            </div>
+            <div style={{ fontSize: '12px', color: '#6b7280' }}>{conversacion.phone_number}</div>
             <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px', display: 'flex', alignItems: 'center', gap: 6 }}>
               {conversacion.agent_id ? (
                 <>
@@ -117,9 +190,7 @@ export default function HiloConversacion({
                       background: (ENCARGADO_COLORS[agentIniciales] || '#9aa0a6') + '22',
                       border: `1px solid ${(ENCARGADO_COLORS[agentIniciales] || '#9aa0a6')}44`,
                       borderRadius: 20, padding: '1px 8px',
-                    }}>
-                      {agentIniciales}
-                    </span>
+                    }}>{agentIniciales}</span>
                   )}
                   {!agentIniciales && <span>{agentName || conversacion.agent_id}</span>}
                 </>
@@ -131,28 +202,20 @@ export default function HiloConversacion({
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {esBot && (
-              <button onClick={onTomar} style={btnStyle('#3b82f6')}>
-                Tomar conversación
-              </button>
-            )}
+            {esBot && <button onClick={onTomar} style={btnStyle('#3b82f6')}>Tomar conversación</button>}
             {puedeResponder && conversacion.estado === 'con_agente' && (
-              <button onClick={onCerrar} style={btnStyle('#9ca3af')}>
-                Cerrar
-              </button>
+              <button onClick={onCerrar} style={btnStyle('#9ca3af')}>Cerrar</button>
             )}
           </div>
         </div>
       )}
 
-      {/* Barra de estado + acciones en móvil */}
+      {/* Barra de estado en móvil */}
       {isMobile && (
         <div style={{
-          padding: '8px 12px',
-          background: '#f9fafb',
+          padding: '8px 12px', background: '#f9fafb',
           borderBottom: '1px solid #e5e7eb',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          flexShrink: 0,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
         }}>
           <div style={{ fontSize: 12, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
             {conversacion.agent_id ? (
@@ -165,9 +228,7 @@ export default function HiloConversacion({
                     background: (ENCARGADO_COLORS[agentIniciales] || '#9aa0a6') + '22',
                     border: `1px solid ${(ENCARGADO_COLORS[agentIniciales] || '#9aa0a6')}44`,
                     borderRadius: 20, padding: '1px 8px',
-                  }}>
-                    {agentIniciales}
-                  </span>
+                  }}>{agentIniciales}</span>
                 )}
               </>
             ) : (
@@ -177,15 +238,9 @@ export default function HiloConversacion({
             <span>{ESTADO_LABEL[conversacion.estado] || conversacion.estado}</span>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {esBot && (
-              <button onClick={onTomar} style={{ ...btnStyle('#3b82f6'), padding: '5px 10px', fontSize: 12 }}>
-                Tomar
-              </button>
-            )}
+            {esBot && <button onClick={onTomar} style={{ ...btnStyle('#3b82f6'), padding: '5px 10px', fontSize: 12 }}>Tomar</button>}
             {puedeResponder && conversacion.estado === 'con_agente' && (
-              <button onClick={onCerrar} style={{ ...btnStyle('#9ca3af'), padding: '5px 10px', fontSize: 12 }}>
-                Cerrar
-              </button>
+              <button onClick={onCerrar} style={{ ...btnStyle('#9ca3af'), padding: '5px 10px', fontSize: 12 }}>Cerrar</button>
             )}
           </div>
         </div>
@@ -194,11 +249,9 @@ export default function HiloConversacion({
       {/* Panel de asignación manual */}
       {sinAsignar && (
         <div style={{
-          padding: '10px 12px',
-          background: '#fffbeb',
+          padding: '10px 12px', background: '#fffbeb',
           borderBottom: '1px solid #fde68a',
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-          flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flexShrink: 0,
         }}>
           <span style={{ fontSize: 13, color: '#92400e', fontWeight: 500 }}>Asignar a:</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -216,9 +269,7 @@ export default function HiloConversacion({
                   cursor: asignando ? 'not-allowed' : 'pointer',
                   opacity: asignando ? 0.6 : 1, fontFamily: 'inherit',
                 }}
-              >
-                {u.iniciales || u.full_name}
-              </button>
+              >{u.iniciales || u.full_name}</button>
             ))}
           </div>
         </div>
@@ -226,13 +277,10 @@ export default function HiloConversacion({
 
       {/* Hilo de mensajes */}
       <div style={{
-        flex:             1,
-        overflowY:        'auto',
-        padding:          '16px',
-        backgroundColor:  '#e9dfd3',
-        backgroundImage:  `url("${BG_PATTERN}")`,
-        backgroundRepeat: 'repeat',
-        backgroundSize:   '220px 220px',
+        flex: 1, overflowY: 'auto', padding: '16px',
+        backgroundColor: '#e9dfd3',
+        backgroundImage: `url("${BG_PATTERN}")`,
+        backgroundRepeat: 'repeat', backgroundSize: '220px 220px',
       }}>
         {loading ? (
           <div style={{ textAlign: 'center', color: '#9ca3af' }}>Cargando mensajes...</div>
@@ -246,7 +294,54 @@ export default function HiloConversacion({
 
       {/* Caja de respuesta */}
       {puedeResponder ? (
-        <div style={{ borderTop: '1px solid #e5e7eb', background: 'white', flexShrink: 0 }}>
+        <div style={{ borderTop: '1px solid #e5e7eb', background: 'white', flexShrink: 0, position: 'relative' }}>
+
+          {/* Panel de mensajes predefinidos */}
+          {showPredefinidos && (
+            <div style={{
+              position: 'absolute', bottom: '100%', left: 0, right: 0,
+              background: 'white', border: '1px solid #e5e7eb',
+              borderRadius: '8px 8px 0 0', maxHeight: 280,
+              overflowY: 'auto', zIndex: 50,
+              boxShadow: '0 -4px 16px rgba(0,0,0,0.1)',
+            }}>
+              {predFiltrados.length === 0 ? (
+                <div style={{ padding: '12px 16px', fontSize: 13, color: '#9ca3af' }}>
+                  No hay respuestas que coincidan
+                </div>
+              ) : (
+                <>
+                  <div style={{ padding: '8px 16px 4px', fontSize: 11, fontWeight: 600, color: '#9ca3af', letterSpacing: 0.5 }}>
+                    RESPUESTAS RÁPIDAS — ↑↓ para navegar, Enter para seleccionar, Esc para cerrar
+                  </div>
+                  {predFiltrados.map((pred, idx) => (
+                    <div
+                      key={pred.id}
+                      onClick={() => seleccionarPredefinido(pred)}
+                      style={{
+                        padding: '10px 16px',
+                        cursor: 'pointer',
+                        background: idx === selectedPredIdx ? '#f0fdf4' : 'white',
+                        borderLeft: idx === selectedPredIdx ? '3px solid #25D366' : '3px solid transparent',
+                        borderBottom: '1px solid #f3f4f6',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#111', marginBottom: 2 }}>
+                        /{pred.titulo}
+                      </div>
+                      <div style={{
+                        fontSize: 12, color: '#6b7280',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {pred.contenido}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
           {sendError && (
             <div style={{ padding: '8px 16px', fontSize: '12px', color: '#dc2626', background: '#fef2f2' }}>
               {sendError}
@@ -254,10 +349,11 @@ export default function HiloConversacion({
           )}
           <div style={{ padding: '10px 12px', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
             <textarea
+              ref={textareaRef}
               value={texto}
-              onChange={e => setTexto(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEnviar(); } }}
-              placeholder="Escribir mensaje..."
+              onChange={handleTextoChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Escribir mensaje... (escribe / para respuestas rápidas)"
               rows={2}
               style={{
                 flex: 1, resize: 'none', border: '1px solid #e5e7eb',
