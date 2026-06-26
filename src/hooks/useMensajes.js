@@ -16,14 +16,13 @@ export function useMensajes(currentUser) {
   const [mensajes, setMensajes]             = useState([]);
   const [loading, setLoading]               = useState(true);
   const [loadingMensajes, setLoadingMensajes] = useState(false);
-  const [filtroEstado, setFiltroEstado]     = useState('todas');
+  const [filtroEstado, setFiltroEstado]     = useState('activas'); // default: todas menos cerradas
   const [filtroUsuario, setFiltroUsuario]   = useState('mis_conv');
   const [sendError, setSendError]           = useState(null);
   const [lecturas, setLecturas]             = useState({});
 
   const isAdmin = ADMIN_EMAILS.includes(currentUser?.email);
 
-  // Refs para el closure del canal — siempre tienen el valor más reciente
   const audioRef               = useRef(null);
   const selectedIdRef          = useRef(null);
   const fetchConversacionesRef = useRef(null);
@@ -74,7 +73,6 @@ export function useMensajes(currentUser) {
     setLecturas(prev => ({ ...prev, [convId]: ahora }));
   }, [currentUser?.email]);
 
-  // Mantener ref actualizado
   useEffect(() => { marcarLeidaRef.current = marcarLeida; }, [marcarLeida]);
 
   // ── Cargar conversaciones ──────────────────────────────────────────────────
@@ -91,6 +89,7 @@ export function useMensajes(currentUser) {
       `)
       .order('updated_at', { ascending: false });
 
+    // Filtro de visibilidad por rol
     if (!isAdmin) {
       query = query.or(`agent_id.eq.${currentUser.id},agent_id.is.null`);
     } else {
@@ -103,7 +102,11 @@ export function useMensajes(currentUser) {
       }
     }
 
-    if (filtroEstado !== 'todas') {
+    // Filtro de estado
+    if (filtroEstado === 'activas') {
+      // Todas menos cerradas
+      query = query.neq('estado', 'cerrada');
+    } else if (filtroEstado !== 'todas') {
       query = query.eq('estado', filtroEstado);
     }
 
@@ -121,8 +124,6 @@ export function useMensajes(currentUser) {
   }, [currentUser?.id, isAdmin, filtroEstado, filtroUsuario]);
 
   useEffect(() => { fetchConversaciones(); }, [fetchConversaciones]);
-
-  // Mantener ref actualizado
   useEffect(() => { fetchConversacionesRef.current = fetchConversaciones; }, [fetchConversaciones]);
 
   // ── Badge count ────────────────────────────────────────────────────────────
@@ -141,10 +142,6 @@ export function useMensajes(currentUser) {
   }, 0);
 
   // ── Realtime ───────────────────────────────────────────────────────────────
-  // Canal nombrado con email → no colisiona entre instancias.
-  // Solo depende de currentUser?.email → se crea una vez y nunca se recrea.
-  // fetchConversaciones y marcarLeida se acceden via refs para tener siempre
-  // el valor más reciente sin necesitar recrear el canal.
   useEffect(() => {
     if (!currentUser?.email) return;
 
@@ -167,13 +164,11 @@ export function useMensajes(currentUser) {
         const nuevo      = payload.new;
         const currentSel = selectedIdRef.current;
 
-        // Sonar siempre que llega un mensaje inbound
         if (nuevo.direction === 'inbound' && audioRef.current) {
           audioRef.current.currentTime = 0;
           audioRef.current.play().catch(() => {});
         }
 
-        // Si el hilo está abierto: agregar mensaje y marcar leída
         if (nuevo.conversacion_id === currentSel) {
           setMensajes(prev => {
             const exists = prev.find(m => m.id === nuevo.id);
@@ -205,6 +200,7 @@ export function useMensajes(currentUser) {
   const selectConversacion = useCallback(async (id) => {
     setSelectedId(id);
     setSendError(null);
+    if (!id) return;
     await fetchMensajes(id);
     await marcarLeida(id);
   }, [fetchMensajes, marcarLeida]);
