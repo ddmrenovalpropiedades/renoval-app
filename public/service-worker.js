@@ -1,5 +1,6 @@
 // Service Worker — PWA Renoval
 // Habilita instalación y push notifications
+// Service Worker — PWA Renoval v2 — 25/06/2026
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
