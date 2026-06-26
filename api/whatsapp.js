@@ -392,6 +392,10 @@ module.exports = async function handler(req, res) {
       });
 
       // ── Enviar push notification con badge real ───────────────────────────
+      // Pequeño delay para asegurar que el mensaje ya está en Supabase
+      // antes de calcular el badge count
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const pushPayload = {
         title: contactName ? `Mensaje de ${contactName}` : 'Nuevo mensaje WhatsApp',
         body:  inboundText || 'Nuevo mensaje recibido',
