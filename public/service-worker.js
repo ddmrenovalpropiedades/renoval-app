@@ -23,7 +23,7 @@ self.addEventListener('push', (event) => {
       }),
       // Mostrar ! en el ícono de la app (no un número)
       navigator.setAppBadge
-        ? navigator.setAppBadge().catch(() => {})
+        ? navigator.setAppBadge(data.badge || 1).catch(() => {})
         : Promise.resolve(),
     ])
   );
