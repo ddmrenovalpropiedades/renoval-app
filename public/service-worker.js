@@ -1,4 +1,4 @@
-// Service Worker — PWA Renoval v3 — 25/06/2026
+// Service Worker — PWA Renoval v4
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
@@ -6,14 +6,13 @@ self.addEventListener('fetch', () => {});
 
 // ── Push notification recibida ─────────────────────────────────────────────
 self.addEventListener('push', (event) => {
-  let data = { title: 'Renoval', body: 'Nuevo mensaje de WhatsApp', url: '/', badge: 1 };
+  let data = { title: 'Renoval', body: 'Nuevo mensaje de WhatsApp', url: '/' };
   try {
     if (event.data) data = { ...data, ...event.data.json() };
   } catch (e) {}
 
   event.waitUntil(
     Promise.all([
-      // Mostrar notificación
       self.registration.showNotification(data.title, {
         body:     data.body,
         icon:     '/Logo_192.png',
@@ -22,9 +21,9 @@ self.addEventListener('push', (event) => {
         renotify: true,
         data:     { url: data.url },
       }),
-      // Actualizar contador rojo en el ícono de la app
+      // Mostrar ! en el ícono de la app (no un número)
       navigator.setAppBadge
-        ? navigator.setAppBadge(data.badge || 1).catch(() => {})
+        ? navigator.setAppBadge().catch(() => {})
         : Promise.resolve(),
     ])
   );
