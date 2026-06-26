@@ -3,9 +3,9 @@ import ConversacionItem from './ConversacionItem';
 import { supabase } from '../../supabaseClient';
 
 const FILTROS_ESTADO = [
-  { value: 'todas',            label: 'Todas'     },
+  { value: 'todas',            label: 'Activas'     },
   { value: 'esperando_agente', label: 'Esperando' },
-  { value: 'con_agente',       label: 'Activas'   },
+  { value: 'con_agente',       label: 'Tomadas'   },
   { value: 'bot_activo',       label: 'Bot'       },
   { value: 'cerrada',          label: 'Cerradas'  },
 ];
