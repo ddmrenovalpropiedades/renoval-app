@@ -17,49 +17,8 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY
 );
 
-// ─── Calcular badge real para un usuario ──────────────────────────────────────
-// Cuenta conversaciones visibles para el usuario donde hay mensajes inbound
-// más nuevos que su última lectura (o nunca leídas).
-async function calcularBadgeParaUsuario(userEmail, userId) {
-  // Obtener lecturas del usuario
-  const { data: lecturas } = await supabase
-    .from('wa_conv_lecturas')
-    .select('conv_id, leida_en')
-    .eq('user_id', userEmail);
-
-  const lecturasMap = {};
-  (lecturas || []).forEach(l => { lecturasMap[l.conv_id] = l.leida_en; });
-
-  // Obtener conversaciones visibles para este usuario (propias + sin asignar)
-  const { data: convs } = await supabase
-    .from('wa_conversaciones')
-    .select('id, agent_id, wa_mensajes(created_at, direction)')
-    .or(`agent_id.eq.${userId},agent_id.is.null`)
-    .neq('estado', 'cerrada');
-
-  if (!convs) return 0;
-
-  let count = 0;
-  for (const conv of convs) {
-    const ultimaLectura   = lecturasMap[conv.id] ? new Date(lecturasMap[conv.id]) : null;
-    const mensajesInbound = (conv.wa_mensajes || []).filter(m => m.direction === 'inbound');
-    if (!mensajesInbound.length) continue;
-
-    const ultimoInbound = new Date(
-      mensajesInbound.reduce((max, m) =>
-        new Date(m.created_at) > new Date(max) ? m.created_at : max,
-        mensajesInbound[0].created_at
-      )
-    );
-
-    if (!ultimaLectura || ultimoInbound > ultimaLectura) count++;
-  }
-
-  return count;
-}
-
-// ─── Enviar push a todos los dispositivos de un usuario ───────────────────────
-async function sendPushToUser(userEmail, userId, payload) {
+// ─── Enviar push a dispositivos de un usuario ─────────────────────────────────
+async function sendPushToUser(userEmail, payload) {
   const { data: subs } = await supabase
     .from('wa_push_subscriptions')
     .select('endpoint, p256dh, auth')
@@ -67,8 +26,7 @@ async function sendPushToUser(userEmail, userId, payload) {
 
   if (!subs || subs.length === 0) return;
 
-  const badge      = await calcularBadgeParaUsuario(userEmail, userId);
-  const payloadStr = JSON.stringify({ ...payload, badge });
+  const payloadStr = JSON.stringify(payload);
 
   await Promise.allSettled(
     subs.map(sub =>
@@ -87,39 +45,19 @@ async function sendPushToUser(userEmail, userId, payload) {
   );
 }
 
-// ─── Enviar push a todos los usuarios (conv sin asignar) ──────────────────────
+// ─── Enviar push a todos los usuarios suscritos ───────────────────────────────
 async function sendPushToAll(payload) {
-  // Obtener todos los usuarios suscritos con su user_id (email) y app_users id
   const { data: subs } = await supabase
     .from('wa_push_subscriptions')
-    .select('user_id, endpoint, p256dh, auth');
+    .select('endpoint, p256dh, auth');
 
   if (!subs || subs.length === 0) return;
 
-  // Obtener ids de app_users para calcular badge
-  const { data: appUsers } = await supabase
-    .from('app_users')
-    .select('id, email');
-
-  const emailToId = {};
-  (appUsers || []).forEach(u => { emailToId[u.email] = u.id; });
-
-  // Calcular badge por usuario y enviar
-  const userEmails = [...new Set(subs.map(s => s.user_id))];
-  const badges = {};
-  await Promise.all(
-    userEmails.map(async email => {
-      const userId  = emailToId[email];
-      if (!userId) return;
-      badges[email] = await calcularBadgeParaUsuario(email, userId);
-    })
-  );
+  const payloadStr = JSON.stringify(payload);
 
   await Promise.allSettled(
-    subs.map(sub => {
-      const badge      = badges[sub.user_id] || 1;
-      const payloadStr = JSON.stringify({ ...payload, badge });
-      return webpush.sendNotification(
+    subs.map(sub =>
+      webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         payloadStr
       ).catch(async (err) => {
@@ -129,8 +67,8 @@ async function sendPushToAll(payload) {
             .delete()
             .eq('endpoint', sub.endpoint);
         }
-      });
-    })
+      })
+    )
   );
 }
 
@@ -141,7 +79,7 @@ function extractUrl(text) {
   return match ? match[0] : null;
 }
 
-// ─── Buscar propiedad por URL y obtener agent_id según conv_asignar_a ─────────
+// ─── Buscar propiedad por URL ──────────────────────────────────────────────────
 async function findPropiedadByUrl(url) {
   if (!url) return null;
 
@@ -175,12 +113,7 @@ async function findPropiedadByUrl(url) {
     agentId = agente?.id || null;
   }
 
-  return {
-    propiedadId: match.id,
-    propiedad:   match.propiedad,
-    iniciales,
-    agentId,
-  };
+  return { propiedadId: match.id, propiedad: match.propiedad, iniciales, agentId };
 }
 
 // ─── Enviar mensaje de texto simple ───────────────────────────────────────────
@@ -189,16 +122,8 @@ async function sendTextMessage(to, text) {
     `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body: text },
-      }),
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } }),
     }
   );
   const data = await res.json();
@@ -212,19 +137,14 @@ async function sendMenuMessage(to) {
     `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         to,
         type: 'interactive',
         interactive: {
           type: 'button',
-          body: {
-            text: '👋 Hola, soy el asistente de *Renoval Propiedades*.\n\n¿En qué te puedo ayudar?',
-          },
+          body: { text: '👋 Hola, soy el asistente de *Renoval Propiedades*.\n\n¿En qué te puedo ayudar?' },
           action: {
             buttons: [
               { type: 'reply', reply: { id: 'AGENDAR_VISITA',   title: 'Agendar visita'   } },
@@ -270,14 +190,11 @@ async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch)
   return nueva;
 }
 
-// ─── Guardar mensaje en Supabase ──────────────────────────────────────────────
+// ─── Guardar mensaje ──────────────────────────────────────────────────────────
 async function saveMessage({ conversacionId, wamid, direction, messageType, messageText, botAction }) {
   if (wamid) {
     const { data: exists } = await supabase
-      .from('wa_mensajes')
-      .select('id')
-      .eq('wamid', wamid)
-      .single();
+      .from('wa_mensajes').select('id').eq('wamid', wamid).single();
     if (exists) return exists;
   }
 
@@ -291,25 +208,20 @@ async function saveMessage({ conversacionId, wamid, direction, messageType, mess
       message_text:    messageText,
       bot_action:      botAction || null,
     })
-    .select()
-    .single();
+    .select().single();
 
   if (error) throw new Error(`Error guardando mensaje: ${error.message}`);
   return data;
 }
 
-// ─── Actualizar estado de conversación ───────────────────────────────────────
+// ─── Actualizar estado ────────────────────────────────────────────────────────
 async function updateEstadoConversacion(conversacionId, estado) {
-  await supabase
-    .from('wa_conversaciones')
-    .update({ estado })
-    .eq('id', conversacionId);
+  await supabase.from('wa_conversaciones').update({ estado }).eq('id', conversacionId);
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
 
-  // Verificación del webhook (GET)
   if (req.method === 'GET') {
     const mode      = req.query['hub.mode'];
     const token     = req.query['hub.verify_token'];
@@ -320,23 +232,18 @@ module.exports = async function handler(req, res) {
     return res.status(403).end();
   }
 
-  // Recepción de mensajes (POST)
   if (req.method === 'POST') {
     try {
       const body = req.body;
 
-      if (body.object !== 'whatsapp_business_account') {
-        return res.status(404).end();
-      }
+      if (body.object !== 'whatsapp_business_account') return res.status(404).end();
 
       const entry    = body.entry?.[0];
       const changes  = entry?.changes?.[0];
       const value    = changes?.value;
       const messages = value?.messages;
 
-      if (!messages || messages.length === 0) {
-        return res.status(200).end();
-      }
+      if (!messages || messages.length === 0) return res.status(200).end();
 
       const message     = messages[0];
       const from        = message.from;
@@ -357,60 +264,42 @@ module.exports = async function handler(req, res) {
 
       console.log('INBOUND from:', from, 'type:', inboundType, 'text:', inboundText);
 
-      // ── Matching de URL ───────────────────────────────────────────────────
+      // Matching de URL
       let propiedadMatch = null;
       if (message.type === 'text' && inboundText) {
         const url = extractUrl(inboundText);
         if (url) {
           propiedadMatch = await findPropiedadByUrl(url);
-          if (propiedadMatch) {
-            console.log('URL match:', propiedadMatch.propiedad, '→ asignado a:', propiedadMatch.iniciales);
-          }
+          if (propiedadMatch) console.log('URL match:', propiedadMatch.propiedad, '→', propiedadMatch.iniciales);
         }
       }
 
-      // ── Obtener o crear conversación ──────────────────────────────────────
       const conversacion = await getOrCreateConversacion(from, contactName, propiedadMatch);
       const convId       = conversacion.id;
 
       if (propiedadMatch && !conversacion.propiedad_id) {
         await supabase
           .from('wa_conversaciones')
-          .update({
-            propiedad_id: propiedadMatch.propiedadId,
-            agent_id:     propiedadMatch.agentId || conversacion.agent_id,
-          })
+          .update({ propiedad_id: propiedadMatch.propiedadId, agent_id: propiedadMatch.agentId || conversacion.agent_id })
           .eq('id', convId);
       }
 
-      await saveMessage({
-        conversacionId: convId,
-        wamid,
-        direction:   'inbound',
-        messageType: inboundType,
-        messageText: inboundText,
-      });
+      await saveMessage({ conversacionId: convId, wamid, direction: 'inbound', messageType: inboundType, messageText: inboundText });
 
-      // ── Enviar push notification con badge real ───────────────────────────
-      // Pequeño delay para asegurar que el mensaje ya está en Supabase
-      // antes de calcular el badge count
-      await new Promise(resolve => setTimeout(resolve, 500));
-
+      // ── Push notification ─────────────────────────────────────────────────
       const pushPayload = {
         title: contactName ? `Mensaje de ${contactName}` : 'Nuevo mensaje WhatsApp',
         body:  inboundText || 'Nuevo mensaje recibido',
         url:   '/',
       };
 
+      console.log('Enviando push, agent_id:', conversacion.agent_id);
+
       if (conversacion.agent_id) {
         const { data: agente } = await supabase
-          .from('app_users')
-          .select('id, email')
-          .eq('id', conversacion.agent_id)
-          .single();
-        if (agente?.email) {
-          await sendPushToUser(agente.email, agente.id, pushPayload);
-        }
+          .from('app_users').select('email').eq('id', conversacion.agent_id).single();
+        console.log('Agente email:', agente?.email);
+        if (agente?.email) await sendPushToUser(agente.email, pushPayload);
       } else {
         await sendPushToAll(pushPayload);
       }
@@ -418,76 +307,39 @@ module.exports = async function handler(req, res) {
       // ── Lógica del bot ────────────────────────────────────────────────────
       const estado = conversacion.estado;
 
-      if (estado === 'con_agente') {
-        return res.status(200).end();
-      }
+      if (estado === 'con_agente') return res.status(200).end();
 
       if (estado === 'esperando_agente') {
         const outText  = 'Un ejecutivo te responderá a la brevedad. 🙏';
         const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({
-          conversacionId: convId,
-          wamid:       outWamid,
-          direction:   'outbound',
-          messageType: 'text',
-          messageText: outText,
-          botAction:   'recordatorio_espera',
-        });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'recordatorio_espera' });
         return res.status(200).end();
       }
 
       if (!selectedOption) {
         const outWamid = await sendMenuMessage(from);
-        await saveMessage({
-          conversacionId: convId,
-          wamid:       outWamid,
-          direction:   'outbound',
-          messageType: 'interactive',
-          messageText: 'Menú principal enviado',
-          botAction:   'menu_principal',
-        });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'interactive', messageText: 'Menú principal enviado', botAction: 'menu_principal' });
         return res.status(200).end();
       }
 
       if (selectedOption === 'AGENDAR_VISITA') {
         const outText  = '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!';
         const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({
-          conversacionId: convId,
-          wamid:       outWamid,
-          direction:   'outbound',
-          messageType: 'text',
-          messageText: outText,
-          botAction:   'agendar_visita_placeholder',
-        });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'agendar_visita_placeholder' });
         await updateEstadoConversacion(convId, 'esperando_agente');
       }
 
       if (selectedOption === 'MAS_INFORMACION') {
         const outText  = 'ℹ️ Con gusto te enviamos más información sobre la propiedad. Un ejecutivo te contactará en breve con todos los detalles. 🏠';
         const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({
-          conversacionId: convId,
-          wamid:       outWamid,
-          direction:   'outbound',
-          messageType: 'text',
-          messageText: outText,
-          botAction:   'mas_informacion',
-        });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'mas_informacion' });
         await updateEstadoConversacion(convId, 'esperando_agente');
       }
 
       if (selectedOption === 'HABLAR_EJECUTIVO') {
         const outText  = '👤 Perfecto, en breve uno de nuestros ejecutivos se comunicará contigo. ¡Gracias por contactarnos!';
         const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({
-          conversacionId: convId,
-          wamid:       outWamid,
-          direction:   'outbound',
-          messageType: 'text',
-          messageText: outText,
-          botAction:   'escalar_agente',
-        });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'escalar_agente' });
         await updateEstadoConversacion(convId, 'esperando_agente');
       }
 
