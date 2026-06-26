@@ -17,17 +17,9 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY
 );
 
-// ─── Enviar push a dispositivos de un usuario ─────────────────────────────────
-async function sendPushToUser(userEmail, payload) {
-  const { data: subs } = await supabase
-    .from('wa_push_subscriptions')
-    .select('endpoint, p256dh, auth')
-    .eq('user_id', userEmail);
-
-  if (!subs || subs.length === 0) return;
-
-  const payloadStr = JSON.stringify(payload);
-
+// ─── Enviar push inmediata (badge=1) ──────────────────────────────────────────
+async function sendPushImmediate(subs, payload) {
+  const payloadStr = JSON.stringify({ ...payload, badge: 1 });
   await Promise.allSettled(
     subs.map(sub =>
       webpush.sendNotification(
@@ -35,41 +27,25 @@ async function sendPushToUser(userEmail, payload) {
         payloadStr
       ).catch(async (err) => {
         if (err.statusCode === 404 || err.statusCode === 410) {
-          await supabase
-            .from('wa_push_subscriptions')
-            .delete()
-            .eq('endpoint', sub.endpoint);
+          await supabase.from('wa_push_subscriptions').delete().eq('endpoint', sub.endpoint);
         }
       })
     )
   );
 }
 
-// ─── Enviar push a todos los usuarios suscritos ───────────────────────────────
-async function sendPushToAll(payload) {
-  const { data: subs } = await supabase
-    .from('wa_push_subscriptions')
-    .select('endpoint, p256dh, auth');
+// ─── Disparar cálculo de badge real en background ─────────────────────────────
+function triggerBadgeUpdate(agentEmail, agentId, payload, sendToAll) {
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://renoval-app.vercel.app';
 
-  if (!subs || subs.length === 0) return;
-
-  const payloadStr = JSON.stringify(payload);
-
-  await Promise.allSettled(
-    subs.map(sub =>
-      webpush.sendNotification(
-        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        payloadStr
-      ).catch(async (err) => {
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await supabase
-            .from('wa_push_subscriptions')
-            .delete()
-            .eq('endpoint', sub.endpoint);
-        }
-      })
-    )
-  );
+  fetch(`${baseUrl}/api/send-push-badge`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ agentEmail, agentId, payload, sendToAll }),
+  }).catch(err => console.error('triggerBadgeUpdate error:', err));
+  // Sin await — fire and forget
 }
 
 // ─── Extraer URL de un texto ──────────────────────────────────────────────────
@@ -82,41 +58,29 @@ function extractUrl(text) {
 // ─── Buscar propiedad por URL ──────────────────────────────────────────────────
 async function findPropiedadByUrl(url) {
   if (!url) return null;
-
   const urlNorm = url.split('?')[0].replace(/\/$/, '').toLowerCase();
-
   const { data: propiedades } = await supabase
     .from('pizarra')
     .select('id, propiedad, e1, e2, url_publicacion, conv_asignar_a')
     .not('url_publicacion', 'is', null);
-
   if (!propiedades || propiedades.length === 0) return null;
-
   const match = propiedades.find(p => {
     if (!p.url_publicacion) return false;
     const pNorm = p.url_publicacion.split('?')[0].replace(/\/$/, '').toLowerCase();
     return pNorm === urlNorm;
   });
-
   if (!match) return null;
-
   const asignarA  = match.conv_asignar_a || 'e2';
   const iniciales = asignarA === 'e1' ? match.e1 : match.e2;
-
   let agentId = null;
   if (iniciales) {
-    const { data: agente } = await supabase
-      .from('app_users')
-      .select('id')
-      .eq('iniciales', iniciales)
-      .single();
+    const { data: agente } = await supabase.from('app_users').select('id').eq('iniciales', iniciales).single();
     agentId = agente?.id || null;
   }
-
   return { propiedadId: match.id, propiedad: match.propiedad, iniciales, agentId };
 }
 
-// ─── Enviar mensaje de texto simple ───────────────────────────────────────────
+// ─── Enviar mensaje de texto ───────────────────────────────────────────────────
 async function sendTextMessage(to, text) {
   const res = await fetch(
     `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
@@ -171,9 +135,7 @@ async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch)
     .order('created_at', { ascending: false })
     .limit(1)
     .single();
-
   if (existing) return existing;
-
   const { data: nueva, error } = await supabase
     .from('wa_conversaciones')
     .insert({
@@ -183,9 +145,7 @@ async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch)
       propiedad_id:  propiedadMatch?.propiedadId || null,
       agent_id:      propiedadMatch?.agentId     || null,
     })
-    .select()
-    .single();
-
+    .select().single();
   if (error) throw new Error(`Error creando conversación: ${error.message}`);
   return nueva;
 }
@@ -193,23 +153,13 @@ async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch)
 // ─── Guardar mensaje ──────────────────────────────────────────────────────────
 async function saveMessage({ conversacionId, wamid, direction, messageType, messageText, botAction }) {
   if (wamid) {
-    const { data: exists } = await supabase
-      .from('wa_mensajes').select('id').eq('wamid', wamid).single();
+    const { data: exists } = await supabase.from('wa_mensajes').select('id').eq('wamid', wamid).single();
     if (exists) return exists;
   }
-
   const { data, error } = await supabase
     .from('wa_mensajes')
-    .insert({
-      conversacion_id: conversacionId,
-      wamid:           wamid || null,
-      direction,
-      message_type:    messageType,
-      message_text:    messageText,
-      bot_action:      botAction || null,
-    })
+    .insert({ conversacion_id: conversacionId, wamid: wamid || null, direction, message_type: messageType, message_text: messageText, bot_action: botAction || null })
     .select().single();
-
   if (error) throw new Error(`Error guardando mensaje: ${error.message}`);
   return data;
 }
@@ -226,23 +176,19 @@ module.exports = async function handler(req, res) {
     const mode      = req.query['hub.mode'];
     const token     = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      return res.status(200).send(challenge);
-    }
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) return res.status(200).send(challenge);
     return res.status(403).end();
   }
 
   if (req.method === 'POST') {
     try {
       const body = req.body;
-
       if (body.object !== 'whatsapp_business_account') return res.status(404).end();
 
       const entry    = body.entry?.[0];
       const changes  = entry?.changes?.[0];
       const value    = changes?.value;
       const messages = value?.messages;
-
       if (!messages || messages.length === 0) return res.status(200).end();
 
       const message     = messages[0];
@@ -264,7 +210,6 @@ module.exports = async function handler(req, res) {
 
       console.log('INBOUND from:', from, 'type:', inboundType, 'text:', inboundText);
 
-      // Matching de URL
       let propiedadMatch = null;
       if (message.type === 'text' && inboundText) {
         const url = extractUrl(inboundText);
@@ -278,35 +223,35 @@ module.exports = async function handler(req, res) {
       const convId       = conversacion.id;
 
       if (propiedadMatch && !conversacion.propiedad_id) {
-        await supabase
-          .from('wa_conversaciones')
+        await supabase.from('wa_conversaciones')
           .update({ propiedad_id: propiedadMatch.propiedadId, agent_id: propiedadMatch.agentId || conversacion.agent_id })
           .eq('id', convId);
       }
 
       await saveMessage({ conversacionId: convId, wamid, direction: 'inbound', messageType: inboundType, messageText: inboundText });
 
-      // ── Push notification ─────────────────────────────────────────────────
+      // ── Push: inmediata con badge=1, luego badge real en background ───────
       const pushPayload = {
         title: contactName ? `Mensaje de ${contactName}` : 'Nuevo mensaje WhatsApp',
         body:  inboundText || 'Nuevo mensaje recibido',
         url:   '/',
       };
 
-      console.log('Enviando push, agent_id:', conversacion.agent_id);
-
       if (conversacion.agent_id) {
-        const { data: agente } = await supabase
-          .from('app_users').select('email').eq('id', conversacion.agent_id).single();
-        console.log('Agente email:', agente?.email);
-        if (agente?.email) await sendPushToUser(agente.email, pushPayload);
+        const { data: agente } = await supabase.from('app_users').select('id, email').eq('id', conversacion.agent_id).single();
+        if (agente?.email) {
+          const { data: subs } = await supabase.from('wa_push_subscriptions').select('endpoint, p256dh, auth').eq('user_id', agente.email);
+          if (subs?.length) await sendPushImmediate(subs, pushPayload);
+          triggerBadgeUpdate(agente.email, agente.id, pushPayload, false);
+        }
       } else {
-        await sendPushToAll(pushPayload);
+        const { data: subs } = await supabase.from('wa_push_subscriptions').select('endpoint, p256dh, auth');
+        if (subs?.length) await sendPushImmediate(subs, pushPayload);
+        triggerBadgeUpdate(null, null, pushPayload, true);
       }
 
       // ── Lógica del bot ────────────────────────────────────────────────────
       const estado = conversacion.estado;
-
       if (estado === 'con_agente') return res.status(200).end();
 
       if (estado === 'esperando_agente') {
