@@ -4,7 +4,7 @@ import { X, Upload, ChevronLeft, ChevronRight, ImageIcon, Trash2 } from 'lucide-
 
 const MAX_SETS = 10;
 const SIDEBAR_WIDTH_NORMAL = 320;
-const SIDEBAR_WIDTH_EXPANDED = 532; // 500px de imagen + 16px de margen lateral por lado
+const SIDEBAR_WIDTH_EXPANDED = 532;
 const MAX_EXPANDED_IMAGE_WIDTH = 500;
 const ACCEPTED_EXT_REGEX = /\.(jpe?g|gif|webp)$/i;
 
@@ -14,7 +14,19 @@ const getFileExt = (filename) => {
   return m[1] === 'jpeg' ? 'jpg' : m[1];
 };
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
+
 export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen = 0 }) {
+  const isMobile = useIsMobile();
+
   const [sets, setSets] = useState([]);
   const [activeSetId, setActiveSetId] = useState(() => localStorage.getItem('galleryActiveSet') || null);
   const [progress, setProgress] = useState({});
@@ -69,7 +81,6 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       if (stored) {
         const urls = buildImageUrls(stored, setsData, progressData);
         setImages(urls);
-        // Mostrar la última imagen desbloqueada al abrir
         setMainIdx(urls.length > 0 ? urls.length - 1 : 0);
         setImageLoadErrors({});
       }
@@ -77,14 +88,12 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     init();
   }, [fetchSets, fetchProgress, buildImageUrls]);
 
-  // Cuando se desbloquea una imagen, mostrarla automáticamente
   useEffect(() => {
     if (unlockedSinceOpen > 0) {
       fetchProgress().then(progressData => {
         if (activeSetId) {
           const urls = buildImageUrls(activeSetId, setsRef.current, progressData);
           setImages(urls);
-          // Ir a la recién desbloqueada (última)
           setMainIdx(urls.length > 0 ? urls.length - 1 : 0);
           setImageLoadErrors({});
         }
@@ -116,16 +125,13 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     if (!window.confirm(`¿Eliminar "${setName}" y todas sus imágenes? Esta acción no se puede deshacer.`)) return;
     setDeletingSet(true);
     try {
-      // Listar y eliminar archivos del bucket
       const { data: fileList } = await supabase.storage.from('gallery').list(activeSetId);
       if (fileList && fileList.length > 0) {
         const paths = fileList.map(f => `${activeSetId}/${f.name}`);
         await supabase.storage.from('gallery').remove(paths);
       }
-      // Eliminar registros de DB
       await supabase.from('gallery_progress').delete().eq('set_id', activeSetId);
       await supabase.from('gallery_sets').delete().eq('id', activeSetId);
-      // Limpiar estado
       localStorage.removeItem('galleryActiveSet');
       setActiveSetId(null);
       setImages([]);
@@ -153,7 +159,6 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     });
 
     setUploading(true);
-    // Si showNewSet está activo, siempre crear un set nuevo (ignorar activeSetId)
     let setId = showNewSet ? null : activeSetId;
     const isReplace = !!setId;
 
@@ -165,7 +170,6 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       setId = data.id;
       await supabase.from('gallery_progress').insert({ set_id: setId, unlocked_count: 1 });
     } else if (isReplace) {
-      // Limpiar archivos anteriores para evitar residuos con extensiones distintas
       const { data: fileList } = await supabase.storage.from('gallery').list(setId);
       if (fileList && fileList.length > 0) {
         await supabase.storage.from('gallery').remove(fileList.map(f => `${setId}/${f.name}`));
@@ -209,8 +213,25 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
   const hasExpandedMedia = Array.isArray(activeSet?.image_extensions)
     && activeSet.image_extensions.some(ext => ext === 'gif' || ext === 'webp');
 
+  // ── Ancho del sidebar: en móvil ocupa toda la pantalla ───────
+  const sidebarWidth = isMobile
+    ? '100vw'
+    : hasExpandedMedia ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_NORMAL;
+
+  // ── Imagen principal: en móvil siempre 100% ──────────────────
+  const mainImageStyle = isMobile
+    ? { width: '100%', borderRadius: 8, display: 'block', objectFit: 'contain', background: '#f8f9fa', maxHeight: '60vh' }
+    : hasExpandedMedia
+      ? styles.mainImageExpanded
+      : styles.mainImage;
+
+  // ── En móvil, el sidebar se posiciona como overlay de pantalla completa ──
+  const sidebarStyle = isMobile
+    ? { ...styles.sidebar, width: '100vw', position: 'fixed', inset: 0, zIndex: 600, borderLeft: 'none', height: '100vh' }
+    : { ...styles.sidebar, width: sidebarWidth };
+
   return (
-    <div style={{ ...styles.sidebar, width: hasExpandedMedia ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_NORMAL }}>
+    <div style={sidebarStyle}>
       {/* Header */}
       <div style={styles.header}>
         <span style={styles.title}>Galería</span>
@@ -269,7 +290,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
 
       {/* Imagen principal */}
       {images.length > 0 ? (
-        <div style={{ ...styles.mainImageWrapper, ...(hasExpandedMedia ? { padding: '10px 16px 0' } : {}) }}>
+        <div style={{ ...styles.mainImageWrapper, ...(!isMobile && hasExpandedMedia ? { padding: '10px 16px 0' } : {}) }}>
           {imageLoadErrors[mainIdx] ? (
             <div style={styles.imgError}>
               <ImageIcon size={32} color="#dadce0" />
@@ -282,7 +303,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
               key={images[mainIdx]}
               src={images[mainIdx]}
               alt={`${mainIdx + 1}`}
-              style={hasExpandedMedia ? styles.mainImageExpanded : styles.mainImage}
+              style={mainImageStyle}
               onError={() => setImageLoadErrors(prev => ({ ...prev, [mainIdx]: true }))}
             />
           )}
@@ -307,9 +328,9 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
         </div>
       )}
 
-      {/* Miniaturas — solo las desbloqueadas */}
+      {/* Miniaturas */}
       {images.length > 0 && (
-        <div style={{ ...styles.thumbGrid, ...(hasExpandedMedia ? { padding: '10px 16px 20px' } : {}) }}>
+        <div style={{ ...styles.thumbGrid, ...(!isMobile && hasExpandedMedia ? { padding: '10px 16px 20px' } : {}) }}>
           {images.map((url, i) => (
             imageLoadErrors[i] ? (
               <div key={i} style={{ ...styles.thumbLocked, cursor: 'pointer', background: '#f8d7da' }}
@@ -363,7 +384,7 @@ const styles = {
   navBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#5f6368' },
   mainCounter: { fontSize: 12, color: '#5f6368' },
   emptyState: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  thumbGrid: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '10px 14px 20px', },
+  thumbGrid: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '10px 14px 20px' },
   thumb: { width: 60, height: 80, objectFit: 'cover', borderRadius: 5, cursor: 'pointer', border: '2px solid transparent', transition: 'border 0.15s' },
   thumbActive: { border: '2px solid #1a73e8' },
   thumbLocked: { width: 60, height: 80, background: '#f1f3f4', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#bdbdbd' },
