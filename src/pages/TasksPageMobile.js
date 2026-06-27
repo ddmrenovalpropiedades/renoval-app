@@ -10,6 +10,7 @@ import PlanningPage from './PlanningPage';
 import HistoryPanel from '../components/HistoryPanel';
 import TaskTemplatesPanel from '../components/TaskTemplatesPanel';
 import DevGarPanel from '../components/DevGarPanel';
+import GallerySidebar, { unlockNextGalleryImage } from '../components/GallerySidebar';
 import { formatLocalDate } from '../hooks/useTasks';
 
 const DEFAULT_CATEGORIES = [
@@ -200,9 +201,12 @@ export default function TasksPageMobile() {
   const [showHistory, setShowHistory] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showDevGar, setShowDevGar] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
+  const [galleryUnlockCounter, setGalleryUnlockCounter] = useState(0);
   const tabsRef = useRef(null);
 
   const isOwner = profile?.isOwner;
+  const isDiego = profile?.email === 'ddm@renovalpropiedades.com';
 
   // ── Orden propio para móvil, independiente del PC ─────────────
   const mobileOrderKey = profile?.email ? `tasksOrderMobile_${profile.email}` : null;
@@ -281,6 +285,10 @@ export default function TasksPageMobile() {
     await completeTask(task);
     if (selectedTask?.id === task.id) setSelectedTask(null);
     await fetchTasks();
+    if (isDiego) {
+      const activeSet = localStorage.getItem('galleryActiveSet');
+      if (activeSet) { await unlockNextGalleryImage(activeSet); setGalleryUnlockCounter(c => c + 1); }
+    }
   };
 
   const handleAddTask = async (title) => {
@@ -326,6 +334,13 @@ export default function TasksPageMobile() {
               <button onClick={() => setShowTemplates(true)} style={ms.headerBtn} title="Automáticas">
                 <Settings size={18} color="#5f6368" />
               </button>
+            )}
+            {isDiego && (
+              <button
+                onClick={() => setShowGallery(g => !g)}
+                style={{ ...ms.headerBtn, background: showGallery ? '#202124' : '#fff', border: '1px solid #dadce0', borderRadius: 8, width: 36, height: 36, fontWeight: 700, fontSize: 16, color: showGallery ? '#fff' : '#202124' }}
+                title="Galería"
+              >G</button>
             )}
           </div>
         </div>
@@ -475,6 +490,13 @@ export default function TasksPageMobile() {
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} ownerEmail={profile?.email} />}
       {showDevGar && <DevGarPanel onClose={() => setShowDevGar(false)} />}
       {showTemplates && <TaskTemplatesPanel onClose={() => setShowTemplates(false)} />}
+      {isDiego && showGallery && (
+        <GallerySidebar
+          onClose={() => setShowGallery(false)}
+          userEmail={profile?.email}
+          unlockedSinceOpen={galleryUnlockCounter}
+        />
+      )}
     </div>
   );
 }
