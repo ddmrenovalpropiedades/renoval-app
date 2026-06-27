@@ -204,6 +204,32 @@ export default function TasksPageMobile() {
 
   const isOwner = profile?.isOwner;
 
+  // ── Orden propio para móvil, independiente del PC ─────────────
+  const mobileOrderKey = profile?.email ? `tasksOrderMobile_${profile.email}` : null;
+
+  const applyMobileOrder = (cats, savedOrder) => {
+    if (!savedOrder || !savedOrder.length) return cats;
+    const ordered = savedOrder
+      .map(name => cats.find(c => c.name === name))
+      .filter(Boolean);
+    const missing = cats.filter(c => !savedOrder.includes(c.name));
+    return [...ordered, ...missing];
+  };
+
+  const saveMobileOrder = (cats) => {
+    if (!mobileOrderKey) return;
+    localStorage.setItem(mobileOrderKey, JSON.stringify(cats.map(c => c.name)));
+  };
+
+  const moveCategory = (idx, dir) => {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= categories.length) return;
+    const next = [...categories];
+    [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+    setCategories(next);
+    saveMobileOrder(next);
+  };
+
   const {
     tasksByCategory, dormantByCategory, loading, fetchTasks,
     createTask, createSubtask, updateTask, completeTask, deleteTask,
@@ -224,8 +250,13 @@ export default function TasksPageMobile() {
             if (c.name === 'Salida') return { ...c, name: 'Publicar/Arrendar' };
             return c;
           });
-        setCategories(filtered);
-        if (!selectedCat) setSelectedCat(filtered[0]?.name || DEFAULT_CATEGORIES[0]);
+        // Aplicar orden guardado para móvil
+        const savedOrder = (() => {
+          try { return JSON.parse(localStorage.getItem(`tasksOrderMobile_${profile.email}`) || 'null'); } catch { return null; }
+        })();
+        const ordered = applyMobileOrder(filtered, savedOrder);
+        setCategories(ordered);
+        if (!selectedCat) setSelectedCat(ordered[0]?.name || DEFAULT_CATEGORIES[0]);
       } else {
         const defaults = DEFAULT_CATEGORIES.map((name, i) => ({
           name, color: ['#1565C0','#2E7D32','#6A1B9A','#E65100','#37474F','#C62828'][i],
@@ -326,36 +357,46 @@ export default function TasksPageMobile() {
           {/* ── Category chips (scroll horizontal) ── */}
           <div style={ms.catBar}>
             <div ref={tabsRef} style={ms.catScroll}>
-              {categories.map(cat => {
+              {categories.map((cat, idx) => {
                 const active = selectedCat === cat.name;
                 const color = cat.color || '#37474F';
                 const count = (tasksByCategory[cat.name] || []).length;
                 return (
-                  <button
-                    key={cat.name}
-                    onClick={() => setSelectedCat(cat.name)}
-                    style={{
-                      ...ms.catChip,
-                      ...(active ? {
-                        background: color,
-                        color: '#fff',
-                        borderColor: color,
-                      } : {
-                        background: '#fff',
-                        color: color,
-                        borderColor: color + '55',
-                      }),
-                    }}
-                  >
-                    {cat.name}
-                    {count > 0 && (
-                      <span style={{
-                        ...ms.catChipCount,
-                        background: active ? 'rgba(255,255,255,0.3)' : color + '22',
-                        color: active ? '#fff' : color,
-                      }}>{count}</span>
+                  <div key={cat.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                    {/* Flecha izquierda — solo en chip activo y no primero */}
+                    {active && idx > 0 && (
+                      <button
+                        onClick={e => { e.stopPropagation(); moveCategory(idx, -1); }}
+                        style={{ ...ms.orderArrow, borderColor: color, color }}
+                        title="Mover izquierda"
+                      >‹</button>
                     )}
-                  </button>
+                    <button
+                      onClick={() => setSelectedCat(cat.name)}
+                      style={{
+                        ...ms.catChip,
+                        ...(active ? { background: color, color: '#fff', borderColor: color }
+                                   : { background: '#fff', color, borderColor: color + '55' }),
+                      }}
+                    >
+                      {cat.name}
+                      {count > 0 && (
+                        <span style={{
+                          ...ms.catChipCount,
+                          background: active ? 'rgba(255,255,255,0.3)' : color + '22',
+                          color: active ? '#fff' : color,
+                        }}>{count}</span>
+                      )}
+                    </button>
+                    {/* Flecha derecha — solo en chip activo y no último */}
+                    {active && idx < categories.length - 1 && (
+                      <button
+                        onClick={e => { e.stopPropagation(); moveCategory(idx, 1); }}
+                        style={{ ...ms.orderArrow, borderColor: color, color }}
+                        title="Mover derecha"
+                      >›</button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -519,6 +560,12 @@ const ms = {
   catChipCount: {
     fontSize: 11, fontWeight: 700, padding: '1px 7px',
     borderRadius: 10, minWidth: 20, textAlign: 'center',
+  },
+  orderArrow: {
+    background: 'none', border: '1px solid', borderRadius: 20,
+    width: 22, height: 28, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', cursor: 'pointer', fontSize: 16,
+    fontWeight: 700, padding: 0, flexShrink: 0, lineHeight: 1,
   },
 
   // Task list
