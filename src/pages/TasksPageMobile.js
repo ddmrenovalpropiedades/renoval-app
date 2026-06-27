@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, X, ChevronDown, ChevronRight, RefreshCw, AlertCircle,
-         Clock, Trash2, Check, History, Settings } from 'lucide-react';
+import { Plus, X, ChevronDown, ChevronRight, RefreshCw,
+         Clock, Check, History, Settings } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useTasks } from '../hooks/useTasks';
 import { useAuth } from '../context/AuthContext';
@@ -10,7 +10,6 @@ import PlanningPage from './PlanningPage';
 import HistoryPanel from '../components/HistoryPanel';
 import TaskTemplatesPanel from '../components/TaskTemplatesPanel';
 import DevGarPanel from '../components/DevGarPanel';
-import { USER_INITIALS } from '../supabaseClient';
 import { formatLocalDate } from '../hooks/useTasks';
 
 const DEFAULT_CATEGORIES = [
@@ -208,7 +207,7 @@ export default function TasksPageMobile() {
   const {
     tasksByCategory, dormantByCategory, loading, fetchTasks,
     createTask, createSubtask, updateTask, completeTask, deleteTask,
-    getSubtasks, CATEGORIES,
+    getSubtasks,
   } = useTasks(null);
 
   // ── Cargar categorías ─────────────────────────────────────────
