@@ -318,6 +318,7 @@ export default function TasksPageMobile() {
             allTasks={Object.values(tasksByCategory).flat()}
             userEmail={profile?.email}
             userName={profile?.name}
+            isMobile={true}
           />
         </div>
       ) : (
