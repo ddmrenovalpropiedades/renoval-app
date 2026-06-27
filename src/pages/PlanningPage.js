@@ -28,7 +28,7 @@ const formatCLP = (n) => {
   return '$' + Math.round(n).toLocaleString('es-CL');
 };
 
-export default function PlanningPage({ allTasks, userEmail, userName }) {
+export default function PlanningPage({ allTasks, userEmail, userName, isMobile = false }) {
   const [emailSummary, setEmailSummary] = useState(() => {
     if (!EMAILS_WITH_ACCESS.includes(userEmail)) return '';
     return localStorage.getItem(STORAGE_KEY) || '';
@@ -50,7 +50,6 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
 
   const inicialesPagador = PAGADO_POR[userEmail];
 
-  // Fetch CxC for DD and FD users
   useEffect(() => {
     if (!inicialesPagador) return;
     const fetchCxC = async () => {
@@ -127,11 +126,16 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
   const visibleCxC = cxcExpanded ? cxcList : cxcList.slice(0, 9);
   const totalCxC = cxcList.reduce((s, p) => s + (p.cxc || 0), 0);
 
+  // Grid: 1 columna en móvil, 3 en desktop
+  const gridStyle = isMobile
+    ? { display: 'flex', flexDirection: 'column', gap: 12 }
+    : { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, alignItems: 'start' };
+
   return (
     <div style={styles.container}>
-      <div style={styles.pageCard}>
+      <div style={{ ...styles.pageCard, padding: isMobile ? '14px 12px' : '20px 20px 16px' }}>
         {firstName && (
-          <div style={styles.greeting}>
+          <div style={{ ...styles.greeting, fontSize: isMobile ? 20 : 25 }}>
             ¡Hola {firstName}! Para el día de hoy tienes:
           </div>
         )}
@@ -139,7 +143,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
           <span style={styles.dateText}>{today.charAt(0).toUpperCase() + today.slice(1)}</span>
         </div>
 
-        <div style={styles.grid}>
+        <div style={gridStyle}>
           {/* Urgentes */}
           <div style={styles.card}>
             <div style={styles.cardHeader}>
@@ -212,7 +216,7 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
 
           {/* Correos */}
           {EMAILS_WITH_ACCESS.includes(userEmail) && (
-            <div style={{ ...styles.card, gridColumn: '1 / -1' }}>
+            <div style={{ ...styles.card, ...(isMobile ? {} : { gridColumn: '1 / -1' }) }}>
               <div style={styles.cardHeader}>
                 <Mail size={16} color="#1a73e8" />
                 <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 24 horas</span>
@@ -255,11 +259,10 @@ export default function PlanningPage({ allTasks, userEmail, userName }) {
 
 const styles = {
   container: { height:'100%', overflow:'auto', fontFamily:"'Google Sans','Segoe UI',sans-serif", padding:'4px 0' },
-  pageCard: { background:'#f8f9fa', borderRadius:12, padding:'20px 20px 16px' },
-  greeting: { fontSize:25, fontWeight:700, color:'#202124', marginBottom:25 },
+  pageCard: { background:'#f8f9fa', borderRadius:12 },
+  greeting: { fontWeight:700, color:'#202124', marginBottom:25 },
   dateHeader: { marginBottom:20 },
   dateText: { fontSize:14, color:'#5f6368', fontWeight:500 },
-  grid: { display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, alignItems:'start' },
   card: { background:'#fff', border:'1px solid #e8eaed', borderRadius:12, overflow:'hidden' },
   cardHeader: { display:'flex', alignItems:'center', gap:8, padding:'12px 16px', borderBottom:'1px solid #f1f3f4', background:'#fff' },
   cardTitle: { fontSize:13, fontWeight:700 },
