@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { ChevronLeft, ChevronRight, Save, Edit2, Trash2, Check, X, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Edit2, Trash2, Check, X, Download, FileText } from 'lucide-react';
 import { useExcelExport } from '../hooks/useExcelExport';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+         AlignmentType, BorderStyle, WidthType, ShadingType } from 'docx';
+import { saveAs } from 'file-saver';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const formatMes = (mes) => { const [y, m] = mes.split('-'); return `${MESES_ES[parseInt(m) - 1]} ${y}`; };
@@ -166,11 +169,202 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
   );
 }
 
+// ── Modal de comisiones ───────────────────────────────────────
+function ComisionesModal({ rows, currentMes, onClose, onGenerate }) {
+  const USUARIOS = [
+    { label: 'Diego Domenech y Francisco Domenech', pct: 0.25 },
+    { label: 'Edith Adriazola', pct: 0.05 },
+  ];
+  const [usuario, setUsuario] = useState(null);
+  const [propSeleccionada, setPropSeleccionada] = useState('');
+  const [comisionModif, setComisionModif] = useState('');
+
+  const rowsConModif = rows.map(r => {
+    if (propSeleccionada && r.propiedad === propSeleccionada && comisionModif) {
+      return { ...r, comision: comisionModif };
+    }
+    return r;
+  });
+
+  const total = rowsConModif.reduce((s, r) => s + (parseNumeric(r.comision) || 0), 0);
+
+  return (
+    <div style={ms.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={ms.modal}>
+        <div style={ms.header}>
+          <span style={ms.title}>Generar liquidación de comisiones</span>
+          <button onClick={onClose} style={ms.closeBtn}><X size={18} color="#5f6368" /></button>
+        </div>
+
+        <div style={ms.body}>
+          {/* Selección de usuario */}
+          <div style={ms.field}>
+            <label style={ms.label}>¿Para quién se emite el documento? *</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {USUARIOS.map(u => (
+                <button key={u.label} onClick={() => setUsuario(u)}
+                  style={{ ...ms.userBtn, ...(usuario?.label === u.label ? ms.userBtnActive : {}) }}>
+                  <div style={ms.userBtnLabel}>{u.label}</div>
+                  <div style={ms.userBtnPct}>{(u.pct * 100).toFixed(0)}%</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Modificación de comisión */}
+          <div style={ms.field}>
+            <label style={ms.label}>¿Hay alguna comisión que modificar para el cálculo?</label>
+            <p style={ms.hint}>Opcional — si una propiedad tiene un valor de comisión distinto al registrado</p>
+            <select value={propSeleccionada} onChange={e => { setPropSeleccionada(e.target.value); setComisionModif(''); }}
+              style={ms.select}>
+              <option value="">— Ninguna —</option>
+              {rows.map(r => (
+                <option key={r.id} value={r.propiedad}>{r.propiedad} ({formatCLP(r.comision)})</option>
+              ))}
+            </select>
+            {propSeleccionada && (
+              <div style={{ marginTop: 8 }}>
+                <label style={ms.label}>Comisión a usar para "{propSeleccionada}"</label>
+                <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #dadce0', borderRadius: 7, overflow: 'hidden', marginTop: 4 }}>
+                  <span style={{ background: '#f8f9fa', padding: '8px 10px', fontSize: 13, color: '#5f6368', borderRight: '1px solid #dadce0' }}>$</span>
+                  <input
+                    value={comisionModif ? parseInt(comisionModif).toLocaleString('es-CL') : ''}
+                    onChange={e => setComisionModif(e.target.value.replace(/[^0-9]/g, ''))}
+                    placeholder="0"
+                    style={{ border: 'none', outline: 'none', padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', flex: 1 }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Preview del total */}
+          {usuario && (
+            <div style={ms.preview}>
+              <div style={ms.previewRow}>
+                <span>Total comisiones</span>
+                <strong>{formatCLP(total)}</strong>
+              </div>
+              <div style={ms.previewRow}>
+                <span>{usuario.label} ({(usuario.pct * 100).toFixed(0)}%)</span>
+                <strong style={{ color: '#1a73e8' }}>{formatCLP(Math.round(total * usuario.pct))}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={ms.footer}>
+          <button
+            onClick={() => usuario && onGenerate({ usuario, rowsConModif, total })}
+            disabled={!usuario}
+            style={{ ...ms.generateBtn, ...(!usuario ? { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' } : {}) }}
+          >
+            <FileText size={15} style={{ marginRight: 6 }} />
+            Generar Word (.docx)
+          </button>
+          <button onClick={onClose} style={ms.cancelBtn}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Generador de Word ─────────────────────────────────────────
+function buildComisionesDoc({ usuario, rowsConModif, total, currentMes }) {
+  const mesLabel = currentMes ? formatMes(currentMes).toUpperCase() : '';
+  const pct = usuario.pct;
+  const resultado = Math.round(total * pct);
+  const pctLabel = `${(pct * 100).toFixed(0)}%`;
+
+  const run = (t, opts = {}) => new TextRun({ text: t, font: 'Arial', size: 22, ...opts });
+  const bold = (t) => run(t, { bold: true });
+  const br = () => new Paragraph({ children: [run('')], spacing: { after: 0, line: 280, lineRule: 'exact' } });
+  const p = (children, extra = {}) => new Paragraph({ children, spacing: { after: 120, line: 280, lineRule: 'exact' }, ...extra });
+
+  // Título
+  const titulo = new Paragraph({
+    alignment: AlignmentType.LEFT,
+    children: [new TextRun({ text: `COMISIONES ${mesLabel} ${usuario.label.toUpperCase()}`, bold: true, font: 'Arial', size: 24 })],
+    spacing: { after: 240, line: 280, lineRule: 'exact' },
+  });
+
+  // Tabla: Propiedad | Comisión
+  const border = { style: BorderStyle.SINGLE, size: 4, color: 'DDDDDD' };
+  const borders = { top: border, bottom: border, left: border, right: border };
+  const cellStyle = (children, shading) => new TableCell({
+    borders,
+    width: { size: 4503, type: WidthType.DXA },
+    shading: shading ? { fill: shading, type: ShadingType.CLEAR } : undefined,
+    margins: { top: 80, bottom: 80, left: 120, right: 120 },
+    children,
+  });
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: [
+      new TableCell({
+        borders,
+        width: { size: 4503, type: WidthType.DXA },
+        shading: { fill: '1A73E8', type: ShadingType.CLEAR },
+        margins: { top: 80, bottom: 80, left: 120, right: 120 },
+        children: [new Paragraph({ alignment: AlignmentType.LEFT, children: [new TextRun({ text: 'PROPIEDAD', bold: true, font: 'Arial', size: 20, color: 'FFFFFF' })], spacing: { after: 0 } })],
+      }),
+      new TableCell({
+        borders,
+        width: { size: 4503, type: WidthType.DXA },
+        shading: { fill: '1A73E8', type: ShadingType.CLEAR },
+        margins: { top: 80, bottom: 80, left: 120, right: 120 },
+        children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: 'COMISIÓN', bold: true, font: 'Arial', size: 20, color: 'FFFFFF' })], spacing: { after: 0 } })],
+      }),
+    ],
+  });
+
+  const dataRows = rowsConModif.map((r, i) => new TableRow({
+    children: [
+      cellStyle([new Paragraph({ alignment: AlignmentType.LEFT, children: [new TextRun({ text: r.propiedad || '', font: 'Arial', size: 20 })], spacing: { after: 0 } })], i % 2 === 1 ? 'F8F9FA' : undefined),
+      cellStyle([new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: r.comision ? formatCLP(r.comision) : '—', font: 'Arial', size: 20 })], spacing: { after: 0 } })], i % 2 === 1 ? 'F8F9FA' : undefined),
+    ],
+  }));
+
+  const tabla = new Table({
+    width: { size: 9006, type: WidthType.DXA },
+    columnWidths: [4503, 4503],
+    rows: [headerRow, ...dataRows],
+  });
+
+  // Textos finales
+  const children = [
+    titulo,
+    br(),
+    tabla,
+    br(),
+    p([run('Total comisión: '), bold(formatCLP(total))]),
+    br(),
+    p([run(`Comisiones renovaciones y arriendos nuevos (${pctLabel}): `), bold(formatCLP(resultado))]),
+  ];
+
+  return new Document({
+    styles: { default: { document: { run: { font: 'Arial', size: 22 } } } },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 11906, height: 16838 },
+          margin: { top: 1417, right: 1134, bottom: 1134, left: 1134 },
+        },
+      },
+      children,
+    }],
+  });
+}
+
+// ── Página principal ──────────────────────────────────────────
 export default function ArrendadasPage() {
   const [meses, setMeses] = useState([]);
   const [currentMes, setCurrentMes] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showComisionesModal, setShowComisionesModal] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const { exportToExcel } = useExcelExport();
 
   const fetchMeses = useCallback(async () => {
@@ -228,6 +422,21 @@ export default function ArrendadasPage() {
     { key: 'meses',       label: 'Meses promo' },
   ], `Arrendadas_${currentMes}`);
 
+  const handleGenerate = async ({ usuario, rowsConModif, total }) => {
+    setGenerating(true);
+    setShowComisionesModal(false);
+    try {
+      const doc = buildComisionesDoc({ usuario, rowsConModif, total, currentMes });
+      const blob = await Packer.toBlob(doc);
+      const mesLabel = currentMes ? formatMes(currentMes).replace(' ', '_') : 'Comisiones';
+      const nombreUsuario = usuario.label.includes('Edith') ? 'Edith' : 'Diego_Francisco';
+      saveAs(blob, `Comisiones_${mesLabel}_${nombreUsuario}.docx`);
+    } catch (e) {
+      alert('Error generando documento: ' + e.message);
+    }
+    setGenerating(false);
+  };
+
   const mesIdx = meses.indexOf(currentMes);
   const canPrev = mesIdx < meses.length - 1;
   const canNext = mesIdx > 0;
@@ -244,9 +453,20 @@ export default function ArrendadasPage() {
           <p style={styles.subtitle}>{rows.length} propiedades · {currentMes ? formatMes(currentMes) : ''}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Botón liquidación comisiones */}
+          <button
+            onClick={() => setShowComisionesModal(true)}
+            disabled={rows.length === 0 || generating}
+            title="Generar liquidación de comisiones"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#fff', border: '1px solid #dadce0', borderRadius: 8, cursor: rows.length === 0 ? 'not-allowed' : 'pointer', opacity: rows.length === 0 ? 0.5 : 1, fontSize: 13, color: '#3c4043', fontFamily: 'inherit' }}
+          >
+            <FileText size={15} color="#1a73e8" />
+            {generating ? 'Generando...' : 'Comisiones'}
+          </button>
+          {/* Botón Excel */}
           <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
-          style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1 }}>
-          <Download size={15} color="#34a853" />
+            style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1 }}>
+            <Download size={15} color="#34a853" />
           </button>
           <div style={styles.monthNav}>
             <button onClick={() => setCurrentMes(meses[mesIdx + 1])} disabled={!canPrev} style={styles.navBtn}><ChevronLeft size={18} /></button>
@@ -285,9 +505,41 @@ export default function ArrendadasPage() {
         <span style={styles.totalsLabel}>TOTAL COMISIONES</span>
         <span style={styles.totalsValue}>{formatCLP(totalComisiones)}</span>
       </div>
+
+      {showComisionesModal && (
+        <ComisionesModal
+          rows={rows}
+          currentMes={currentMes}
+          onClose={() => setShowComisionesModal(false)}
+          onGenerate={handleGenerate}
+        />
+      )}
     </div>
   );
 }
+
+// ── Modal styles ──────────────────────────────────────────────
+const ms = {
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 },
+  modal: { background: '#fff', borderRadius: 16, width: 480, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans','Segoe UI',sans-serif", overflow: 'hidden' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: '1px solid #e8eaed', flexShrink: 0 },
+  title: { fontSize: 16, fontWeight: 700, color: '#202124' },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' },
+  body: { flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 },
+  field: { display: 'flex', flexDirection: 'column', gap: 8 },
+  label: { fontSize: 13, fontWeight: 600, color: '#202124' },
+  hint: { fontSize: 12, color: '#9aa0a6', margin: 0 },
+  select: { border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', fontFamily: 'inherit', background: '#fff' },
+  userBtn: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', border: '1px solid #dadce0', borderRadius: 10, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.15s' },
+  userBtnActive: { border: '2px solid #1a73e8', background: '#e8f0fe' },
+  userBtnLabel: { fontSize: 14, fontWeight: 500, color: '#202124' },
+  userBtnPct: { fontSize: 13, fontWeight: 700, color: '#1a73e8', background: '#e8f0fe', padding: '2px 10px', borderRadius: 20 },
+  preview: { background: '#f8f9fa', border: '1px solid #e8eaed', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 },
+  previewRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: '#3c4043' },
+  footer: { display: 'flex', gap: 8, padding: '16px 24px', borderTop: '1px solid #e8eaed', flexShrink: 0 },
+  generateBtn: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+};
 
 const styles = {
   container: { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Google Sans', 'Segoe UI', sans-serif" },
