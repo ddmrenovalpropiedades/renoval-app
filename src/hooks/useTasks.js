@@ -375,10 +375,14 @@ export function useTasks(targetEmail = null) {
       }
       case 'monthly': {
         const day = config.day || now.getDate();
-        now.setMonth(now.getMonth() + 1);
-        now.setDate(clampDay(now.getFullYear(), now.getMonth(), day));
-        break;
-      }
+        const candidate = new Date(now);
+        candidate.setDate(clampDay(candidate.getFullYear(), candidate.getMonth(), day));
+      if (candidate <= now) {
+    candidate.setMonth(candidate.getMonth() + 1);
+    candidate.setDate(clampDay(candidate.getFullYear(), candidate.getMonth(), day));
+  }
+  return candidate.toISOString().split('T')[0];
+}
       case 'yearly': {
         const day = config.day || now.getDate();
         const month = config.month ? config.month - 1 : now.getMonth();
