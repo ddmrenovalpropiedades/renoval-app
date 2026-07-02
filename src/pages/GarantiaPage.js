@@ -343,7 +343,7 @@ function buildGarantiaDoc({ datos, items, fecha }) {
           margins: { top: 80, bottom: 80, left: 120, right: 120 },
           children: [new Paragraph({
             alignment: AlignmentType.LEFT,
-            children: [new TextRun({ text: 'SALDO A DEVOLVER AL ARRENDATARIO', bold: true, font: 'Arial', size: 22 })],
+            children: [new TextRun({ text: saldo >= 0 ? 'SALDO A DEVOLVER AL ARRENDATARIO' : 'SALDO A COBRAR AL ARRENDATARIO', bold: true, font: 'Arial', size: 22 })],
             spacing: { after: 0 },
           })],
         }),
@@ -398,6 +398,18 @@ function buildGarantiaDoc({ datos, items, fecha }) {
     justified([run('El detalle de la liquidación es el siguiente:')]),
     br(),
     table,
+    br(),
+    ...(saldo >= 0 ? [
+      justified([run('El monto de devolución será depositado a la cuenta definida y comunicada por el arrendatario.')]),
+    ] : [
+      justified([run('El saldo pendiente debe depositarse a la siguiente cuenta:')]),
+      br(),
+      justified([bold('Razón social: '), run('Renoval Gestión Inmobiliaria Limitada')]),
+      justified([bold('RUT: '), run('78.299.346-1')]),
+      justified([bold('Banco: '), run('Santander')]),
+      justified([bold('Cuenta corriente: '), run('27624332')]),
+      justified([bold('Correo: '), run('fdm@renovalpropiedades.com')]),
+    ]),
     br(),
     justified([run('Si tienes alguna duda o consulta respecto al monto detallado en este documento, puedes contactar a tu ejecutivo de Renoval.')]),
     br(),
@@ -493,13 +505,30 @@ function PreviewPage({ datos, items, fecha, onBack }) {
             {abonos.map(i => <RowItem key={i.id} {...i} tipo="abono" />)}
             {descuentos.map(i => <RowItem key={i.id} {...i} tipo="descuento" />)}
             <tr style={{ background: '#e8f0fe' }}>
-              <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, borderTop: '2px solid #1a73e8' }}>SALDO A DEVOLVER</td>
+              <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, borderTop: '2px solid #1a73e8' }}>
+                {saldo >= 0 ? 'SALDO A DEVOLVER AL ARRENDATARIO' : 'SALDO A COBRAR AL ARRENDATARIO'}
+              </td>
               <td style={{ padding: '10px 12px', fontSize: 14, fontWeight: 800, textAlign: 'right', borderTop: '2px solid #1a73e8', color: saldo >= 0 ? '#1e6f3e' : '#c0392b' }}>
                 {saldo < 0 ? `(${formatMiles(String(Math.abs(saldo)))})` : formatMiles(String(saldo))}
               </td>
             </tr>
           </tbody>
         </table>
+
+        {saldo >= 0 ? (
+          <p style={{ fontSize: 12, textAlign: 'justify', lineHeight: 1.7, color: '#202124' }}>
+            El monto de devolución será depositado a la cuenta definida y comunicada por el arrendatario.
+          </p>
+        ) : (
+          <div style={{ fontSize: 12, lineHeight: 1.7, color: '#202124' }}>
+            <p style={{ margin: '0 0 8px' }}>El saldo pendiente debe depositarse a la siguiente cuenta:</p>
+            <p style={{ margin: '2px 0' }}><strong>Razón social:</strong> Renoval Gestión Inmobiliaria Limitada</p>
+            <p style={{ margin: '2px 0' }}><strong>RUT:</strong> 78.299.346-1</p>
+            <p style={{ margin: '2px 0' }}><strong>Banco:</strong> Santander</p>
+            <p style={{ margin: '2px 0' }}><strong>Cuenta corriente:</strong> 27624332</p>
+            <p style={{ margin: '2px 0' }}><strong>Correo:</strong> fdm@renovalpropiedades.com</p>
+          </div>
+        )}
       </div>
     </div>
   );
