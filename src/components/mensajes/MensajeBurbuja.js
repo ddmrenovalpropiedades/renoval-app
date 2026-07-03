@@ -21,7 +21,9 @@ export default function MensajeBurbuja({ mensaje }) {
         color:        '#111',
         boxShadow:    '0 1px 2px rgba(0,0,0,0.1)',
       }}>
-        <div>{mensaje.message_text}</div>
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {mensaje.message_text}
+        </div>
         <div style={{ fontSize: '11px', color: '#888', textAlign: 'right', marginTop: '4px' }}>
           {hora}
           {!esEntrante && <span style={{ marginLeft: '4px' }}>✓✓</span>}
