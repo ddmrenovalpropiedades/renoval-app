@@ -541,6 +541,7 @@ function ConsultasTab() {
           respondido_at: r.respondido_at || new Date().toISOString(),
           status: 'respondido',
           gc_valor: r.gc_valor || null,
+          pdf_adjuntos: r.pdf_adjuntos || null,
         }, { onConflict: 'propiedad,mes' });
 
         if (r.gc_valor) {
@@ -696,6 +697,11 @@ function ConsultasTab() {
                         <div>
                           <span style={{fontSize:11,fontWeight:600,color:'#2e7d32',background:'#e6f4ea',padding:'2px 10px',borderRadius:20}}>Respondido</span>
                           {logRow?.gc_valor && <div style={{fontSize:11,color:'#5f6368',marginTop:2}}>{logRow.gc_valor}</div>}
+                          {logRow?.pdf_adjuntos > 1 && (
+                            <div style={{fontSize:10,color:'#e65100',marginTop:2,display:'flex',alignItems:'center',gap:3,justifyContent:'center'}} title="El correo traía más de un PDF adjunto; se extrajo del primero. Verifica el valor en Reportabilidad.">
+                              <AlertCircle size={10}/> {logRow.pdf_adjuntos} adjuntos — revisar
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>
@@ -776,9 +782,9 @@ function ReportabilidadTab() {
   const [config, setConfig] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editingCell, setEditingCell] = useState(null); // propiedad siendo editada (solo mes actual)
+  const [editingCell, setEditingCell] = useState(null); // { propiedad, mes }
   const [editValue, setEditValue] = useState('');
-  const [savingCell, setSavingCell] = useState(null);
+  const [savingCell, setSavingCell] = useState(null); // "propiedad|mes"
   const months = getLast12Months();
   const mesCurrent = currentMes();
 
@@ -813,27 +819,32 @@ function ReportabilidadTab() {
     return null;
   };
 
-  // Entrada manual de GC — solo habilitada para el mes actual.
-  const startEditManual = (propiedad) => {
-    const current = logMap[propiedad]?.[mesCurrent];
-    setEditingCell(propiedad);
+  // Entrada / corrección manual de GC — habilitada en cualquier mes. Útil, por
+  // ejemplo, para corregir un valor mal extraído (correo con más de un PDF
+  // adjunto, donde se tomó el valor del PDF equivocado).
+  const startEditManual = (propiedad, mes) => {
+    const current = logMap[propiedad]?.[mes];
+    setEditingCell({ propiedad, mes });
     setEditValue(current?.gc_valor || '');
   };
 
-  const saveManualValue = async (propiedad) => {
+  const saveManualValue = async (propiedad, mes) => {
     const value = editValue.trim();
-    const existing = logMap[propiedad]?.[mesCurrent];
+    const existing = logMap[propiedad]?.[mes];
     // Si el valor no cambió, no hacemos nada.
     if (value === (existing?.gc_valor || '')) { setEditingCell(null); return; }
-    setSavingCell(propiedad);
+    const cellKey = `${propiedad}|${mes}`;
+    setSavingCell(cellKey);
     try {
       const wasManual = existing?.status === 'manual';
       const payload = value
-        ? { propiedad, mes: mesCurrent, gc_valor: value, status: 'manual' }
-        : { propiedad, mes: mesCurrent, gc_valor: null, status: wasManual ? null : (existing?.status || null) };
+        // pdf_adjuntos se limpia: una vez corregido/ingresado a mano, el
+        // valor ya no es ambiguo.
+        ? { propiedad, mes, gc_valor: value, status: 'manual', pdf_adjuntos: null }
+        : { propiedad, mes, gc_valor: null, status: wasManual ? null : (existing?.status || null) };
       await supabase.from('gc_consultas_log').upsert(payload, { onConflict: 'propiedad,mes' });
       setLogs(prev => {
-        const idx = prev.findIndex(l => l.propiedad === propiedad && l.mes === mesCurrent);
+        const idx = prev.findIndex(l => l.propiedad === propiedad && l.mes === mes);
         if (idx === -1) return [...prev, payload];
         const next = [...prev];
         next[idx] = { ...next[idx], ...payload };
@@ -869,7 +880,7 @@ function ReportabilidadTab() {
           </div>
         ))}
         <div style={{ flex:1, display:'flex', alignItems:'center', paddingLeft:8 }}>
-          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en la celda del mes actual para ingresar un valor manual</span>
+          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en cualquier celda para ingresar o corregir el valor de GC manualmente</span>
         </div>
       </div>
 
@@ -888,21 +899,23 @@ function ReportabilidadTab() {
                 onMouseLeave={e => e.currentTarget.style.background='#fff'}>
                 <td style={{ ...st.tdFixed, fontSize:11, position:'sticky', left:0, background:'inherit', zIndex:1 }}>{propiedad}</td>
                 {months.map(m => {
-                  const isCurrent = m === mesCurrent;
-                  const cell = getCellContent(logMap[propiedad]?.[m]);
-                  const isEditing = isCurrent && editingCell === propiedad;
+                  const logEntry = logMap[propiedad]?.[m];
+                  const cell = getCellContent(logEntry);
+                  const isEditing = editingCell?.propiedad === propiedad && editingCell?.mes === m;
+                  const cellKey = `${propiedad}|${m}`;
+                  const flagAdjuntos = logEntry?.pdf_adjuntos > 1 && logEntry?.status !== 'manual';
                   return (
                     <td key={m}
-                      onClick={isCurrent && !isEditing ? () => startEditManual(propiedad) : undefined}
-                      title={isCurrent && !isEditing ? 'Click para ingresar valor manual de GC' : undefined}
-                      style={{ ...st.tdFixed, textAlign:'center', background:cell?.bg||'#fff', padding:'5px 6px', ...(isCurrent&&!isEditing?{cursor:'text'}:{}) }}>
+                      onClick={!isEditing ? () => startEditManual(propiedad, m) : undefined}
+                      title={!isEditing ? (flagAdjuntos ? `${logEntry.pdf_adjuntos} PDFs adjuntos en el correo — se usó el primero, verifica el valor` : 'Click para ingresar o corregir el valor de GC') : undefined}
+                      style={{ ...st.tdFixed, textAlign:'center', background:cell?.bg||'#fff', padding:'5px 6px', ...(isEditing?{}:{cursor:'text'}) }}>
                       {isEditing ? (
                         <input
                           autoFocus
                           value={editValue}
-                          disabled={savingCell === propiedad}
+                          disabled={savingCell === cellKey}
                           onChange={e => setEditValue(e.target.value)}
-                          onBlur={() => saveManualValue(propiedad)}
+                          onBlur={() => saveManualValue(propiedad, m)}
                           onKeyDown={e => {
                             if (e.key === 'Enter') e.currentTarget.blur();
                             if (e.key === 'Escape') setEditingCell(null);
@@ -910,9 +923,14 @@ function ReportabilidadTab() {
                           onClick={e => e.stopPropagation()}
                           style={{ width:'100%', textAlign:'center', border:'1px solid #1a73e8', borderRadius:4, padding:'2px 4px', fontSize:11, outline:'none', fontFamily:'inherit' }}
                         />
-                      ) : cell
-                        ? <span style={{ fontSize:cell.type==='valor'?11:12, fontWeight:cell.fontWeight, color:cell.color, display:'inline-block', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={cell.type==='valor'?cell.text:undefined}>{cell.text}</span>
-                        : <span style={{ color:'#dadce0', fontSize:10 }}>—</span>}
+                      ) : cell ? (
+                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:3, maxWidth:'100%' }}>
+                          {flagAdjuntos && <AlertCircle size={10} color="#e65100" style={{flexShrink:0}}/>}
+                          <span style={{ fontSize:cell.type==='valor'?11:12, fontWeight:cell.fontWeight, color:cell.color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={cell.type==='valor'?cell.text:undefined}>{cell.text}</span>
+                        </span>
+                      ) : (
+                        <span style={{ color:'#dadce0', fontSize:10 }}>—</span>
+                      )}
                     </td>
                   );
                 })}
@@ -927,6 +945,7 @@ function ReportabilidadTab() {
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#2e7d32', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>R</span>Respondido (sin valor extraído)</span>
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#f3e5f5', color:'#6a1b9a', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>Manual</span>Ingresado manualmente (sin valor)</span>
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>GC extraído del PDF o ingresado manualmente</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><AlertCircle size={12} color="#e65100"/>Correo con más de un PDF adjunto — verificar el valor (click para corregir)</span>
       </div>
     </div>
   );
