@@ -420,6 +420,17 @@ function ConsultasTab() {
     return m;
   }, [log]);
 
+  // Propiedades con correo configurado que aún no tienen una respuesta ni un
+  // valor ingresado manualmente para el mes actual. Son las que se deben
+  // incluir la próxima vez que se apriete "Enviar consultas".
+  const pendientesEnvio = useMemo(() => {
+    return config.filter(r => {
+      if (!r.mail_admin || !r.mail_admin.trim()) return false;
+      const status = logMap[r.propiedad]?.status;
+      return status !== 'respondido' && status !== 'manual';
+    });
+  }, [config, logMap]);
+
   const startEdit = (id, field, currentValue) => {
     setEditingId(id);
     setEditField(field);
@@ -453,7 +464,7 @@ function ConsultasTab() {
 
   const doSendAll = async () => {
     setShowConfirm(false);
-    const toSend = config.filter(r => r.mail_admin && r.mail_admin.trim());
+    const toSend = pendientesEnvio;
     if (!toSend.length) return;
     setSending(true);
     setSendResult(null);
@@ -547,7 +558,7 @@ function ConsultasTab() {
     <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
       <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14, flexShrink:0, flexWrap:'wrap' }}>
         <div style={{ flex:1, fontSize:13, color:'#5f6368' }}>
-          {config.length} propiedades · {withMail} con correo · Mes: <b>{formatMes(mes)}</b>
+          {config.length} propiedades · {withMail} con correo · {pendientesEnvio.length} pendientes · Mes: <b>{formatMes(mes)}</b>
         </div>
         <button onClick={() => setAddingNew(true)} disabled={addingNew}
           style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6 }}>
@@ -562,10 +573,10 @@ function ConsultasTab() {
           <RefreshCw size={14} style={{animation:updating?'spin 1s linear infinite':'none'}}/>
           {updating ? 'Revisando...' : 'Actualizar respuestas'}
         </button>
-        <button onClick={() => setShowConfirm(true)} disabled={sending || withMail === 0}
+        <button onClick={() => setShowConfirm(true)} disabled={sending || pendientesEnvio.length === 0}
           style={{ ...st.btnPrimary, display:'flex', alignItems:'center', gap:6 }}>
           <Send size={14}/>
-          {sending ? 'Enviando...' : `Enviar consultas (${withMail})`}
+          {sending ? 'Enviando...' : `Enviar consultas (${pendientesEnvio.length})`}
         </button>
       </div>
 
@@ -675,6 +686,12 @@ function ConsultasTab() {
                     <td style={{...st.tdFixed,textAlign:'center'}}>
                       {!status && <span style={{fontSize:11,color:'#9aa0a6'}}>—</span>}
                       {status==='enviado' && <span style={{fontSize:11,fontWeight:600,color:'#1a73e8',background:'#e8f0fe',padding:'2px 10px',borderRadius:20}}>Enviado</span>}
+                      {status==='manual' && (
+                        <div>
+                          <span style={{fontSize:11,fontWeight:600,color:'#6a1b9a',background:'#f3e5f5',padding:'2px 10px',borderRadius:20}}>Ingresado Manual</span>
+                          {logRow?.gc_valor && <div style={{fontSize:11,color:'#5f6368',marginTop:2}}>{logRow.gc_valor}</div>}
+                        </div>
+                      )}
                       {status==='respondido' && (
                         <div>
                           <span style={{fontSize:11,fontWeight:600,color:'#2e7d32',background:'#e6f4ea',padding:'2px 10px',borderRadius:20}}>Respondido</span>
@@ -710,7 +727,7 @@ function ConsultasTab() {
       {showConfirm && (
         <ConfirmModal
           title="Confirmar envío de correos"
-          message={`Se enviarán ${withMail} correos de consulta de gasto común para ${formatMes(mes)}. Esta acción no se puede deshacer.`}
+          message={`Se enviarán ${pendientesEnvio.length} correos de consulta de gasto común para ${formatMes(mes)}. Se excluyen las propiedades que ya respondieron o tienen un valor ingresado manualmente este mes. Esta acción no se puede deshacer.`}
           onConfirm={doSendAll}
           onCancel={() => setShowConfirm(false)}
         />
@@ -759,21 +776,24 @@ function ReportabilidadTab() {
   const [config, setConfig] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editingCell, setEditingCell] = useState(null); // propiedad siendo editada (solo mes actual)
+  const [editValue, setEditValue] = useState('');
+  const [savingCell, setSavingCell] = useState(null);
   const months = getLast12Months();
+  const mesCurrent = currentMes();
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      const [{ data: cfg }, { data: lg }] = await Promise.all([
-        supabase.from('gc_consultas_config').select('propiedad').order('propiedad'),
-        supabase.from('gc_consultas_log').select('*'),
-      ]);
-      setConfig(cfg || []);
-      setLogs(lg || []);
-      setLoading(false);
-    };
-    fetchAll();
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [{ data: cfg }, { data: lg }] = await Promise.all([
+      supabase.from('gc_consultas_config').select('propiedad').order('propiedad'),
+      supabase.from('gc_consultas_log').select('*'),
+    ]);
+    setConfig(cfg || []);
+    setLogs(lg || []);
+    setLoading(false);
   }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const logMap = useMemo(() => {
     const m = {};
@@ -787,14 +807,48 @@ function ReportabilidadTab() {
   const getCellContent = (logEntry) => {
     if (!logEntry) return null;
     if (logEntry.gc_valor) return { type:'valor', text:logEntry.gc_valor, bg:'#e6f4ea', color:'#1e6e3b', fontWeight:700 };
+    if (logEntry.status === 'manual') return { type:'manual', text:'Manual', bg:'#f3e5f5', color:'#6a1b9a', fontWeight:700 };
     if (logEntry.status === 'respondido') return { type:'respondido', text:'R', bg:'#e6f4ea', color:'#2e7d32', fontWeight:700 };
     if (logEntry.status === 'enviado') return { type:'enviado', text:'E', bg:'#e8f0fe', color:'#1a73e8', fontWeight:700 };
     return null;
   };
 
+  // Entrada manual de GC — solo habilitada para el mes actual.
+  const startEditManual = (propiedad) => {
+    const current = logMap[propiedad]?.[mesCurrent];
+    setEditingCell(propiedad);
+    setEditValue(current?.gc_valor || '');
+  };
+
+  const saveManualValue = async (propiedad) => {
+    const value = editValue.trim();
+    const existing = logMap[propiedad]?.[mesCurrent];
+    // Si el valor no cambió, no hacemos nada.
+    if (value === (existing?.gc_valor || '')) { setEditingCell(null); return; }
+    setSavingCell(propiedad);
+    try {
+      const wasManual = existing?.status === 'manual';
+      const payload = value
+        ? { propiedad, mes: mesCurrent, gc_valor: value, status: 'manual' }
+        : { propiedad, mes: mesCurrent, gc_valor: null, status: wasManual ? null : (existing?.status || null) };
+      await supabase.from('gc_consultas_log').upsert(payload, { onConflict: 'propiedad,mes' });
+      setLogs(prev => {
+        const idx = prev.findIndex(l => l.propiedad === propiedad && l.mes === mesCurrent);
+        if (idx === -1) return [...prev, payload];
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...payload };
+        return next;
+      });
+    } catch (e) {
+      console.error('Error guardando valor manual de GC:', e);
+      alert('No se pudo guardar el valor: ' + e.message);
+    }
+    setSavingCell(null);
+    setEditingCell(null);
+  };
+
   if (loading) return <div style={st.loading}>Cargando...</div>;
 
-  const mesCurrent = currentMes();
   const totalProps = config.length;
   const countEnviado = config.filter(({ propiedad }) => { const l = logMap[propiedad]?.[mesCurrent]; return l && (l.status === 'enviado' || l.status === 'respondido'); }).length;
   const countRespondido = config.filter(({ propiedad }) => logMap[propiedad]?.[mesCurrent]?.status === 'respondido').length;
@@ -815,7 +869,7 @@ function ReportabilidadTab() {
           </div>
         ))}
         <div style={{ flex:1, display:'flex', alignItems:'center', paddingLeft:8 }}>
-          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b></span>
+          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en la celda del mes actual para ingresar un valor manual</span>
         </div>
       </div>
 
@@ -834,10 +888,29 @@ function ReportabilidadTab() {
                 onMouseLeave={e => e.currentTarget.style.background='#fff'}>
                 <td style={{ ...st.tdFixed, fontSize:11, position:'sticky', left:0, background:'inherit', zIndex:1 }}>{propiedad}</td>
                 {months.map(m => {
+                  const isCurrent = m === mesCurrent;
                   const cell = getCellContent(logMap[propiedad]?.[m]);
+                  const isEditing = isCurrent && editingCell === propiedad;
                   return (
-                    <td key={m} style={{ ...st.tdFixed, textAlign:'center', background:cell?.bg||'#fff', padding:'5px 6px' }}>
-                      {cell
+                    <td key={m}
+                      onClick={isCurrent && !isEditing ? () => startEditManual(propiedad) : undefined}
+                      title={isCurrent && !isEditing ? 'Click para ingresar valor manual de GC' : undefined}
+                      style={{ ...st.tdFixed, textAlign:'center', background:cell?.bg||'#fff', padding:'5px 6px', ...(isCurrent&&!isEditing?{cursor:'text'}:{}) }}>
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          value={editValue}
+                          disabled={savingCell === propiedad}
+                          onChange={e => setEditValue(e.target.value)}
+                          onBlur={() => saveManualValue(propiedad)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                            if (e.key === 'Escape') setEditingCell(null);
+                          }}
+                          onClick={e => e.stopPropagation()}
+                          style={{ width:'100%', textAlign:'center', border:'1px solid #1a73e8', borderRadius:4, padding:'2px 4px', fontSize:11, outline:'none', fontFamily:'inherit' }}
+                        />
+                      ) : cell
                         ? <span style={{ fontSize:cell.type==='valor'?11:12, fontWeight:cell.fontWeight, color:cell.color, display:'inline-block', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={cell.type==='valor'?cell.text:undefined}>{cell.text}</span>
                         : <span style={{ color:'#dadce0', fontSize:10 }}>—</span>}
                     </td>
@@ -849,10 +922,11 @@ function ReportabilidadTab() {
         </table>
       </div>
 
-      <div style={{ display:'flex', gap:16, marginTop:10, flexShrink:0, fontSize:11, color:'#9aa0a6', alignItems:'center' }}>
+      <div style={{ display:'flex', gap:16, marginTop:10, flexShrink:0, fontSize:11, color:'#9aa0a6', alignItems:'center', flexWrap:'wrap' }}>
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e8f0fe', color:'#1a73e8', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>E</span>Enviado</span>
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#2e7d32', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>R</span>Respondido (sin valor extraído)</span>
-        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>GC extraído del PDF</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#f3e5f5', color:'#6a1b9a', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>Manual</span>Ingresado manualmente (sin valor)</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>GC extraído del PDF o ingresado manualmente</span>
       </div>
     </div>
   );
