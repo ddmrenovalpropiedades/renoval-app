@@ -255,6 +255,15 @@ export default async function handler(req, res) {
       if (pdfs.length > 0) {
         gcValor = await extractGCFromPdf(pdfs[0].data, matchedProp);
         console.log(`GC valor para ${matchedProp}: ${gcValor}`);
+        if (pdfs.length > 1) {
+          // El correo trae más de un PDF (típico cuando la misma
+          // administración envía varias propiedades del mismo edificio en un
+          // solo correo, ej. dos departamentos del mismo edificio). Solo
+          // podemos extraer con confianza del primero, así que dejamos
+          // marcada la ambigüedad para revisión manual en vez de asumir que
+          // el valor es correcto en silencio.
+          console.log(`⚠ El correo para "${matchedProp}" trae ${pdfs.length} PDFs adjuntos (${pdfs.map(p => p.filename).join(', ')}). Se usó el primero — queda marcado para revisión.`);
+        }
       } else {
         console.log(`Sin PDF adjunto en respuesta para ${matchedProp}`);
       }
@@ -267,6 +276,7 @@ export default async function handler(req, res) {
           existing.gc_valor = gcValor;
           existing.respondido_at = receivedAt;
           existing.gmail_message_id = msgId;
+          existing.pdf_adjuntos = pdfs.length > 1 ? pdfs.length : null;
         }
       } else {
         replies.push({
@@ -274,6 +284,11 @@ export default async function handler(req, res) {
           gc_valor: gcValor,
           respondido_at: receivedAt,
           gmail_message_id: msgId,
+          // Cantidad de PDFs adjuntos en el correo. Se guarda solo cuando es
+          // >1, para que el frontend pueda marcar la propiedad como "a
+          // revisar" en vez de dar el valor extraído por bueno de forma
+          // silenciosa.
+          pdf_adjuntos: pdfs.length > 1 ? pdfs.length : null,
         });
       }
     }
