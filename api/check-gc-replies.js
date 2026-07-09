@@ -176,6 +176,7 @@ export default async function handler(req, res) {
     ];
 
     const allMessageIds = new Set();
+    const gmailErrors = [];
     for (const query of queries) {
       console.log('Gmail query:', query);
       try {
@@ -187,10 +188,24 @@ export default async function handler(req, res) {
         (listRes.data.messages || []).forEach(m => allMessageIds.add(m.id));
       } catch (e) {
         console.error('Error listing messages for query:', query, e.message);
+        gmailErrors.push(e.message);
       }
     }
 
     console.log(`Total mensajes únicos encontrados: ${allMessageIds.size}`);
+
+    // Si TODAS las búsquedas fallaron (ej. token de Gmail vencido), no tiene
+    // sentido seguir: devolvemos el error explícito en vez de "0 respuestas"
+    // silencioso, para que el frontend pueda avisarle al usuario.
+    if (gmailErrors.length === queries.length) {
+      console.error('Todas las búsquedas en Gmail fallaron:', gmailErrors);
+      return res.status(200).json({
+        replies: [],
+        debug: [],
+        total_emails_checked: 0,
+        gmail_errors: gmailErrors,
+      });
+    }
 
     const replies = [];
     const debug = [];
@@ -211,6 +226,11 @@ export default async function handler(req, res) {
 
       const body = getTextBody(full.data.payload);
       const combined = subject + ' ' + body;
+      // Texto de la respuesta que se guardará para mostrar en Reportabilidad.
+      // Es solo el cuerpo del correo (nunca contenido de los PDFs adjuntos).
+      // Se limita el largo por las dudas de correos con hilos muy extensos.
+      const REPLY_TEXT_MAX_LENGTH = 10000;
+      const replyText = body?.trim() ? body.trim().slice(0, REPLY_TEXT_MAX_LENGTH) : null;
 
       // Buscar la propiedad con mejor match
       let matchedProp = null;
@@ -278,6 +298,9 @@ export default async function handler(req, res) {
           existing.gmail_message_id = msgId;
           existing.pdf_adjuntos = pdfs.length > 1 ? pdfs.length : null;
         }
+        // El texto de la respuesta se guarda igual aunque ya hubiera un match
+        // previo sin valor extraído.
+        if (!existing.respuesta_texto && replyText) existing.respuesta_texto = replyText;
       } else {
         replies.push({
           propiedad: matchedProp,
@@ -289,12 +312,18 @@ export default async function handler(req, res) {
           // revisar" en vez de dar el valor extraído por bueno de forma
           // silenciosa.
           pdf_adjuntos: pdfs.length > 1 ? pdfs.length : null,
+          respuesta_texto: replyText,
         });
       }
     }
 
     console.log(`Respuestas detectadas: ${replies.length}`);
-    return res.status(200).json({ replies, debug, total_emails_checked: allMessageIds.size });
+    return res.status(200).json({
+      replies,
+      debug,
+      total_emails_checked: allMessageIds.size,
+      ...(gmailErrors.length ? { gmail_errors: gmailErrors } : {}),
+    });
 
   } catch (err) {
     console.error('check-gc-replies error:', err);
