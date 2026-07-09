@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2, Download } from 'lucide-react';
+import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2, Download, SlidersHorizontal } from 'lucide-react';
 import { useExcelExport } from '../hooks/useExcelExport';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
 
@@ -50,25 +50,23 @@ const prevMes = () => {
 };
 
 // ── Color logic ───────────────────────────────────────────────
-const rowExceedsUmbral = (row, attrsMap, level) => {
+// Umbrales por defecto usados solo cuando la propiedad no tiene un valor de
+// "promedio" cargado en Atributos para esa cuenta.
+const DEFAULT_THRESHOLDS = { agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000], gc: [70000, 180000] };
+
+const getThresholds = (attr, tipo, mult1, mult2) => {
+  const promedio = attr?.[`${tipo}_promedio`];
+  if (promedio) return [promedio * mult1, promedio * mult2];
+  return DEFAULT_THRESHOLDS[tipo] || [Infinity, Infinity];
+};
+
+const rowExceedsUmbral = (row, attrsMap, level, mult1 = 1.9, mult2 = 2.8) => {
   const attr = attrsMap?.[row.propiedad];
-  const defaults = { agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000] };
-  const gcDefaults = [70000, 180000];
   const checkField = (val, tipo) => {
     const n = parseAmount(val);
     if (!n || isPagada(val)) return false;
-    if (tipo === 'agua' || tipo === 'luz' || tipo === 'gas') {
-      const t1 = attr?.[`umbral1_${tipo}`] || defaults[tipo][0];
-      const t2 = attr?.[`umbral2_${tipo}`] || defaults[tipo][1];
-      return level === 1 ? n >= t1 : n >= t2;
-    }
-    if (tipo === 'gc') {
-      const gcProm = attr?.gc_promedio;
-      const t1 = gcProm ? gcProm * 1.9 : gcDefaults[0];
-      const t2 = gcProm ? gcProm * 2.8 : gcDefaults[1];
-      return level === 1 ? n >= t1 : n >= t2;
-    }
-    return false;
+    const [t1, t2] = getThresholds(attr, tipo, mult1, mult2);
+    return level === 1 ? n >= t1 : n >= t2;
   };
   return (
     checkField(row.agua_ac,'agua')||checkField(row.agua_an,'agua')||
@@ -77,7 +75,7 @@ const rowExceedsUmbral = (row, attrsMap, level) => {
     checkField(row.gc_ac,'gc')||checkField(row.gc_an,'gc')
   );
 };
-const getCellStyle = (val, tipo, attr, emptyWhite=false) => {
+const getCellStyle = (val, tipo, attr, emptyWhite=false, mult1=1.9, mult2=2.8) => {
   const base = { padding:0, fontSize:12, textAlign:'center', width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:4 };
   const u1 = { background:'#FFE0B2', color:'#202124', borderRadius:6 }; // naranja suave — supera umbral 1
   const u2 = { background:'#FFCDD2', color:'#202124', borderRadius:6 }; // rojo suave  — supera umbral 2
@@ -85,24 +83,10 @@ const getCellStyle = (val, tipo, attr, emptyWhite=false) => {
   if (isPagada(val)) return { ...base, background:'#fff', color:'#bdbdbd' };
   const n = parseAmount(val);
   if (n===null) return { ...base, background:'#fff', color:'#202124' };
-  const defaults = { agua:[40000,60000], luz:[55000,80000], gas:[45000,60000] };
-  if (tipo==='agua'||tipo==='luz'||tipo==='gas') {
-    let t1,t2;
-    if (attr?.['umbral1_'+tipo]&&attr?.['umbral2_'+tipo]) { t1=attr['umbral1_'+tipo]; t2=attr['umbral2_'+tipo]; }
-    else { [t1,t2]=defaults[tipo]||[40000,60000]; }
+  if (tipo==='agua'||tipo==='luz'||tipo==='gas'||tipo==='gc') {
+    const [t1, t2] = getThresholds(attr, tipo, mult1, mult2);
     if (n<t1) return { ...base, background:'#fff', color:'#bdbdbd' };
     if (n<t2) return { ...base, ...u1 };
-    return { ...base, ...u2 };
-  }
-  if (tipo==='gc') {
-    const gcProm=attr?.gc_promedio;
-    if (gcProm) {
-      if (n<gcProm*1.9) return { ...base, background:'#fff', color:'#bdbdbd' };
-      if (n<gcProm*2.8) return { ...base, ...u1 };
-      return { ...base, ...u2 };
-    }
-    if (n<70000) return { ...base, background:'#fff', color:'#bdbdbd' };
-    if (n<180000) return { ...base, background:'#fff', color:'#202124' };
     return { ...base, ...u2 };
   }
   if (tipo==='arriendo') {
@@ -113,14 +97,14 @@ const getCellStyle = (val, tipo, attr, emptyWhite=false) => {
 };
 
 // ── Editable cell ─────────────────────────────────────────────
-function EditableCell({ value, tipo, alerta, onChange, attr, emptyWhite }) {
+function EditableCell({ value, tipo, alerta, onChange, attr, emptyWhite, mult1, mult2 }) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value||'');
-  const cellStyle = getCellStyle(value, tipo, attr, emptyWhite);
+  const cellStyle = getCellStyle(value, tipo, attr, emptyWhite, mult1, mult2);
   const handleBlur = () => { setEditing(false); if (local!==(value||'')) onChange(local); };
   if (editing) return (
     <input value={local} onChange={e=>setLocal(e.target.value)} onBlur={handleBlur}
-      autoFocus style={{ ...getCellStyle('',tipo,attr,true), border:'1px solid #1a73e8', outline:'none', width:'100%', textAlign:'center', padding:'4px 6px' }} />
+      autoFocus style={{ ...getCellStyle('',tipo,attr,true,mult1,mult2), border:'1px solid #1a73e8', outline:'none', width:'100%', textAlign:'center', padding:'4px 6px' }} />
   );
   const display = tipo==='arriendo'&&value&&!isNaN(parseFloat(value))
     ? '$'+Math.round(parseFloat(value)).toLocaleString('es-CL') : value||'';
@@ -142,6 +126,55 @@ function UploadBtn({ label, tipo, onUpload, lastUpload }) {
       <button onClick={()=>ref.current.click()} style={st.uploadBtn}><Upload size={13} style={{marginRight:5}}/>Cargar archivo</button>
       <input ref={ref} type="file" accept=".xls,.xlsx" style={{display:'none'}}
         onChange={e=>{ if(e.target.files[0]){onUpload(tipo,e.target.files[0]);e.target.value='';} }} />
+    </div>
+  );
+}
+
+// ── UMBRAL MODAL ───────────────────────────────────────────────
+function UmbralModal({ config, onClose, onSave }) {
+  const [m1, setM1] = useState(String(config.multiplicador1));
+  const [m2, setM2] = useState(String(config.multiplicador2));
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleSave = async () => {
+    const v1 = parseFloat(String(m1).replace(',', '.'));
+    const v2 = parseFloat(String(m2).replace(',', '.'));
+    if (isNaN(v1) || isNaN(v2) || v1 <= 0 || v2 <= 0) { setErrorMsg('Ingresa valores numéricos válidos.'); return; }
+    if (v2 <= v1) { setErrorMsg('El multiplicador U2 debe ser mayor al de U1.'); return; }
+    setErrorMsg('');
+    setSaving(true);
+    await onSave({ multiplicador1: v1, multiplicador2: v2 });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div style={st.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...st.modal, width: 400 }}>
+        <div style={st.modalHeader}>
+          <span style={st.modalTitle}>Multiplicadores de umbral</span>
+          <button onClick={onClose} style={st.closeBtn}><X size={18}/></button>
+        </div>
+        <div style={{ padding:'16px 20px 8px', fontSize:13, color:'#5f6368', lineHeight:1.6 }}>
+          Se aplican sobre el promedio cargado en Atributos (agua, luz, gas y GC) para calcular U1 y U2. Ej: promedio $50.000 con multiplicador U1 = 1.9 → umbral 1 = $95.000.
+        </div>
+        <div style={{ padding:'8px 20px 4px', display:'flex', gap:12 }}>
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:12, fontWeight:600, color:'#5f6368', display:'block', marginBottom:6 }}>Multiplicador U1</label>
+            <input value={m1} onChange={e=>setM1(e.target.value)} style={{ width:'100%', border:'1px solid #dadce0', borderRadius:8, padding:'8px 10px', fontSize:14, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }}/>
+          </div>
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:12, fontWeight:600, color:'#5f6368', display:'block', marginBottom:6 }}>Multiplicador U2</label>
+            <input value={m2} onChange={e=>setM2(e.target.value)} style={{ width:'100%', border:'1px solid #dadce0', borderRadius:8, padding:'8px 10px', fontSize:14, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }}/>
+          </div>
+        </div>
+        {errorMsg && <div style={{ padding:'8px 20px 0', fontSize:12, color:'#c62828' }}>{errorMsg}</div>}
+        <div style={{ padding:'20px', display:'flex', gap:8, justifyContent:'flex-end' }}>
+          <button onClick={onClose} style={st.btnSecondary}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving} style={st.btnPrimary}>{saving ? 'Guardando...' : 'Guardar'}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -241,7 +274,7 @@ function EmailPreviewModal({ propiedad, mailAdmin, onClose }) {
 }
 
 // ── TAB 1: SALDOS ─────────────────────────────────────────────
-function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUpload, uploading, showUpload, setShowUpload }) {
+function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUpload, uploading, showUpload, setShowUpload, mult1, mult2 }) {
   const [edits, setEdits] = useState({});
   const [search, setSearch] = useState('');
   const [filterE, setFilterE] = useState([]);
@@ -267,9 +300,9 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
       });
     }
     if (filterE.length) result = result.filter(r=>filterE.every(e=>[r.e1,r.e2].includes(e)));
-    if (filterUmbral>0) result = result.filter(r=>rowExceedsUmbral(r,attrsMap,filterUmbral));
+    if (filterUmbral>0) result = result.filter(r=>rowExceedsUmbral(r,attrsMap,filterUmbral,mult1,mult2));
     return result;
-  }, [rows,search,filterE,filterUmbral,attrsMap]);
+  }, [rows,search,filterE,filterUmbral,attrsMap,mult1,mult2]);
 
   const COL_HEADER_COLORS = {
     agua: { bg: '#E3F2FD', color: '#1565C0' }, // azul DD
@@ -361,7 +394,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
                       const emptyWhite=c.tipo==='arriendo'||(c.tipo==='agua'&&rowAttr?.tiene_agua===false)||(c.tipo==='luz'&&rowAttr?.tiene_luz===false)||(c.tipo==='gas'&&rowAttr?.tiene_gas===false)||(c.tipo==='gc'&&rowAttr?.tiene_gc===false);
                       return (
                         <td key={c.key} style={{...st.td,padding:'4px 6px',...(c.groupStart?{borderLeft:'2px solid #bdbdbd'}:{}),...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{})}}>
-                          <EditableCell value={merged[c.key]||''} tipo={c.tipo} alerta={c.alerta?merged[c.alerta]:false} onChange={val=>handleCellChange(row.id,c.key,val)} attr={rowAttr} emptyWhite={emptyWhite}/>
+                          <EditableCell value={merged[c.key]||''} tipo={c.tipo} alerta={c.alerta?merged[c.alerta]:false} onChange={val=>handleCellChange(row.id,c.key,val)} attr={rowAttr} emptyWhite={emptyWhite} mult1={mult1} mult2={mult2}/>
                         </td>
                       );
                     })}
@@ -531,6 +564,16 @@ function ConsultasTab() {
       });
       const data = await response.json();
       console.log('check-gc-replies result:', data);
+
+      if (data.gmail_errors?.length) {
+        const isAuthError = data.gmail_errors.some(e => /invalid_grant|invalid_token|unauthorized/i.test(e));
+        alert(
+          (isAuthError
+            ? '⚠ El token de acceso a Gmail venció y hay que renovarlo (ver instrucciones del proyecto).\n\n'
+            : '⚠ Hubo un problema consultando Gmail.\n\n') +
+          'Detalle: ' + data.gmail_errors.join(' | ')
+        );
+      }
 
       const replies = data.replies || [];
       for (const r of replies) {
@@ -828,8 +871,20 @@ function ReportabilidadTab() {
     setEditValue(current?.gc_valor || '');
   };
 
+  // Formatea un valor de GC ingresado a mano al mismo formato que usan los
+  // valores extraídos automáticamente del PDF ($XX.XXX), para que ambos se
+  // vean consistentes en Reportabilidad, Consultas GC y Saldos.
+  const formatGCValue = (raw) => {
+    const digits = raw.replace(/[^0-9]/g, '');
+    if (!digits) return raw.trim(); // sin dígitos (caso raro): se deja tal cual
+    const n = parseInt(digits, 10);
+    if (isNaN(n)) return raw.trim();
+    return '$' + n.toLocaleString('es-CL');
+  };
+
   const saveManualValue = async (propiedad, mes) => {
-    const value = editValue.trim();
+    const rawValue = editValue.trim();
+    const value = rawValue ? formatGCValue(rawValue) : '';
     const existing = logMap[propiedad]?.[mes];
     // Si el valor no cambió, no hacemos nada.
     if (value === (existing?.gc_valor || '')) { setEditingCell(null); return; }
@@ -962,6 +1017,20 @@ export default function SaldosPage() {
   const [uploading, setUploading] = useState('');
   const [lastUploads, setLastUploads] = useState({});
   const [showUpload, setShowUpload] = useState(false);
+  const [umbralConfig, setUmbralConfig] = useState({ multiplicador1: 1.9, multiplicador2: 2.8 });
+  const [showUmbralModal, setShowUmbralModal] = useState(false);
+
+  const fetchUmbralConfig = useCallback(async () => {
+    const { data } = await supabase.from('saldos_config').select('*').eq('id', 1).maybeSingle();
+    if (data) setUmbralConfig({ multiplicador1: Number(data.multiplicador1), multiplicador2: Number(data.multiplicador2) });
+  }, []);
+
+  useEffect(() => { fetchUmbralConfig(); }, [fetchUmbralConfig]);
+
+  const handleSaveUmbralConfig = async (newConfig) => {
+    await supabase.from('saldos_config').upsert({ id: 1, ...newConfig });
+    setUmbralConfig(newConfig);
+  };
 
   const { exportToExcel } = useExcelExport();
 
@@ -1204,6 +1273,7 @@ export default function SaldosPage() {
             </button>
           )}
           <button onClick={fetchData} style={st.iconBtn} title="Actualizar"><RefreshCw size={16} color="#5f6368"/></button>
+          {tab==='saldos'&&<button onClick={()=>setShowUmbralModal(true)} style={st.iconBtn} title="Editar multiplicadores de umbral"><SlidersHorizontal size={16} color="#5f6368"/></button>}
           {tab==='saldos'&&<button onClick={()=>setShowUpload(!showUpload)} style={{...st.iconBtn,...(showUpload?{background:'#e8f0fe',borderColor:'#1a73e8'}:{})}}><Upload size={16} color={showUpload?'#1a73e8':'#5f6368'}/></button>}
         </div>
       </div>
@@ -1221,9 +1291,10 @@ export default function SaldosPage() {
         ))}
       </div>
 
-      {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload}/>}
+      {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload} mult1={umbralConfig.multiplicador1} mult2={umbralConfig.multiplicador2}/>}
       {tab==='consultas'&&<ConsultasTab/>}
       {tab==='reportabilidad'&&<ReportabilidadTab/>}
+      {showUmbralModal && <UmbralModal config={umbralConfig} onClose={()=>setShowUmbralModal(false)} onSave={handleSaveUmbralConfig}/>}
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
