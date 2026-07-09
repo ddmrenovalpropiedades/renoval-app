@@ -5,36 +5,23 @@ import { useExcelExport } from '../hooks/useExcelExport';
 
 const SI_NO = ['', 'Sí', 'No'];
 
+const buildFormState = (attr) => ({
+  tiene_agua: attr.tiene_agua === true ? 'Sí' : attr.tiene_agua === false ? 'No' : '',
+  tiene_luz:  attr.tiene_luz  === true ? 'Sí' : attr.tiene_luz  === false ? 'No' : '',
+  tiene_gas:  attr.tiene_gas  === true ? 'Sí' : attr.tiene_gas  === false ? 'No' : '',
+  tiene_gc:   attr.tiene_gc   === true ? 'Sí' : attr.tiene_gc   === false ? 'No' : '',
+  agua_promedio: attr.agua_promedio ?? '',
+  luz_promedio:  attr.luz_promedio  ?? '',
+  gas_promedio:  attr.gas_promedio  ?? '',
+  gc_promedio:   attr.gc_promedio   ?? '',
+});
+
 function AttributeRow({ attr, onSave }) {
-  const [form, setForm] = useState({
-    tiene_agua: attr.tiene_agua === true ? 'Sí' : attr.tiene_agua === false ? 'No' : '',
-    tiene_luz:  attr.tiene_luz  === true ? 'Sí' : attr.tiene_luz  === false ? 'No' : '',
-    tiene_gas:  attr.tiene_gas  === true ? 'Sí' : attr.tiene_gas  === false ? 'No' : '',
-    tiene_gc:   attr.tiene_gc   === true ? 'Sí' : attr.tiene_gc   === false ? 'No' : '',
-    umbral1_agua: attr.umbral1_agua ?? '',
-    umbral2_agua: attr.umbral2_agua ?? '',
-    umbral1_luz:  attr.umbral1_luz  ?? '',
-    umbral2_luz:  attr.umbral2_luz  ?? '',
-    umbral1_gas:  attr.umbral1_gas  ?? '',
-    umbral2_gas:  attr.umbral2_gas  ?? '',
-    gc_promedio:  attr.gc_promedio  ?? '',
-  });
+  const [form, setForm] = useState(buildFormState(attr));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const isDirty = JSON.stringify(form) !== JSON.stringify({
-    tiene_agua: attr.tiene_agua === true ? 'Sí' : attr.tiene_agua === false ? 'No' : '',
-    tiene_luz:  attr.tiene_luz  === true ? 'Sí' : attr.tiene_luz  === false ? 'No' : '',
-    tiene_gas:  attr.tiene_gas  === true ? 'Sí' : attr.tiene_gas  === false ? 'No' : '',
-    tiene_gc:   attr.tiene_gc   === true ? 'Sí' : attr.tiene_gc   === false ? 'No' : '',
-    umbral1_agua: attr.umbral1_agua ?? '',
-    umbral2_agua: attr.umbral2_agua ?? '',
-    umbral1_luz:  attr.umbral1_luz  ?? '',
-    umbral2_luz:  attr.umbral2_luz  ?? '',
-    umbral1_gas:  attr.umbral1_gas  ?? '',
-    umbral2_gas:  attr.umbral2_gas  ?? '',
-    gc_promedio:  attr.gc_promedio  ?? '',
-  });
+  const isDirty = JSON.stringify(form) !== JSON.stringify(buildFormState(attr));
 
   const handleSave = async () => {
     setSaving(true);
@@ -45,13 +32,10 @@ function AttributeRow({ attr, onSave }) {
       tiene_luz:  toBool(form.tiene_luz),
       tiene_gas:  toBool(form.tiene_gas),
       tiene_gc:   toBool(form.tiene_gc),
-      umbral1_agua: toInt(form.umbral1_agua),
-      umbral2_agua: toInt(form.umbral2_agua),
-      umbral1_luz:  toInt(form.umbral1_luz),
-      umbral2_luz:  toInt(form.umbral2_luz),
-      umbral1_gas:  toInt(form.umbral1_gas),
-      umbral2_gas:  toInt(form.umbral2_gas),
-      gc_promedio:  toInt(form.gc_promedio),
+      agua_promedio: toInt(form.agua_promedio),
+      luz_promedio:  toInt(form.luz_promedio),
+      gas_promedio:  toInt(form.gas_promedio),
+      gc_promedio:   toInt(form.gc_promedio),
     });
     setSaving(false);
     setSaved(true);
@@ -83,12 +67,9 @@ function AttributeRow({ attr, onSave }) {
       <td style={styles.tdCenter}>{selectorSiNo('tiene_luz')}</td>
       <td style={styles.tdCenter}>{selectorSiNo('tiene_gas')}</td>
       <td style={{ ...styles.tdCenter, borderLeft: '2px solid #bdbdbd' }}>{selectorSiNo('tiene_gc')}</td>
-      <td style={{ ...styles.tdCenter, borderLeft: '2px solid #bdbdbd' }}>{numInput('umbral1_agua')}</td>
-      <td style={styles.tdCenter}>{numInput('umbral2_agua')}</td>
-      <td style={{ ...styles.tdCenter, borderLeft: '2px solid #bdbdbd' }}>{numInput('umbral1_luz')}</td>
-      <td style={styles.tdCenter}>{numInput('umbral2_luz')}</td>
-      <td style={{ ...styles.tdCenter, borderLeft: '2px solid #bdbdbd' }}>{numInput('umbral1_gas')}</td>
-      <td style={styles.tdCenter}>{numInput('umbral2_gas')}</td>
+      <td style={{ ...styles.tdCenter, borderLeft: '2px solid #bdbdbd' }}>{numInput('agua_promedio')}</td>
+      <td style={styles.tdCenter}>{numInput('luz_promedio')}</td>
+      <td style={styles.tdCenter}>{numInput('gas_promedio')}</td>
       <td style={{ ...styles.tdCenter, borderLeft: '2px solid #bdbdbd' }}>{numInput('gc_promedio')}</td>
       <td style={styles.tdCenter}>
         {(isDirty || saving) && (
@@ -144,18 +125,15 @@ export default function PropertyAttributesTab() {
       tiene_gc:   toBool(a.tiene_gc),
     }));
     exportToExcel(data, [
-      { key: 'propiedad',    label: 'Propiedad' },
-      { key: 'tiene_agua',   label: 'Agua' },
-      { key: 'tiene_luz',    label: 'Luz' },
-      { key: 'tiene_gas',    label: 'Gas' },
-      { key: 'tiene_gc',     label: 'GC' },
-      { key: 'umbral1_agua', label: 'U1 Agua' },
-      { key: 'umbral2_agua', label: 'U2 Agua' },
-      { key: 'umbral1_luz',  label: 'U1 Luz' },
-      { key: 'umbral2_luz',  label: 'U2 Luz' },
-      { key: 'umbral1_gas',  label: 'U1 Gas' },
-      { key: 'umbral2_gas',  label: 'U2 Gas' },
-      { key: 'gc_promedio',  label: 'GC Promedio' },
+      { key: 'propiedad',      label: 'Propiedad' },
+      { key: 'tiene_agua',     label: 'Agua' },
+      { key: 'tiene_luz',      label: 'Luz' },
+      { key: 'tiene_gas',      label: 'Gas' },
+      { key: 'tiene_gc',       label: 'GC' },
+      { key: 'agua_promedio',  label: 'Agua Promedio' },
+      { key: 'luz_promedio',   label: 'Luz Promedio' },
+      { key: 'gas_promedio',   label: 'Gas Promedio' },
+      { key: 'gc_promedio',    label: 'GC Promedio' },
     ], 'Atributos');
   };
 
@@ -174,6 +152,10 @@ export default function PropertyAttributesTab() {
         </button>
       </div>
 
+      <div style={styles.hint}>
+        Los promedios definen el umbral de cada cuenta: el sistema los multiplica por los multiplicadores configurados en Saldos para determinar cuándo una celda se pinta naranja (U1) o roja (U2). Si una propiedad no tiene promedio cargado, se usa un umbral fijo por defecto.
+      </div>
+
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loading}>Cargando atributos...</div>
@@ -186,19 +168,16 @@ export default function PropertyAttributesTab() {
                 <th style={styles.th}>LUZ</th>
                 <th style={styles.th}>GAS</th>
                 <th style={{ ...styles.th, borderLeft: '2px solid #bdbdbd' }}>GC</th>
-                <th style={{ ...styles.th, borderLeft: '2px solid #bdbdbd' }}>U1 AGUA</th>
-                <th style={styles.th}>U2 AGUA</th>
-                <th style={{ ...styles.th, borderLeft: '2px solid #bdbdbd' }}>U1 LUZ</th>
-                <th style={styles.th}>U2 LUZ</th>
-                <th style={{ ...styles.th, borderLeft: '2px solid #bdbdbd' }}>U1 GAS</th>
-                <th style={styles.th}>U2 GAS</th>
+                <th style={{ ...styles.th, borderLeft: '2px solid #bdbdbd' }}>AGUA PROM.</th>
+                <th style={styles.th}>LUZ PROM.</th>
+                <th style={styles.th}>GAS PROM.</th>
                 <th style={{ ...styles.th, borderLeft: '2px solid #bdbdbd' }}>GC PROM.</th>
                 <th style={styles.th}></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={13} style={styles.empty}>Sin resultados.</td></tr>
+                <tr><td colSpan={10} style={styles.empty}>Sin resultados.</td></tr>
               ) : (
                 filtered.map(attr => (
                   <AttributeRow key={attr.propiedad} attr={attr} onSave={handleSave} />
@@ -219,6 +198,7 @@ const styles = {
   searchInput: { width: 320, padding: '8px 36px', border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit' },
   clearSearch: { position: 'absolute', left: 298, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' },
   count: { marginLeft: 12, fontSize: 13, color: '#9aa0a6' },
+  hint: { fontSize: 12, color: '#9aa0a6', background: '#f8f9fa', border: '1px solid #e8eaed', borderRadius: 8, padding: '8px 12px' },
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap', textAlign: 'center' },
