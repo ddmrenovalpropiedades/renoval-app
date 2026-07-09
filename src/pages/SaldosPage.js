@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2, Download, SlidersHorizontal } from 'lucide-react';
+import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2, Download, SlidersHorizontal, MessageSquare } from 'lucide-react';
 import { useExcelExport } from '../hooks/useExcelExport';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
 
@@ -585,6 +585,9 @@ function ConsultasTab() {
           status: 'respondido',
           gc_valor: r.gc_valor || null,
           pdf_adjuntos: r.pdf_adjuntos || null,
+          // Solo se incluye si vino con texto, para no pisar con null un
+          // respuesta_texto que ya se hubiera guardado en una pasada anterior.
+          ...(r.respuesta_texto ? { respuesta_texto: r.respuesta_texto } : {}),
         }, { onConflict: 'propiedad,mes' });
 
         if (r.gc_valor) {
@@ -820,6 +823,60 @@ function ConsultasTab() {
   );
 }
 
+// ── SIDEBAR: respuesta de correo + comentario ─────────────────
+function GCDetailSidebar({ propiedad, mes, logEntry, comentarioDraft, setComentarioDraft, onSaveComentario, savingComentario, onClose }) {
+  const hasChanges = comentarioDraft.trim() !== (logEntry?.comentario || '');
+  return (
+    <div style={{ position:'fixed', top:0, right:0, height:'100vh', width:380, maxWidth:'90vw', background:'#fff', boxShadow:'-6px 0 24px rgba(0,0,0,0.18)', zIndex:2500, display:'flex', flexDirection:'column', fontFamily:"'Google Sans','Segoe UI',sans-serif" }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', padding:'18px 20px', borderBottom:'1px solid #e8eaed', flexShrink:0 }}>
+        <div>
+          <div style={{ fontSize:15, fontWeight:700, color:'#202124' }}>{propiedad}</div>
+          <div style={{ fontSize:12, color:'#9aa0a6', marginTop:2 }}>{formatMes(mes)}</div>
+        </div>
+        <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', padding:4, color:'#5f6368' }}><X size={18}/></button>
+      </div>
+
+      <div style={{ flex:1, overflow:'auto', padding:'18px 20px', display:'flex', flexDirection:'column', gap:20 }}>
+        {logEntry?.gc_valor && (
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#9aa0a6', letterSpacing:0.5, marginBottom:6 }}>VALOR GC</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#1e6e3b' }}>{logEntry.gc_valor}</div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize:11, fontWeight:700, color:'#9aa0a6', letterSpacing:0.5, marginBottom:6 }}>RESPUESTA DEL CORREO</div>
+          {logEntry?.respuesta_texto ? (
+            <div style={{ fontSize:13, color:'#3c4043', lineHeight:1.6, whiteSpace:'pre-wrap', background:'#f8f9fa', border:'1px solid #e8eaed', borderRadius:8, padding:'10px 12px', maxHeight:320, overflow:'auto' }}>
+              {logEntry.respuesta_texto}
+            </div>
+          ) : (
+            <div style={{ fontSize:12, color:'#9aa0a6', fontStyle:'italic' }}>
+              {logEntry?.status === 'respondido' ? 'No se guardó texto de la respuesta para este correo.' : 'Sin respuesta registrada para este mes.'}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={{ fontSize:11, fontWeight:700, color:'#9aa0a6', letterSpacing:0.5, marginBottom:6 }}>COMENTARIO</div>
+          <textarea
+            value={comentarioDraft}
+            onChange={e => setComentarioDraft(e.target.value)}
+            placeholder="Escribe un comentario para esta propiedad y mes..."
+            style={{ width:'100%', minHeight:100, border:'1px solid #dadce0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', fontFamily:'inherit', resize:'vertical', boxSizing:'border-box' }}
+          />
+          <div style={{ display:'flex', justifyContent:'flex-end', marginTop:8 }}>
+            <button onClick={onSaveComentario} disabled={savingComentario || !hasChanges}
+              style={{ padding:'7px 16px', background: hasChanges?'#1a73e8':'#e8eaed', color: hasChanges?'#fff':'#9aa0a6', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor: hasChanges?'pointer':'not-allowed', fontFamily:'inherit' }}>
+              {savingComentario ? 'Guardando...' : 'Guardar comentario'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── TAB 3: REPORTABILIDAD ─────────────────────────────────────
 function ReportabilidadTab() {
   const [config, setConfig] = useState([]);
@@ -828,6 +885,9 @@ function ReportabilidadTab() {
   const [editingCell, setEditingCell] = useState(null); // { propiedad, mes }
   const [editValue, setEditValue] = useState('');
   const [savingCell, setSavingCell] = useState(null); // "propiedad|mes"
+  const [sidebarCell, setSidebarCell] = useState(null); // { propiedad, mes }
+  const [comentarioDraft, setComentarioDraft] = useState('');
+  const [savingComentario, setSavingComentario] = useState(false);
   const months = getLast12Months();
   const mesCurrent = currentMes();
 
@@ -913,6 +973,43 @@ function ReportabilidadTab() {
     setEditingCell(null);
   };
 
+  // Barra lateral: muestra el texto de la respuesta del correo (si existe) y
+  // permite ver/editar el comentario de esa propiedad+mes. Se abre con el
+  // botoncito de la celda, no con el click normal (que sigue editando el
+  // valor de GC como ya funcionaba).
+  const openSidebar = (propiedad, mes) => {
+    const entry = logMap[propiedad]?.[mes];
+    setSidebarCell({ propiedad, mes });
+    setComentarioDraft(entry?.comentario || '');
+  };
+
+  const closeSidebar = () => {
+    setSidebarCell(null);
+    setComentarioDraft('');
+  };
+
+  const saveComentario = async () => {
+    if (!sidebarCell) return;
+    const { propiedad, mes } = sidebarCell;
+    const value = comentarioDraft.trim();
+    setSavingComentario(true);
+    try {
+      const payload = { propiedad, mes, comentario: value || null };
+      await supabase.from('gc_consultas_log').upsert(payload, { onConflict: 'propiedad,mes' });
+      setLogs(prev => {
+        const idx = prev.findIndex(l => l.propiedad === propiedad && l.mes === mes);
+        if (idx === -1) return [...prev, payload];
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...payload };
+        return next;
+      });
+    } catch (e) {
+      console.error('Error guardando comentario:', e);
+      alert('No se pudo guardar el comentario: ' + e.message);
+    }
+    setSavingComentario(false);
+  };
+
   if (loading) return <div style={st.loading}>Cargando...</div>;
 
   const totalProps = config.length;
@@ -935,7 +1032,7 @@ function ReportabilidadTab() {
           </div>
         ))}
         <div style={{ flex:1, display:'flex', alignItems:'center', paddingLeft:8 }}>
-          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en cualquier celda para ingresar o corregir el valor de GC manualmente</span>
+          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en la celda para ingresar/corregir el valor de GC · ícono <MessageSquare size={11} style={{verticalAlign:'middle'}}/> para ver la respuesta del correo o dejar un comentario</span>
         </div>
       </div>
 
@@ -959,33 +1056,49 @@ function ReportabilidadTab() {
                   const isEditing = editingCell?.propiedad === propiedad && editingCell?.mes === m;
                   const cellKey = `${propiedad}|${m}`;
                   const flagAdjuntos = logEntry?.pdf_adjuntos > 1 && logEntry?.status !== 'manual';
+                  const hasComentario = !!logEntry?.comentario;
+                  const hasRespuesta = !!logEntry?.respuesta_texto;
                   return (
                     <td key={m}
                       onClick={!isEditing ? () => startEditManual(propiedad, m) : undefined}
                       title={!isEditing ? (flagAdjuntos ? `${logEntry.pdf_adjuntos} PDFs adjuntos en el correo — se usó el primero, verifica el valor` : 'Click para ingresar o corregir el valor de GC') : undefined}
                       style={{ ...st.tdFixed, textAlign:'center', background:cell?.bg||'#fff', padding:'5px 6px', ...(isEditing?{}:{cursor:'text'}) }}>
-                      {isEditing ? (
-                        <input
-                          autoFocus
-                          value={editValue}
-                          disabled={savingCell === cellKey}
-                          onChange={e => setEditValue(e.target.value)}
-                          onBlur={() => saveManualValue(propiedad, m)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') e.currentTarget.blur();
-                            if (e.key === 'Escape') setEditingCell(null);
-                          }}
-                          onClick={e => e.stopPropagation()}
-                          style={{ width:'100%', textAlign:'center', border:'1px solid #1a73e8', borderRadius:4, padding:'2px 4px', fontSize:11, outline:'none', fontFamily:'inherit' }}
-                        />
-                      ) : cell ? (
-                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:3, maxWidth:'100%' }}>
-                          {flagAdjuntos && <AlertCircle size={10} color="#e65100" style={{flexShrink:0}}/>}
-                          <span style={{ fontSize:cell.type==='valor'?11:12, fontWeight:cell.fontWeight, color:cell.color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={cell.type==='valor'?cell.text:undefined}>{cell.text}</span>
-                        </span>
-                      ) : (
-                        <span style={{ color:'#dadce0', fontSize:10 }}>—</span>
-                      )}
+                      <div className="gc-cell-wrap" style={{ position:'relative', width:'100%', minHeight:16 }}>
+                        {hasComentario && (
+                          <span title="Tiene comentario" style={{ position:'absolute', top:-5, right:-6, width:0, height:0, borderStyle:'solid', borderWidth:'0 8px 8px 0', borderColor:'transparent #f9a825 transparent transparent' }}/>
+                        )}
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            value={editValue}
+                            disabled={savingCell === cellKey}
+                            onChange={e => setEditValue(e.target.value)}
+                            onBlur={() => saveManualValue(propiedad, m)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            style={{ width:'100%', textAlign:'center', border:'1px solid #1a73e8', borderRadius:4, padding:'2px 4px', fontSize:11, outline:'none', fontFamily:'inherit' }}
+                          />
+                        ) : cell ? (
+                          <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:3, maxWidth:'100%' }}>
+                            {flagAdjuntos && <AlertCircle size={10} color="#e65100" style={{flexShrink:0}}/>}
+                            <span style={{ fontSize:cell.type==='valor'?11:12, fontWeight:cell.fontWeight, color:cell.color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={cell.type==='valor'?cell.text:undefined}>{cell.text}</span>
+                          </span>
+                        ) : (
+                          <span style={{ color:'#dadce0', fontSize:10 }}>—</span>
+                        )}
+                        {!isEditing && (
+                          <button
+                            className={`gc-cell-btn${(hasComentario||hasRespuesta)?' gc-cell-btn-active':''}`}
+                            onClick={e => { e.stopPropagation(); openSidebar(propiedad, m); }}
+                            title="Ver respuesta del correo / comentario"
+                            style={{ position:'absolute', bottom:-6, right:-4, background:'#fff', border:'none', cursor:'pointer', padding:1, display:'flex', color:'#5f6368', borderRadius:4 }}>
+                            <MessageSquare size={11}/>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   );
                 })}
@@ -1001,7 +1114,26 @@ function ReportabilidadTab() {
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#f3e5f5', color:'#6a1b9a', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>Manual</span>Ingresado manualmente (sin valor)</span>
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>GC extraído del PDF o ingresado manualmente</span>
         <span style={{ display:'flex', alignItems:'center', gap:5 }}><AlertCircle size={12} color="#e65100"/>Correo con más de un PDF adjunto — verificar el valor (click para corregir)</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:0, height:0, borderStyle:'solid', borderWidth:'0 7px 7px 0', borderColor:'transparent #f9a825 transparent transparent' }}/>Celda con comentario</span>
       </div>
+
+      {sidebarCell && (
+        <GCDetailSidebar
+          propiedad={sidebarCell.propiedad}
+          mes={sidebarCell.mes}
+          logEntry={logMap[sidebarCell.propiedad]?.[sidebarCell.mes]}
+          comentarioDraft={comentarioDraft}
+          setComentarioDraft={setComentarioDraft}
+          onSaveComentario={saveComentario}
+          savingComentario={savingComentario}
+          onClose={closeSidebar}
+        />
+      )}
+      <style>{`
+        .gc-cell-btn { opacity: 0; transition: opacity 0.15s; }
+        .gc-cell-wrap:hover .gc-cell-btn { opacity: 1; }
+        .gc-cell-btn.gc-cell-btn-active { opacity: 0.85; }
+      `}</style>
     </div>
   );
 }
