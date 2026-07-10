@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Plus, Search, Edit2, X, Check, Users, Trash2, Download } from 'lucide-react';
 import PropertyAttributesTab from '../components/PropertyAttributesTab';
 import { useExcelExport } from '../hooks/useExcelExport';
+import FichaSidebar, { FichaCellWrap } from '../components/FichaSidebar';
 
 const ENCARGADOS = ['DD', 'FD', 'EA', 'FG', 'AM'];
 const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E65100', AM: '#37474F' };
@@ -60,6 +61,7 @@ export default function PropertiesPage() {
   const [showCounters, setShowCounters] = useState(false);
   const isOwner = profile?.isOwner;
   const [activeTab, setActiveTab] = useState('cartera');
+  const [fichaPropiedad, setFichaPropiedad] = useState(null);
   const { exportToExcel } = useExcelExport();
 
   useEffect(() => { fetchProperties(); }, []);
@@ -184,7 +186,11 @@ export default function PropertiesPage() {
                   <tr key={prop.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#e8f0fe'}
                     onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#f8f9fa'}>
-                    <td style={styles.td}>{prop.propiedad}</td>
+                    <td style={styles.td}>
+                      <FichaCellWrap propiedad={prop.propiedad} onOpenFicha={setFichaPropiedad}>
+                        {prop.propiedad}
+                      </FichaCellWrap>
+                    </td>
                     <td style={{ ...styles.td, color: '#5f6368' }}>{prop.propietario}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}><Badge value={prop.e1} /></td>
                     <td style={{ ...styles.td, textAlign: 'center' }}><Badge value={prop.e2} /></td>
@@ -204,6 +210,7 @@ export default function PropertiesPage() {
       </>}
 
       {showModal && <PropertyModal property={editingProp} onClose={() => { setShowModal(false); setEditingProp(null); }} onSave={handleSave} />}
+      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
     </div>
   );
 }
