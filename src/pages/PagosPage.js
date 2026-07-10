@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search, Download } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search, Download, Paperclip, Image as ImageIcon } from 'lucide-react';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
 import { useExcelExport } from '../hooks/useExcelExport';
 import FichaSidebar, { FichaCellWrap } from '../components/FichaSidebar';
@@ -17,6 +18,47 @@ const transformAddress = (full) => {
   const short = full.split(',')[0].trim();
   return short.replace(/\bDepartamento\s+/gi, 'D').replace(/\bCasa\s+/gi, 'C');
 };
+
+// ── Adjuntos de Notas (JPG/PDF por pago) ────────────────────────
+// Mismo bucket que usa la Ficha de propiedad; tabla distinta (pago_files)
+// porque acá el adjunto pertenece a un pago puntual, no a la propiedad.
+const FILES_BUCKET = 'ficha-adjuntos';
+const FILE_ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'application/pdf'];
+const FILE_ACCEPTED_EXT = /\.(jpe?g|pdf)$/i;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const genFileId = () => (
+  typeof window !== 'undefined' && window.crypto?.randomUUID
+    ? window.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+);
+
+const formatFileSize = (bytes) => {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+// Descarga forzada vía blob — un <a download> normal no funciona confiable
+// para URLs de otro origen (como las de Supabase Storage).
+async function forceDownload(url, filename) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || 'archivo';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    console.error('Error al descargar, se abre en pestaña nueva:', e);
+    window.open(url, '_blank');
+  }
+}
 
 const PAGADO_POR_OPTIONS = ['DD', 'FD'];
 const ESTADO_OPTIONS = ['P', 'D', 'PG'];
@@ -159,8 +201,87 @@ function DatePicker({ value, onChange, style = {} }) {
 }
 
 function NotesPanel({ pago, onClose, onSave }) {
+  const { profile } = useAuth();
   const [text, setText] = useState(pago.notas || '');
+
+  // Archivos adjuntos del pago
+  const [files, setFiles] = useState([]);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [confirmDeleteFileId, setConfirmDeleteFileId] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const fetchFiles = useCallback(async () => {
+    setLoadingFiles(true);
+    const { data } = await supabase.from('pago_files').select('*').eq('pago_id', String(pago.id)).order('created_at', { ascending: false });
+    setFiles(data || []);
+    setLoadingFiles(false);
+  }, [pago.id]);
+
+  useEffect(() => { fetchFiles(); }, [fetchFiles]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('pago_files_' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pago_files' }, (payload) => {
+        const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+        if (!row || row.pago_id !== String(pago.id)) return;
+        if (payload.eventType === 'INSERT') {
+          setFiles(prev => prev.some(f => f.id === payload.new.id) ? prev : [payload.new, ...prev]);
+        } else if (payload.eventType === 'DELETE') {
+          setFiles(prev => prev.filter(f => f.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [pago.id]);
+
   const handleSave = () => { onSave(pago.id, text); onClose(); };
+
+  const handleFileButtonClick = () => fileInputRef.current?.click();
+
+  const handleFileInputChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const validType = FILE_ACCEPTED_TYPES.includes(file.type) || FILE_ACCEPTED_EXT.test(file.name);
+    if (!validType) { alert('Solo se permiten archivos JPG o PDF.'); return; }
+    if (file.size > MAX_FILE_SIZE) { alert('El archivo no puede superar los 10 MB.'); return; }
+    setUploadingFile(true);
+    try {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const path = `${genFileId()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from(FILES_BUCKET).upload(path, file, { upsert: false });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from(FILES_BUCKET).getPublicUrl(path);
+      const payload = {
+        pago_id: String(pago.id),
+        archivo_url: urlData.publicUrl,
+        archivo_path: path,
+        archivo_nombre: file.name,
+        archivo_tipo: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+        archivo_size: file.size,
+        autor_email: profile?.email || null,
+        autor_iniciales: profile?.iniciales || null,
+      };
+      const { data, error } = await supabase.from('pago_files').insert(payload).select().single();
+      if (error) throw error;
+      if (data) setFiles(prev => prev.some(f => f.id === data.id) ? prev : [data, ...prev]);
+    } catch (e) {
+      console.error('Error subiendo archivo:', e);
+      alert('No se pudo subir el archivo: ' + e.message);
+    }
+    setUploadingFile(false);
+  };
+
+  const handleDeleteFile = async (id) => {
+    const file = files.find(f => f.id === id);
+    await supabase.from('pago_files').delete().eq('id', id);
+    if (file?.archivo_path) supabase.storage.from(FILES_BUCKET).remove([file.archivo_path]).catch(() => {});
+    setFiles(prev => prev.filter(f => f.id !== id));
+    setConfirmDeleteFileId(null);
+  };
+
   return (
     <div style={panelStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={panelStyles.panel}>
@@ -171,12 +292,48 @@ function NotesPanel({ pago, onClose, onSave }) {
           </div>
           <button onClick={onClose} style={panelStyles.closeBtn}><X size={18} /></button>
         </div>
+
         <div style={panelStyles.body}>
           <label style={panelStyles.label}>Notas</label>
           <textarea value={text} onChange={e => setText(e.target.value)}
             placeholder="Ingresa notas sobre este pago..."
             style={panelStyles.textarea} autoFocus />
         </div>
+
+        <div style={panelStyles.filesSection}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
+            <label style={panelStyles.label}>Archivos</label>
+            <button onClick={handleFileButtonClick} disabled={uploadingFile} style={panelStyles.uploadBtn}>
+              <Paperclip size={12} /> {uploadingFile ? 'Subiendo...' : 'Subir'}
+            </button>
+            <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,application/pdf,image/jpeg" style={{ display: 'none' }} onChange={handleFileInputChange} />
+          </div>
+          <div style={panelStyles.filesList}>
+            {loadingFiles ? (
+              <div style={{ fontSize: 12, color: '#9aa0a6', textAlign: 'center', padding: 10 }}>Cargando...</div>
+            ) : files.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#9aa0a6', textAlign: 'center', padding: 10, fontStyle: 'italic' }}>Sin archivos cargados.</div>
+            ) : files.map(file => (
+              <div key={file.id} style={panelStyles.fileItem}>
+                {file.archivo_tipo?.startsWith('image') ? <ImageIcon size={14} color="#5f6368" style={{ flexShrink: 0 }} /> : <FileText size={14} color="#5f6368" style={{ flexShrink: 0 }} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: '#202124', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.archivo_nombre}>{file.archivo_nombre}</div>
+                  <div style={{ fontSize: 10, color: '#9aa0a6' }}>{formatFileSize(file.archivo_size)}{file.autor_iniciales ? ` · ${file.autor_iniciales}` : ''}</div>
+                </div>
+                <button onClick={() => forceDownload(file.archivo_url, file.archivo_nombre)} title="Descargar" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#1a73e8', display: 'flex', flexShrink: 0 }}><Download size={13} /></button>
+                {confirmDeleteFileId === file.id ? (
+                  <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                    <button onClick={() => handleDeleteFile(file.id)} style={{ background: '#fce8e6', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '4px 5px', color: '#ea4335', display: 'flex' }} title="Confirmar eliminar"><Trash2 size={12} /></button>
+                    <button onClick={() => setConfirmDeleteFileId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 5px', color: '#5f6368', display: 'flex' }} title="Cancelar"><X size={12} /></button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmDeleteFileId(file.id)} title="Eliminar" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#9aa0a6', display: 'flex', flexShrink: 0 }}><Trash2 size={13} /></button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div style={panelStyles.footer}>
           <button onClick={handleSave} style={panelStyles.saveBtn}>Guardar</button>
           <button onClick={onClose} style={panelStyles.cancelBtn}>Cancelar</button>
@@ -189,14 +346,18 @@ function NotesPanel({ pago, onClose, onSave }) {
 const panelStyles = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', zIndex: 3000 },
   panel: { background: '#fff', width: 380, height: '100vh', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.15)', fontFamily: "'Google Sans','Segoe UI',sans-serif" },
-  header: { padding: '20px 20px 16px', borderBottom: '1px solid #e8eaed', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
+  header: { padding: '20px 20px 16px', borderBottom: '1px solid #e8eaed', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 },
   prop: { fontSize: 15, fontWeight: 700, color: '#202124', marginBottom: 4 },
   desc: { fontSize: 12, color: '#5f6368' },
   closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#5f6368', borderRadius: 6 },
-  body: { flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 8 },
+  body: { flexShrink: 0, padding: 20, display: 'flex', flexDirection: 'column', gap: 8 },
   label: { fontSize: 12, fontWeight: 600, color: '#5f6368' },
-  textarea: { flex: 1, border: '1px solid #dadce0', borderRadius: 8, padding: 12, fontSize: 13, fontFamily: 'inherit', resize: 'none', outline: 'none', lineHeight: 1.6 },
-  footer: { padding: '12px 20px', borderTop: '1px solid #e8eaed', display: 'flex', gap: 8 },
+  textarea: { minHeight: 130, border: '1px solid #dadce0', borderRadius: 8, padding: 12, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6, boxSizing: 'border-box' },
+  filesSection: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '14px 20px 0', borderTop: '1px solid #e8eaed' },
+  filesList: { flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 10 },
+  fileItem: { display: 'flex', alignItems: 'center', gap: 8, background: '#f8f9fa', border: '1px solid #e8eaed', borderRadius: 8, padding: '7px 9px', flexShrink: 0 },
+  uploadBtn: { display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #dadce0', borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#5f6368', cursor: 'pointer', fontFamily: 'inherit' },
+  footer: { padding: '12px 20px', borderTop: '1px solid #e8eaed', display: 'flex', gap: 8, flexShrink: 0 },
   saveBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
