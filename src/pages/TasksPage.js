@@ -620,6 +620,7 @@ export default function TasksPage() {
                 createSubtask={createSubtask}
                 getSubtasks={getSubtasks}
                 onSubtasksChanged={() => { fetchTasks(); setSubtaskReloadTrigger(k => k + 1); }}
+                onSubtaskCompleted={handleSubtaskCompleted}
               />
             </div>
           )}
