@@ -80,7 +80,7 @@ const saveRecBtnStyle = {
   transition: 'all 0.15s ease',
 };
 
-export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplete, createSubtask, getSubtasks, onSubtasksChanged }) {
+export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplete, createSubtask, getSubtasks, onSubtasksChanged, onSubtaskCompleted }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes || '');
   const [recurrence, setRecurrence] = useState(task.recurrence || 'none');
@@ -141,6 +141,7 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
     await supabase.from('tasks').delete().eq('id', subtask.id);
     const remaining = subtasks.filter(s => s.id !== subtask.id);
     setSubtasks(remaining);
+    if (onSubtaskCompleted) onSubtaskCompleted();
     if (remaining.length === 0) { await onComplete(task); onClose(); }
   };
 
