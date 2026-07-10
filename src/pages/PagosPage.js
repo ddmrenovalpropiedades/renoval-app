@@ -3,9 +3,20 @@ import { supabase } from '../supabaseClient';
 import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search, Download } from 'lucide-react';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
 import { useExcelExport } from '../hooks/useExcelExport';
+import FichaSidebar, { FichaCellWrap } from '../components/FichaSidebar';
 
 const normalize = (str) =>
   String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+// La celda de propiedad de esta página se guarda con la misma dirección
+// abreviada que usa PropertyAutocomplete (transformAddress internamente),
+// distinta al nombre completo que vive en Cartera. Se duplica la función acá
+// (igual patrón que en Pizarra Arriendo/Venta) solo para poder armar el mapa
+// inverso necesario para la Ficha.
+const transformAddress = (full) => {
+  const short = full.split(',')[0].trim();
+  return short.replace(/\bDepartamento\s+/gi, 'D').replace(/\bCasa\s+/gi, 'C');
+};
 
 const PAGADO_POR_OPTIONS = ['DD', 'FD'];
 const ESTADO_OPTIONS = ['P', 'D', 'PG'];
@@ -266,7 +277,7 @@ function MetricsView({ onClose }) {
   );
 }
 
-function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
+function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -283,7 +294,11 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes }) {
   return (
     <tr style={{ background: hovered ? '#f8f9fa' : '#fff', transition: 'background 0.1s' }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-      <td style={s.td}><InlineText value={pago.propiedad} onChange={v => update('propiedad', v.toUpperCase())} /></td>
+      <td style={s.td}>
+        <FichaCellWrap propiedad={fichaPropiedadResuelta} onOpenFicha={onOpenFicha}>
+          <InlineText value={pago.propiedad} onChange={v => update('propiedad', v.toUpperCase())} />
+        </FichaCellWrap>
+      </td>
       <td style={s.td}><InlineText value={pago.descripcion} onChange={v => update('descripcion', v.toUpperCase())} /></td>
       <td style={s.tdCenter}><MoneyInput value={pago.cxc} onChange={v => update('cxc', v)} /></td>
       <td style={s.tdCenter}>
@@ -377,7 +392,29 @@ export default function PagosPage() {
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
+  const [fichaPropiedad, setFichaPropiedad] = useState(null);
   const { exportToExcel } = useExcelExport();
+
+  // Mapa inverso: nomenclatura abreviada (la que guarda esta página, vía
+  // PropertyAutocomplete) -> nombre canónico en Cartera. Ver misma nota en
+  // Pizarra Arriendo/Venta.
+  useEffect(() => {
+    const loadCartera = async () => {
+      let all = [], from = 0;
+      while (true) {
+        const { data, error } = await supabase.from('properties').select('propiedad').range(from, from + 999);
+        if (error || !data || data.length === 0) break;
+        all = [...all, ...data.map(p => p.propiedad)];
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+      const map = new Map();
+      all.forEach(p => map.set(transformAddress(p), p));
+      setCarteraReverseMap(map);
+    };
+    loadCartera();
+  }, []);
 
   const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter) => {
     setLoading(true);
@@ -482,7 +519,11 @@ export default function PagosPage() {
               {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={maxPosition} />}
               {pagos.length === 0 && !addingNew
                 ? <tr><td colSpan={13} style={s.empty}>No hay pagos registrados.</td></tr>
-                : pagos.map(p => <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor} />)
+                : pagos.map(p => (
+                  <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor}
+                    fichaPropiedadResuelta={carteraReverseMap.get(p.propiedad) || null}
+                    onOpenFicha={setFichaPropiedad} />
+                ))
               }
             </tbody>
           </table>
@@ -492,6 +533,7 @@ export default function PagosPage() {
       <Pagination page={page} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={handlePageChange} />
       {notesFor && <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} />}
       {showMetrics && <MetricsView onClose={() => setShowMetrics(false)} />}
+      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
     </div>
   );
 }
