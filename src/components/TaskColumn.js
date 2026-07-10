@@ -60,7 +60,7 @@ function SubtaskItem({ subtask, onComplete, onOpen }) {
 }
 
 // ── TaskItem: devuelve su "peso" en items (1 tarea + N subtareas si expandida) ──
-function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey, onWeightChange }) {
+function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey, onWeightChange, onSubtaskCompleted }) {
   const [subtasks, setSubtasks] = useState([]);
   const [expanded, setExpanded] = useState(true);
   const [selectedSubtask, setSelectedSubtask] = useState(null);
@@ -99,6 +99,7 @@ function TaskItem({ task, onOpen, onComplete, currentUserEmail, reloadKey, onWei
     await supabase.from('tasks').delete().eq('id', subtask.id);
     const remaining = subtasks.filter(s => s.id !== subtask.id);
     setSubtasks(remaining);
+    if (onSubtaskCompleted) onSubtaskCompleted();
     if (remaining.length === 0) onComplete(task);
   };
 
@@ -352,6 +353,7 @@ export default function TaskColumn({
                 currentUserEmail={currentUserEmail}
                 reloadKey={subtaskReloadKey}
                 onWeightChange={handleWeightChange}
+                onSubtaskCompleted={onSubtaskCompleted}
               />
             ))}
           </SortableContext>
