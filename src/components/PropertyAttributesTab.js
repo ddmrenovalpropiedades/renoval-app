@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { Save, Search, X, Download } from 'lucide-react';
 import { useExcelExport } from '../hooks/useExcelExport';
+import FichaSidebar, { FichaCellWrap } from './FichaSidebar';
 
 const SI_NO = ['', 'Sí', 'No'];
 
@@ -16,7 +17,7 @@ const buildFormState = (attr) => ({
   gc_promedio:   attr.gc_promedio   ?? '',
 });
 
-function AttributeRow({ attr, onSave }) {
+function AttributeRow({ attr, onSave, onOpenFicha }) {
   const [form, setForm] = useState(buildFormState(attr));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -62,7 +63,11 @@ function AttributeRow({ attr, onSave }) {
 
   return (
     <tr style={{ background: '#fff', borderBottom: '1px solid #e8eaed' }}>
-      <td style={styles.tdProp}>{attr.propiedad}</td>
+      <td style={styles.tdProp}>
+        <FichaCellWrap propiedad={attr.propiedad} onOpenFicha={onOpenFicha}>
+          {attr.propiedad}
+        </FichaCellWrap>
+      </td>
       <td style={styles.tdCenter}>{selectorSiNo('tiene_agua')}</td>
       <td style={styles.tdCenter}>{selectorSiNo('tiene_luz')}</td>
       <td style={styles.tdCenter}>{selectorSiNo('tiene_gas')}</td>
@@ -89,6 +94,7 @@ export default function PropertyAttributesTab() {
   const [attrs, setAttrs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [fichaPropiedad, setFichaPropiedad] = useState(null);
   const { exportToExcel } = useExcelExport();
 
   useEffect(() => { fetchAttrs(); }, []);
@@ -180,13 +186,15 @@ export default function PropertyAttributesTab() {
                 <tr><td colSpan={10} style={styles.empty}>Sin resultados.</td></tr>
               ) : (
                 filtered.map(attr => (
-                  <AttributeRow key={attr.propiedad} attr={attr} onSave={handleSave} />
+                  <AttributeRow key={attr.propiedad} attr={attr} onSave={handleSave} onOpenFicha={setFichaPropiedad} />
                 ))
               )}
             </tbody>
           </table>
         )}
       </div>
+
+      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
     </div>
   );
 }
