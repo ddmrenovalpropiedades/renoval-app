@@ -5,6 +5,7 @@ import { Plus, Check, X, DollarSign, Trash2, Link2, Calendar, Download } from 'l
 import { useExcelExport } from '../hooks/useExcelExport';
 import UrlPublicacionModal from '../components/pizarra/UrlPublicacionModal';
 import DisponibilidadSidebar from '../components/pizarra/DisponibilidadSidebar';
+import FichaSidebar, { FichaCellWrap } from '../components/FichaSidebar';
 
 // ── Helpers (reutilizados de Pizarra) ─────────────────────────
 const normalizeStr = (str) =>
@@ -206,7 +207,7 @@ function SlashInputNew({ value, onChange }) {
 }
 
 // ── SaleRow ───────────────────────────────────────────────────
-function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad }) {
+function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad, fichaPropiedadResuelta, onOpenFicha }) {
   const [form, setForm] = useState({ ...EMPTY_FORM_VENTA, ...row });
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -298,7 +299,11 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
 
   return (
     <tr style={{ background: '#fff' }} onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-      <td style={st.tdProp}><InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} uppercase /></td>
+      <td style={st.tdProp}>
+        <FichaCellWrap propiedad={fichaPropiedadResuelta} onOpenFicha={onOpenFicha}>
+          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} uppercase />
+        </FichaCellWrap>
+      </td>
       <td style={st.td}><PriceInput value={form.precio} onChange={v => set('precio', v)} uf={uf} /></td>
       <td style={st.td}>
         <select value={form.status || ''} onChange={e => set('status', e.target.value)}
@@ -378,8 +383,29 @@ export default function PizarraVentasPage() {
   const [urlModalRow, setUrlModalRow] = useState(null);
   const [disponibilidadRow, setDisponibilidadRow] = useState(null);
   const [filterE, setFilterE] = useState([]);
+  const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
+  const [fichaPropiedad, setFichaPropiedad] = useState(null);
   const uf = useUFValue();
   const { exportToExcel } = useExcelExport();
+
+  // Mapa inverso: nomenclatura abreviada (la que usa esta página) ->
+  // nombre canónico en Cartera. Ver misma nota en Pizarra Arriendo.
+  useEffect(() => {
+    const loadCartera = async () => {
+      let all = [], from = 0;
+      while (true) {
+        const { data, error } = await supabase.from('properties').select('propiedad').range(from, from + 999);
+        if (error || !data || data.length === 0) break;
+        all = [...all, ...data.map(p => p.propiedad)];
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+      const map = new Map();
+      all.forEach(p => map.set(transformAddress(p), p));
+      setCarteraReverseMap(map);
+    };
+    loadCartera();
+  }, []);
 
   const handleExport = () => exportToExcel(rows, [
     { key: 'propiedad', label: 'Propiedad' }, { key: 'precio', label: 'Precio' },
@@ -511,7 +537,9 @@ export default function PizarraVentasPage() {
                 : filtered.map(row => (
                   <SaleRow key={row.id} row={row} onSave={handleSave} onDelete={handleDelete}
                     onSold={r => setSoldRow(r)} uf={uf}
-                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow} />
+                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow}
+                    fichaPropiedadResuelta={carteraReverseMap.get(row.propiedad) || null}
+                    onOpenFicha={setFichaPropiedad} />
                 ))
               }
             </tbody>
@@ -528,6 +556,7 @@ export default function PizarraVentasPage() {
       {soldRow && <SoldModal row={soldRow} onConfirm={handleSoldConfirm} onCancel={() => setSoldRow(null)} />}
       {urlModalRow && <UrlPublicacionModal row={urlModalRow} onSave={handleSaveUrl} onClose={() => setUrlModalRow(null)} />}
       {disponibilidadRow && <DisponibilidadSidebar row={disponibilidadRow} onClose={() => setDisponibilidadRow(null)} />}
+      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
     </div>
   );
 }
