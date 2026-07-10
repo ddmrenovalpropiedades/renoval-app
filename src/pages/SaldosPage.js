@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2, Download, SlidersHorizontal, MessageSquare } from 'lucide-react';
 import { useExcelExport } from '../hooks/useExcelExport';
 import PropertyAutocomplete from '../components/PropertyAutocomplete';
+import FichaSidebar, { FichaCellWrap } from '../components/FichaSidebar';
 
 // ── Helpers ──────────────────────────────────────────────────
 const parseAmount = (val) => {
@@ -274,7 +275,7 @@ function EmailPreviewModal({ propiedad, mailAdmin, onClose }) {
 }
 
 // ── TAB 1: SALDOS ─────────────────────────────────────────────
-function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUpload, uploading, showUpload, setShowUpload, mult1, mult2 }) {
+function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUpload, uploading, showUpload, setShowUpload, mult1, mult2, onOpenFicha }) {
   const [edits, setEdits] = useState({});
   const [search, setSearch] = useState('');
   const [filterE, setFilterE] = useState([]);
@@ -385,9 +386,14 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
                 const hasEdits=!!(edits[row.id]&&Object.keys(edits[row.id]).length);
                 const merged={...row,...(edits[row.id]||{})};
                 const EC = ENCARGADO_COLORS;
+                const rowAttrExists = !!attrsMap[row.propiedad];
                 return (
                   <tr key={row.id} style={{background:'#fff'}}>
-                    <td style={{...st.tdFixed,fontSize:12}}>{row.propiedad}</td>
+                    <td style={{...st.tdFixed,fontSize:12}}>
+                      <FichaCellWrap propiedad={rowAttrExists ? row.propiedad : null} onOpenFicha={onOpenFicha}>
+                        {row.propiedad}
+                      </FichaCellWrap>
+                    </td>
                     <td style={{...st.tdFixed,fontSize:11,color:'#5f6368',textAlign:'center'}}>{row.propietario||''}</td>
                     {COLS.map(c=>{
                       const rowAttr=attrsMap[row.propiedad];
@@ -415,9 +421,10 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
 }
 
 // ── TAB 2: CONSULTAS GC ───────────────────────────────────────
-function ConsultasTab() {
+function ConsultasTab({ onOpenFicha }) {
   const [config, setConfig] = useState([]);
   const [log, setLog] = useState([]);
+  const [carteraSet, setCarteraSet] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -436,12 +443,14 @@ function ConsultasTab() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [{ data: cfg }, { data: lg }] = await Promise.all([
+    const [{ data: cfg }, { data: lg }, { data: cartera }] = await Promise.all([
       supabase.from('gc_consultas_config').select('*').order('propiedad'),
       supabase.from('gc_consultas_log').select('*').eq('mes', mes),
+      supabase.from('properties').select('propiedad'),
     ]);
     setConfig(cfg || []);
     setLog(lg || []);
+    setCarteraSet(new Set((cartera || []).map(c => c.propiedad)));
     setLoading(false);
   }, [mes]);
 
@@ -676,6 +685,7 @@ function ConsultasTab() {
                 const status = logRow?.status;
                 const isEditingMail = editingId === row.id && editField === 'mail_admin';
                 const isEditingCartera = editingId === row.id && editField === 'cartera';
+                const carteraExiste = row.cartera && carteraSet.has(row.cartera);
 
                 return (
                   <tr key={row.id} style={{background:'#fff'}}
@@ -701,12 +711,14 @@ function ConsultasTab() {
                           <button onClick={()=>{ setEditingId(null); setEditField(null); }} style={{...st.actionBtn,flexShrink:0}}><X size={12}/></button>
                         </div>
                       ) : (
-                        <div onClick={() => startEdit(row.id, 'cartera', row.cartera)}
-                          style={{cursor:'text',fontSize:12,padding:'2px 4px',borderRadius:4,minHeight:20}}>
-                          {row.cartera
-                            ? <span style={{color:'#202124'}}>{row.cartera}</span>
-                            : <span style={{color:'#9aa0a6',fontSize:11}}>— sin vincular —</span>}
-                        </div>
+                        <FichaCellWrap propiedad={carteraExiste ? row.cartera : null} onOpenFicha={onOpenFicha}>
+                          <div onClick={() => startEdit(row.id, 'cartera', row.cartera)}
+                            style={{cursor:'text',fontSize:12,padding:'2px 4px',borderRadius:4,minHeight:20}}>
+                            {row.cartera
+                              ? <span style={{color:'#202124'}}>{row.cartera}</span>
+                              : <span style={{color:'#9aa0a6',fontSize:11}}>— sin vincular —</span>}
+                          </div>
+                        </FichaCellWrap>
                       )}
                     </td>
 
@@ -1032,7 +1044,7 @@ function ReportabilidadTab() {
           </div>
         ))}
         <div style={{ flex:1, display:'flex', alignItems:'center', paddingLeft:8 }}>
-          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en la celda para ingresar/corregir el valor de GC · ícono <MessageSquare size={11} style={{verticalAlign:'middle'}}/> para ver la respuesta del correo o dejar un comentario</span>
+          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en la celda para ingresar/corregir el valor de GC · ícono <MessageSquare size={11} style={{verticalAlign:'middle'}}/> (aparece al pasar el mouse) para ver la respuesta del correo o dejar un comentario</span>
         </div>
       </div>
 
@@ -1057,7 +1069,6 @@ function ReportabilidadTab() {
                   const cellKey = `${propiedad}|${m}`;
                   const flagAdjuntos = logEntry?.pdf_adjuntos > 1 && logEntry?.status !== 'manual';
                   const hasComentario = !!logEntry?.comentario;
-                  const hasRespuesta = !!logEntry?.respuesta_texto;
                   return (
                     <td key={m}
                       onClick={!isEditing ? () => startEditManual(propiedad, m) : undefined}
@@ -1091,7 +1102,7 @@ function ReportabilidadTab() {
                         )}
                         {!isEditing && (
                           <button
-                            className={`gc-cell-btn${(hasComentario||hasRespuesta)?' gc-cell-btn-active':''}`}
+                            className="gc-cell-btn"
                             onClick={e => { e.stopPropagation(); openSidebar(propiedad, m); }}
                             title="Ver respuesta del correo / comentario"
                             style={{ position:'absolute', bottom:-6, right:-4, background:'#fff', border:'none', cursor:'pointer', padding:1, display:'flex', color:'#5f6368', borderRadius:4 }}>
@@ -1132,7 +1143,6 @@ function ReportabilidadTab() {
       <style>{`
         .gc-cell-btn { opacity: 0; transition: opacity 0.15s; }
         .gc-cell-wrap:hover .gc-cell-btn { opacity: 1; }
-        .gc-cell-btn.gc-cell-btn-active { opacity: 0.85; }
       `}</style>
     </div>
   );
@@ -1151,6 +1161,7 @@ export default function SaldosPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [umbralConfig, setUmbralConfig] = useState({ multiplicador1: 1.9, multiplicador2: 2.8 });
   const [showUmbralModal, setShowUmbralModal] = useState(false);
+  const [fichaPropiedad, setFichaPropiedad] = useState(null);
 
   const fetchUmbralConfig = useCallback(async () => {
     const { data } = await supabase.from('saldos_config').select('*').eq('id', 1).maybeSingle();
@@ -1423,10 +1434,11 @@ export default function SaldosPage() {
         ))}
       </div>
 
-      {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload} mult1={umbralConfig.multiplicador1} mult2={umbralConfig.multiplicador2}/>}
-      {tab==='consultas'&&<ConsultasTab/>}
+      {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload} mult1={umbralConfig.multiplicador1} mult2={umbralConfig.multiplicador2} onOpenFicha={setFichaPropiedad}/>}
+      {tab==='consultas'&&<ConsultasTab onOpenFicha={setFichaPropiedad}/>}
       {tab==='reportabilidad'&&<ReportabilidadTab/>}
       {showUmbralModal && <UmbralModal config={umbralConfig} onClose={()=>setShowUmbralModal(false)} onSave={handleSaveUmbralConfig}/>}
+      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
