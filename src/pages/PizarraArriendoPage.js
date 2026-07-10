@@ -5,6 +5,7 @@ import { Plus, Check, X, Home, Trash2, Link2, Calendar, Download } from 'lucide-
 import { useExcelExport } from '../hooks/useExcelExport';
 import UrlPublicacionModal from '../components/pizarra/UrlPublicacionModal';
 import DisponibilidadSidebar from '../components/pizarra/DisponibilidadSidebar';
+import FichaSidebar, { FichaCellWrap } from '../components/FichaSidebar';
 
 const normalizeStr = (str) =>
   str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -327,7 +328,7 @@ const normalizeForCompare = (obj) => FORM_KEYS.reduce((acc, k) => {
   const v = obj[k]; acc[k] = (v === null || v === undefined) ? '' : String(v); return acc;
 }, {});
 
-function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad }) {
+function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad, fichaPropiedadResuelta, onOpenFicha }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -429,10 +430,12 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   return (
     <tr style={{ background: '#fff' }} onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
       <td style={styles.tdProp}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          {showAlert && <UrgentDot />}
-          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} uppercase />
-        </div>
+        <FichaCellWrap propiedad={fichaPropiedadResuelta} onOpenFicha={onOpenFicha}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {showAlert && <UrgentDot />}
+            <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} uppercase />
+          </div>
+        </FichaCellWrap>
       </td>
       <td style={styles.td}><PriceInput value={form.precio} onChange={v => set('precio', v)} uf={uf} /></td>
       <td style={styles.td}><PriceInput value={form.promo} onChange={v => set('promo', v)} uf={uf} /></td>
@@ -481,8 +484,31 @@ export default function PizarraArriendoPage() {
   const [urlModalRow, setUrlModalRow] = useState(null);
   const [disponibilidadRow, setDisponibilidadRow] = useState(null);
   const [filterE, setFilterE] = useState([]);
+  const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
+  const [fichaPropiedad, setFichaPropiedad] = useState(null);
   const uf = useUFValue();
   const { exportToExcel } = useExcelExport();
+
+  // Mapa inverso: nomenclatura abreviada (la que usa esta página) ->
+  // nombre canónico en Cartera. Necesario porque esta página guarda las
+  // propiedades con transformAddress() (dirección abreviada), distinto al
+  // nombre completo que vive en la tabla "properties".
+  useEffect(() => {
+    const loadCartera = async () => {
+      let all = [], from = 0;
+      while (true) {
+        const { data, error } = await supabase.from('properties').select('propiedad').range(from, from + 999);
+        if (error || !data || data.length === 0) break;
+        all = [...all, ...data.map(p => p.propiedad)];
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+      const map = new Map();
+      all.forEach(p => map.set(transformAddress(p), p));
+      setCarteraReverseMap(map);
+    };
+    loadCartera();
+  }, []);
 
   const handleExport = () => exportToExcel(rows, [
     { key: 'propiedad', label: 'Propiedad' }, { key: 'precio', label: 'Precio' },
@@ -617,7 +643,9 @@ export default function PizarraArriendoPage() {
                 : filtered.map(row => (
                   <PropertyRow key={row.id} row={row} onSave={handleSave} onDelete={handleDelete}
                     onRented={r => setRentingRow(r)} uf={uf}
-                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow} />
+                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow}
+                    fichaPropiedadResuelta={carteraReverseMap.get(row.propiedad) || null}
+                    onOpenFicha={setFichaPropiedad} />
                 ))
               }
             </tbody>
@@ -634,6 +662,7 @@ export default function PizarraArriendoPage() {
       {rentingRow && <RentModal row={rentingRow} onConfirm={handleRentedConfirm} onCancel={() => setRentingRow(null)} uf={uf} />}
       {urlModalRow && <UrlPublicacionModal row={urlModalRow} onSave={handleSaveUrl} onClose={() => setUrlModalRow(null)} />}
       {disponibilidadRow && <DisponibilidadSidebar row={disponibilidadRow} onClose={() => setDisponibilidadRow(null)} />}
+      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
     </div>
   );
 }
