@@ -14,6 +14,19 @@ const getFileExt = (filename) => {
   return m[1] === 'jpeg' ? 'jpg' : m[1];
 };
 
+// Devuelve el índice a mostrar para un set: el último que el usuario vio
+// (guardado en localStorage), o si nunca se guardó nada, el último
+// desbloqueado (comportamiento anterior, como fallback).
+const getLastViewedIdx = (setId, urlsLen) => {
+  if (!setId || urlsLen === 0) return 0;
+  const saved = localStorage.getItem(`galleryLastViewed_${setId}`);
+  if (saved !== null) {
+    const idx = parseInt(saved, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < urlsLen) return idx;
+  }
+  return urlsLen - 1;
+};
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   useEffect(() => {
@@ -73,6 +86,14 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     return urls;
   }, []);
 
+  // Guarda la imagen que se está viendo cada vez que cambia, para poder
+  // restaurarla la próxima vez que se abra la galería o se vuelva a este set.
+  useEffect(() => {
+    if (activeSetId && images.length > 0) {
+      localStorage.setItem(`galleryLastViewed_${activeSetId}`, String(mainIdx));
+    }
+  }, [mainIdx, activeSetId, images.length]);
+
   useEffect(() => {
     const init = async () => {
       const setsData = await fetchSets();
@@ -81,7 +102,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       if (stored) {
         const urls = buildImageUrls(stored, setsData, progressData);
         setImages(urls);
-        setMainIdx(urls.length > 0 ? urls.length - 1 : 0);
+        setMainIdx(getLastViewedIdx(stored, urls.length));
         setImageLoadErrors({});
       }
     };
@@ -105,7 +126,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     if (!activeSetId) { setImages([]); return; }
     const urls = buildImageUrls(activeSetId, setsRef.current, progressRef.current);
     setImages(urls);
-    setMainIdx(urls.length > 0 ? urls.length - 1 : 0);
+    setMainIdx(getLastViewedIdx(activeSetId, urls.length));
     setImageLoadErrors({});
   }, [activeSetId, buildImageUrls]);
 
@@ -116,7 +137,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     setImageLoadErrors({});
     const urls = buildImageUrls(id, setsRef.current, progressRef.current);
     setImages(urls);
-    setMainIdx(urls.length > 0 ? urls.length - 1 : 0);
+    setMainIdx(getLastViewedIdx(id, urls.length));
   };
 
   const handleDeleteSet = async () => {
@@ -133,6 +154,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       await supabase.from('gallery_progress').delete().eq('set_id', activeSetId);
       await supabase.from('gallery_sets').delete().eq('id', activeSetId);
       localStorage.removeItem('galleryActiveSet');
+      localStorage.removeItem(`galleryLastViewed_${activeSetId}`);
       setActiveSetId(null);
       setImages([]);
       setMainIdx(0);
