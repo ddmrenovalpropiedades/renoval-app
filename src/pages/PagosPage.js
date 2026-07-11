@@ -370,9 +370,16 @@ const panelStyles = {
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
+const METRICS_USER_OPTIONS = [
+  { value: 'DD', label: 'DD', color: '#1565C0' },
+  { value: 'FD', label: 'FD', color: '#2E7D32' },
+  { value: 'SIN_ASIGNAR', label: 'Sin asignar', color: '#5f6368' },
+];
+
 function MetricsView({ onClose }) {
   const [pagos, setPagos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userFilter, setUserFilter] = useState([]);
   const fmt = formatCLP;
 
   useEffect(() => {
@@ -394,38 +401,37 @@ function MetricsView({ onClose }) {
     fetchAll();
   }, []);
 
+  const toggleUserFilter = (val) => setUserFilter(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]);
+
+  // Sin filtro seleccionado = todas las CxC (DD + FD + sin asignar), igual
+  // que el comportamiento original. Con filtro, se consideran solo las CxC
+  // cuyo "pagado por" matchee alguna de las opciones tildadas — "Sin
+  // asignar" agrupa las que no tienen ni DD ni FD en esa columna (pagos
+  // antiguos sin ese dato).
+  const filteredPagos = userFilter.length === 0 ? pagos : pagos.filter(p => userFilter.some(v => v === 'SIN_ASIGNAR' ? !p.pagado_por : p.pagado_por === v));
+
   // ── TOTALES ──────────────────────────────────────────────────
   // Total fuera: P + PG + (D con caja "FUERA", es decir fecha_caja futura)
-  const totalFuera = pagos
+  const totalFuera = filteredPagos
     .filter(p => p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p))
     .reduce((s, p) => s + (p.cxc || 0), 0);
-  const pendientesRenoval = pagos.filter(p => p.estado === 'P').reduce((s, p) => s + (p.cxc || 0), 0);
-  const pendientesGarantia = pagos.filter(p => p.estado === 'PG').reduce((s, p) => s + (p.cxc || 0), 0);
+  const pendientesRenoval = filteredPagos.filter(p => p.estado === 'P').reduce((s, p) => s + (p.cxc || 0), 0);
+  const pendientesGarantia = filteredPagos.filter(p => p.estado === 'PG').reduce((s, p) => s + (p.cxc || 0), 0);
   // Solo descontado: todas las CxC cuya columna CAJA vale "FUERA"
-  const soloDescontado = pagos.filter(p => isCajaFuera(p)).reduce((s, p) => s + (p.cxc || 0), 0);
+  const soloDescontado = filteredPagos.filter(p => isCajaFuera(p)).reduce((s, p) => s + (p.cxc || 0), 0);
 
-  // ── Resto de bloques (sin cambios por ahora) ────────────────────
-  const noD = pagos.filter(p => p.estado !== 'D');
   const esReciente = (p) => antiguedad(p.fecha) === '- 3 meses';
   const esAntigua = (p) => antiguedad(p.fecha) === '+ 3 meses';
-  const totalRecientes = pagos
+  const totalRecientes = filteredPagos
     .filter(p => esReciente(p) && (p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p)))
     .reduce((s, p) => s + (p.cxc || 0), 0);
-  const pRecientes = pagos.filter(p => p.estado === 'P' && esReciente(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-  const pgRecientes = pagos.filter(p => p.estado === 'PG' && esReciente(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-  const totalAntiguas = pagos
+  const pRecientes = filteredPagos.filter(p => p.estado === 'P' && esReciente(p)).reduce((s, p) => s + (p.cxc || 0), 0);
+  const pgRecientes = filteredPagos.filter(p => p.estado === 'PG' && esReciente(p)).reduce((s, p) => s + (p.cxc || 0), 0);
+  const totalAntiguas = filteredPagos
     .filter(p => esAntigua(p) && (p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p)))
     .reduce((s, p) => s + (p.cxc || 0), 0);
-  const pAntiguas = pagos.filter(p => p.estado === 'P' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-  const pgAntiguas = pagos.filter(p => p.estado === 'PG' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-  const dd = noD.filter(p => p.pagado_por === 'DD');
-  const fd = noD.filter(p => p.pagado_por === 'FD');
-  const nn = noD.filter(p => !p.pagado_por);
-  const cxcDDAnt = dd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcDDRec = dd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcFDAnt = fd.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcFDRec = fd.filter(p => antiguedad(p.fecha) === '- 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcNNAnt = nn.filter(p => antiguedad(p.fecha) === '+ 3 meses').reduce((s, p) => s + (p.cxc || 0), 0);
+  const pAntiguas = filteredPagos.filter(p => p.estado === 'P' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
+  const pgAntiguas = filteredPagos.filter(p => p.estado === 'PG' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
 
   const MetricCard = ({ title, rows }) => (
     <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 12, padding: '16px 20px' }}>
@@ -442,10 +448,33 @@ function MetricsView({ onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
       <div style={{ background: '#f8f9fa', borderRadius: 16, width: 640, maxHeight: '90vh', overflow: 'auto', padding: 28, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans','Segoe UI',sans-serif" }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#202124' }}>Métricas de Pagos</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5f6368' }}><X size={20} /></button>
         </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#5f6368' }}>Filtrar por:</span>
+          {METRICS_USER_OPTIONS.map(opt => {
+            const active = userFilter.includes(opt.value);
+            return (
+              <button key={opt.value} onClick={() => toggleUserFilter(opt.value)}
+                style={{
+                  padding: '5px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+                  border: `1px solid ${active ? opt.color : '#dadce0'}`,
+                  background: active ? opt.color + '22' : '#fff',
+                  color: active ? opt.color : '#5f6368',
+                  fontWeight: active ? 700 : 400,
+                }}>
+                {opt.label}
+              </button>
+            );
+          })}
+          {userFilter.length > 0 && (
+            <button onClick={() => setUserFilter([])} style={{ padding: '5px 10px', borderRadius: 20, border: 'none', background: 'none', fontSize: 12, cursor: 'pointer', color: '#ea4335', fontFamily: 'inherit' }}>Limpiar</button>
+          )}
+        </div>
+
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 }}>Cargando métricas...</div>
         ) : (
@@ -466,9 +495,6 @@ function MetricsView({ onClose }) {
               ['P antiguas', fmt(pAntiguas)],
               ['PG antiguas', fmt(pgAntiguas)],
             ]} />
-            <MetricCard title="DD" rows={[['CxC antiguas', fmt(cxcDDAnt)],['CxC recientes', fmt(cxcDDRec)]]} />
-            <MetricCard title="FD" rows={[['CxC antiguas', fmt(cxcFDAnt)],['CxC recientes', fmt(cxcFDRec)]]} />
-            {cxcNNAnt > 0 && <MetricCard title="N/N" rows={[['CxC antiguas', fmt(cxcNNAnt)]]} />}
           </div>
         )}
       </div>
