@@ -87,6 +87,14 @@ const antiguedad = (fechaStr) => {
 
 const today = () => new Date().toISOString().split('T')[0];
 
+// La columna CAJA es calculada, no editable a mano: vale "FUERA" cuando el
+// pago está en estado "D" (descontado) y su fecha de caja todavía no llegó
+// (es posterior a hoy). En cualquier otro caso queda vacía. Se recalcula en
+// cada render con la fecha de hoy, así nunca queda desactualizada (a
+// diferencia de guardar el texto "FUERA" a mano, que dejaba de ser válido
+// apenas pasaba la fecha y nadie lo actualizaba).
+const isCajaFuera = (pago) => pago?.estado === 'D' && !!pago?.fecha_caja && pago.fecha_caja > today();
+
 const ESTADO_COLORS = {
   P:  { bg: '#fce8e6', color: '#c62828' },
   D:  { bg: '#e6f4ea', color: '#2e7d32' },
@@ -374,7 +382,7 @@ function MetricsView({ onClose }) {
       let from = 0;
       const batchSize = 1000;
       while (true) {
-        const { data } = await supabase.from('pagos').select('cxc, estado, fecha, pagado_por').range(from, from + batchSize - 1);
+        const { data } = await supabase.from('pagos').select('cxc, estado, fecha, pagado_por, fecha_caja').range(from, from + batchSize - 1);
         if (!data || data.length === 0) break;
         all = [...all, ...data];
         if (data.length < batchSize) break;
@@ -386,9 +394,18 @@ function MetricsView({ onClose }) {
     fetchAll();
   }, []);
 
+  // ── TOTALES ──────────────────────────────────────────────────
+  // Total fuera: P + PG + (D con caja "FUERA", es decir fecha_caja futura)
+  const totalFuera = pagos
+    .filter(p => p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p))
+    .reduce((s, p) => s + (p.cxc || 0), 0);
+  const pendientesRenoval = pagos.filter(p => p.estado === 'P').reduce((s, p) => s + (p.cxc || 0), 0);
+  const pendientesGarantia = pagos.filter(p => p.estado === 'PG').reduce((s, p) => s + (p.cxc || 0), 0);
+  // Solo descontado: todas las CxC cuya columna CAJA vale "FUERA"
+  const soloDescontado = pagos.filter(p => isCajaFuera(p)).reduce((s, p) => s + (p.cxc || 0), 0);
+
+  // ── Resto de bloques (sin cambios por ahora) ────────────────────
   const noD = pagos.filter(p => p.estado !== 'D');
-  const soloDescontado = pagos.filter(p => p.estado === 'D').reduce((s, p) => s + (p.cxc || 0), 0);
-  const total = noD.reduce((s, p) => s + (p.cxc || 0), 0);
   const recientes = noD.filter(p => antiguedad(p.fecha) === '- 3 meses');
   const antiguos  = noD.filter(p => antiguedad(p.fecha) === '+ 3 meses');
   const cxcRecientes = recientes.reduce((s, p) => s + (p.cxc || 0), 0);
@@ -425,7 +442,12 @@ function MetricsView({ onClose }) {
           <div style={{ padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 }}>Cargando métricas...</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <MetricCard title="Totales" rows={[['Total fuera', fmt(total), '#ea4335'],['CxC totales', fmt(total)],['Solo descontado', fmt(soloDescontado)]]} />
+            <MetricCard title="Totales" rows={[
+              ['Total fuera', fmt(totalFuera), '#ea4335'],
+              ['Pendientes Renoval (P)', fmt(pendientesRenoval)],
+              ['Pendientes garantía (PG)', fmt(pendientesGarantia)],
+              ['Solo descontado', fmt(soloDescontado)],
+            ]} />
             <MetricCard title="Recientes" rows={[['CxC -3 meses', fmt(cxcRecientes)]]} />
             <MetricCard title="Antiguos" rows={[['CxC antiguas', fmt(cxcAntiguos)],['CxC +3 meses reciente', fmt(cxcAntiguos)],['CxC +3 meses', fmt(cxcAntiguos), '#ea4335']]} />
             <MetricCard title="DD" rows={[['CxC antiguas', fmt(cxcDDAnt)],['CxC recientes', fmt(cxcDDRec)]]} />
@@ -451,6 +473,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
   const ant = antiguedad(pago.fecha);
   const estadoStyle = ESTADO_COLORS[pago.estado] || {};
   const hasNotes = !!(pago.notas && pago.notas.trim());
+  const cajaFuera = isCajaFuera(pago);
 
   return (
     <tr style={{ background: hovered ? '#f8f9fa' : '#fff', transition: 'background 0.1s' }}
@@ -473,7 +496,10 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
       <td style={s.tdCenter}><MoneyInput value={pago.comision} onChange={v => update('comision', v)} /></td>
       <td style={s.tdCenter}><DatePicker value={pago.fecha_caja} onChange={v => update('fecha_caja', v)} /></td>
       <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: 600, color: ant === '+ 3 meses' ? '#ea4335' : '#34a853', whiteSpace: 'nowrap' }}>{ant}</td>
-      <td style={s.tdCenter}><InlineText value={pago.caja} onChange={v => update('caja', v)} /></td>
+      <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: cajaFuera ? 700 : 400, color: cajaFuera ? '#c62828' : '#dadce0' }}
+        title="Calculado automáticamente: 'FUERA' cuando el estado es D y la fecha de caja aún no llega">
+        {cajaFuera ? 'FUERA' : '—'}
+      </td>
       <td style={s.tdActions}>
         <button onClick={() => onOpenNotes(pago)} style={{ ...s.actionBtn, background: hasNotes ? '#e8f0fe' : 'none', color: hasNotes ? '#1a73e8' : '#9aa0a6' }} title="Notas"><FileText size={13} /></button>
         {confirmDelete ? (
@@ -490,14 +516,15 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
 }
 
 function NewPagoRow({ onSave, onCancel, maxPosition }) {
-  const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), pagado_por: '', tipo: '', comision: '', fecha_caja: '', caja: '', notas: '' });
+  const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), pagado_por: '', tipo: '', comision: '', fecha_caja: '', notas: '' });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const handleSave = async () => {
     if (!form.propiedad.trim()) return;
     const newPosition = (maxPosition || 0) + 1;
-    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, caja: form.caja || null, notas: form.notas || null, position: newPosition }).select().single();
+    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, notas: form.notas || null, position: newPosition }).select().single();
     if (data) onSave(data);
   };
+  const previewCajaFuera = isCajaFuera({ estado: form.estado, fecha_caja: form.fecha_caja });
   return (
     <tr style={{ background: '#f0f7ff' }}>
       <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} placeholder="Propiedad *" hasError={false} /></td>
@@ -510,7 +537,7 @@ function NewPagoRow({ onSave, onCancel, maxPosition }) {
       <td style={s.tdCenter}><MoneyInput value={form.comision} onChange={v => set('comision', v)} alwaysVisible /></td>
       <td style={s.tdCenter}><DatePicker value={form.fecha_caja} onChange={v => set('fecha_caja', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
       <td style={{ ...s.tdCenter, fontSize: 11, color: '#9aa0a6' }}>{form.fecha ? antiguedad(form.fecha) : '—'}</td>
-      <td style={s.tdCenter}><input value={form.caja} onChange={e => set('caja', e.target.value)} style={{ ...inputStyle, width: 60 }} /></td>
+      <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: previewCajaFuera ? 700 : 400, color: previewCajaFuera ? '#c62828' : '#dadce0' }}>{previewCajaFuera ? 'FUERA' : '—'}</td>
       <td style={s.tdActions}>
         <button onClick={handleSave} style={{ ...s.actionBtn, background: '#e6f4ea', color: '#34a853' }} title="Guardar">✓</button>
         <button onClick={onCancel} style={{ ...s.actionBtn, color: '#5f6368' }} title="Cancelar"><X size={13} /></button>
@@ -592,7 +619,7 @@ export default function PagosPage() {
     }
     if (searchText.trim()) {
       const words = normalize(searchText.trim()).split(/\s+/).filter(Boolean);
-      const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo', 'caja'];
+      const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo'];
       for (const word of words) query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
     }
     const from = currentPage * PAGE_SIZE;
@@ -627,7 +654,10 @@ export default function PagosPage() {
       if (data.length < 1000) break;
       from += 1000;
     }
-    exportToExcel(all, [
+    // La columna Caja se calcula al momento de exportar (no se guarda en la
+    // base), para que el Excel siempre refleje el estado actual.
+    const withComputedCaja = all.map(p => ({ ...p, caja: isCajaFuera(p) ? 'FUERA' : '' }));
+    exportToExcel(withComputedCaja, [
       { key: 'propiedad',   label: 'Propiedad' },
       { key: 'descripcion', label: 'Descripción' },
       { key: 'cxc',         label: 'CxC' },
