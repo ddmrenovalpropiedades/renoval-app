@@ -407,9 +407,13 @@ function MetricsView({ onClose }) {
   // ── Resto de bloques (sin cambios por ahora) ────────────────────
   const noD = pagos.filter(p => p.estado !== 'D');
   const recientes = noD.filter(p => antiguedad(p.fecha) === '- 3 meses');
-  const antiguos  = noD.filter(p => antiguedad(p.fecha) === '+ 3 meses');
+  const esAntigua = (p) => antiguedad(p.fecha) === '+ 3 meses';
   const cxcRecientes = recientes.reduce((s, p) => s + (p.cxc || 0), 0);
-  const cxcAntiguos  = antiguos.reduce((s, p) => s + (p.cxc || 0), 0);
+  const totalAntiguas = pagos
+    .filter(p => esAntigua(p) && (p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p)))
+    .reduce((s, p) => s + (p.cxc || 0), 0);
+  const pAntiguas = pagos.filter(p => p.estado === 'P' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
+  const pgAntiguas = pagos.filter(p => p.estado === 'PG' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
   const dd = noD.filter(p => p.pagado_por === 'DD');
   const fd = noD.filter(p => p.pagado_por === 'FD');
   const nn = noD.filter(p => !p.pagado_por);
@@ -449,7 +453,11 @@ function MetricsView({ onClose }) {
               ['Solo descontado', fmt(soloDescontado)],
             ]} />
             <MetricCard title="Recientes" rows={[['CxC -3 meses', fmt(cxcRecientes)]]} />
-            <MetricCard title="Antiguos" rows={[['CxC antiguas', fmt(cxcAntiguos)],['CxC +3 meses reciente', fmt(cxcAntiguos)],['CxC +3 meses', fmt(cxcAntiguos), '#ea4335']]} />
+            <MetricCard title="Antiguos" rows={[
+              ['Total antiguas', fmt(totalAntiguas), '#ea4335'],
+              ['P antiguas', fmt(pAntiguas)],
+              ['PG antiguas', fmt(pgAntiguas)],
+            ]} />
             <MetricCard title="DD" rows={[['CxC antiguas', fmt(cxcDDAnt)],['CxC recientes', fmt(cxcDDRec)]]} />
             <MetricCard title="FD" rows={[['CxC antiguas', fmt(cxcFDAnt)],['CxC recientes', fmt(cxcFDRec)]]} />
             {cxcNNAnt > 0 && <MetricCard title="N/N" rows={[['CxC antiguas', fmt(cxcNNAnt)]]} />}
