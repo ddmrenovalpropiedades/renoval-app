@@ -62,6 +62,27 @@ function MoneyInput({ value, onChange, readOnly = false }) {
   );
 }
 
+// Estos dos componentes deben vivir a nivel de módulo (no adentro de
+// ArrendadaRow). Si se definen dentro de otro componente, React los trata
+// como un tipo de componente nuevo en cada render — y como escribir en el
+// input dispara un re-render (setForm), el <input> del DOM se destruye y se
+// vuelve a crear después de CADA carácter, perdiendo el foco cada vez.
+function InlineInput({ value, onChange, style = {} }) {
+  return (
+    <input value={value || ''} onChange={e => onChange(e.target.value)}
+      style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', ...style }} />
+  );
+}
+function InlineSel({ value, onChange, opts }) {
+  return (
+    <select value={value || ''} onChange={e => onChange(e.target.value)}
+      style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', width: '100%' }}>
+      <option value="">—</option>
+      {opts.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
 const TIPO_OPTS = ['Nuevo','Renovación'];
 const ADMIN_OPTS = ['Sí','No'];
 const E1_OPTS = ['DD','FD'];
@@ -74,6 +95,7 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const merged = { ...row, ...edits };
   const set = (k, v) => setEdits(prev => ({ ...prev, [k]: v }));
+  const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const handleSave = async () => {
     await supabase.from('arrendadas').update(edits).eq('id', row.id);
@@ -94,36 +116,24 @@ function ArrendadaRow({ row, onUpdate, onDelete }) {
     await onDelete(row.id);
   };
 
-  const InlineInput = ({ field, style = {} }) => (
-    <input value={form[field] || ''} onChange={e => setForm(p => ({...p, [field]: e.target.value}))}
-      style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', ...style }} />
-  );
-  const InlineSel = ({ field, opts }) => (
-    <select value={form[field] || ''} onChange={e => setForm(p => ({...p, [field]: e.target.value}))}
-      style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', width: '100%' }}>
-      <option value="">—</option>
-      {opts.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
-
   if (editing) {
     return (
       <tr style={{ background: '#f0f7ff', borderBottom: '1px solid #e8eaed' }}>
-        <td style={styles.td}><InlineInput field="propiedad" /></td>
-        <td style={styles.tdCenter}><InlineInput field="arriendo" style={{ width: 80 }} /></td>
-        <td style={styles.tdCenter}><InlineInput field="comision" style={{ width: 80 }} /></td>
-        <td style={styles.tdCenter}><InlineSel field="tipo" opts={TIPO_OPTS} /></td>
-        <td style={styles.tdCenter}><InlineSel field="admin" opts={ADMIN_OPTS} /></td>
-        <td style={styles.tdCenter}><InlineSel field="e1" opts={E1_OPTS} /></td>
-        <td style={styles.tdCenter}><InlineSel field="e2" opts={E2_OPTS} /></td>
-        <td style={styles.tdCenter}><input type="date" value={form.entrega || ''} onChange={e => setForm(p => ({...p, entrega: e.target.value}))} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} /></td>
-        <td style={styles.tdCenter}><EstadoCell value={form.contrato} onChange={v => setForm(p => ({...p, contrato: v}))} /></td>
-        <td style={styles.tdCenter}><EstadoCell value={form.liquidacion} onChange={v => setForm(p => ({...p, liquidacion: v}))} /></td>
-        <td style={styles.tdCenter}><input type="date" value={form.fecha_gar || ''} onChange={e => setForm(p => ({...p, fecha_gar: e.target.value}))} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} /></td>
-        <td style={styles.tdCenter}><EstadoCell value={form.dev_gar} onChange={v => setForm(p => ({...p, dev_gar: v}))} /></td>
-        <td style={styles.tdCenter}><EstadoCell value={form.cuentas} onChange={v => setForm(p => ({...p, cuentas: v}))} /></td>
-        <td style={styles.tdCenter}><InlineInput field="promocion" style={{ width: 70 }} /></td>
-        <td style={styles.tdCenter}><InlineInput field="meses" /></td>
+        <td style={styles.td}><InlineInput value={form.propiedad} onChange={v => setF('propiedad', v)} /></td>
+        <td style={styles.tdCenter}><InlineInput value={form.arriendo} onChange={v => setF('arriendo', v)} style={{ width: 80 }} /></td>
+        <td style={styles.tdCenter}><InlineInput value={form.comision} onChange={v => setF('comision', v)} style={{ width: 80 }} /></td>
+        <td style={styles.tdCenter}><InlineSel value={form.tipo} onChange={v => setF('tipo', v)} opts={TIPO_OPTS} /></td>
+        <td style={styles.tdCenter}><InlineSel value={form.admin} onChange={v => setF('admin', v)} opts={ADMIN_OPTS} /></td>
+        <td style={styles.tdCenter}><InlineSel value={form.e1} onChange={v => setF('e1', v)} opts={E1_OPTS} /></td>
+        <td style={styles.tdCenter}><InlineSel value={form.e2} onChange={v => setF('e2', v)} opts={E2_OPTS} /></td>
+        <td style={styles.tdCenter}><input type="date" value={form.entrega || ''} onChange={e => setF('entrega', e.target.value)} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.contrato} onChange={v => setF('contrato', v)} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.liquidacion} onChange={v => setF('liquidacion', v)} /></td>
+        <td style={styles.tdCenter}><input type="date" value={form.fecha_gar || ''} onChange={e => setF('fecha_gar', e.target.value)} style={{ border: '1px solid #dadce0', borderRadius: 6, padding: '3px 4px', fontSize: 11, outline: 'none' }} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.dev_gar} onChange={v => setF('dev_gar', v)} /></td>
+        <td style={styles.tdCenter}><EstadoCell value={form.cuentas} onChange={v => setF('cuentas', v)} /></td>
+        <td style={styles.tdCenter}><InlineInput value={form.promocion} onChange={v => setF('promocion', v)} style={{ width: 70 }} /></td>
+        <td style={styles.tdCenter}><InlineInput value={form.meses} onChange={v => setF('meses', v)} /></td>
         <td style={styles.tdActions}>
           <button onClick={handleEditSave} style={styles.actionBtnGreen}><Check size={13} /></button>
           <button onClick={() => setEditing(false)} style={styles.actionBtnGray}><X size={13} /></button>
