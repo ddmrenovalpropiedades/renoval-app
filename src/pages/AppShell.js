@@ -192,7 +192,9 @@ export default function AppShell() {
       <aside style={{ ...styles.sidebar, width: collapsed ? 64 : 240 }}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
         <div style={styles.sidebarHeader}>
-          <div style={styles.logoMark}>R</div>
+          <div style={styles.logoMark}>
+            <img src="/Logo_Arbol.png" alt="Renoval" style={styles.logoImg} />
+          </div>
           {!collapsed && <span style={styles.brandName}>Renoval</span>}
         </div>
         <nav style={styles.nav}>
@@ -281,7 +283,8 @@ const styles = {
   root: { display: 'flex', height: '100vh', background: '#f8f9fa', fontFamily: "'Google Sans','Segoe UI',sans-serif", position: 'relative' },
   sidebar: { background: '#fff', borderRight: '1px solid #e8eaed', display: 'flex', flexDirection: 'column', transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)', overflow: 'hidden', flexShrink: 0, position: 'absolute', top: 0, left: 0, height: '100vh', zIndex: 100, boxShadow: '2px 0 8px rgba(0,0,0,0.08)' },
   sidebarHeader: { display: 'flex', alignItems: 'center', padding: '16px 12px', borderBottom: '1px solid #e8eaed', gap: 10, minHeight: 60 },
-  logoMark: { width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#1a73e8,#0d47a1)', color: '#fff', fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  logoMark: { width: 34, height: 34, borderRadius: 8, background: '#fff', border: '1px solid #e8eaed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  logoImg: { width: 26, height: 26, objectFit: 'contain' },
   brandName: { fontSize: 17, fontWeight: 700, color: '#202124', flex: 1, whiteSpace: 'nowrap' },
   nav: { flex: 1, padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 2 },
   navSpacer: { flex: 1 },
