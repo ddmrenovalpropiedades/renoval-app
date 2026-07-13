@@ -149,6 +149,16 @@ async function createAutoTasks(trigger, propiedad, e1, e2, tipo, fechaEntrega) {
       continue;
     }
     const category = trigger === 'pizarra_nueva_propiedad' ? 'Publicar/Arrendar' : 'Llegada arrendatario';
+
+    // Guardia anti-duplicados: si ya existe una tarea activa idéntica (mismo
+    // dueño, categoría y título), no se vuelve a crear. Protege contra doble
+    // click / doble envío del formulario que dispara este trigger dos veces
+    // seguidas para la misma propiedad.
+    const { data: existing } = await supabase.from('tasks').select('id')
+      .eq('owner_email', assigneeEmail).eq('category', category)
+      .eq('title', taskTitle).eq('completed', false).limit(1);
+    if (existing && existing.length > 0) continue;
+
     const { data: parentTask } = await supabase.from('tasks').insert({ owner_email: assigneeEmail, title: taskTitle, category, completed: false, recurrence: 'none', position: -Date.now() }).select().single();
     if (!parentTask) continue;
     for (let i = 0; i < (tpl.subtasks || []).length; i++) {
@@ -332,6 +342,8 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [submittingNew, setSubmittingNew] = useState(false);
+  const submittingNewRef = useRef(false); // chequeo sincrónico: el state solo es para el estilo visual
 
   const hasEdits = !isNew && JSON.stringify(normalizeForCompare(form)) !== JSON.stringify(normalizeForCompare(row));
   const hasEditsRef = useRef(false);
@@ -358,8 +370,16 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const handleNewSave = async () => {
     setAttempted(true);
     if (!form.propiedad.trim() || !form.fecha_salida || !form.e1 || !form.e2 || !form.tipo || !form.admin) return;
-    await onSave(form);
-    if (onCancelNew) onCancelNew();
+    if (submittingNewRef.current) return; // evita doble-click: doble insert + doble creación de tareas
+    submittingNewRef.current = true;
+    setSubmittingNew(true);
+    try {
+      await onSave(form);
+      if (onCancelNew) onCancelNew();
+    } finally {
+      submittingNewRef.current = false;
+      setSubmittingNew(false);
+    }
   };
 
   const handlePropSelect = ({ e1, e2 }) => {
@@ -421,7 +441,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       <td style={styles.tdCenter}><div style={reqWrapper('admin')}><select value={form.admin||''} onChange={e=>setForm(p=>({...p,admin:e.target.value}))} style={selectInsideWrapper}><option value="">—</option><option>Sí</option><option>No</option></select></div></td>
       <td style={styles.tdCenter}><span style={{ color: '#dadce0', fontSize: 11 }}>—</span></td>
       <td style={styles.tdActions}>
-        <button onClick={handleNewSave} style={styles.actionBtnGreen}><Check size={14} /></button>
+        <button onClick={handleNewSave} disabled={submittingNew} style={{ ...styles.actionBtnGreen, opacity: submittingNew ? 0.5 : 1, cursor: submittingNew ? 'not-allowed' : 'pointer' }}><Check size={14} /></button>
         <button onClick={onCancelNew} style={styles.actionBtnGray}><X size={14} /></button>
       </td>
     </tr>
@@ -481,6 +501,7 @@ export default function PizarraArriendoPage() {
   const [loading, setLoading] = useState(true);
   const [addingNew, setAddingNew] = useState(false);
   const [rentingRow, setRentingRow] = useState(null);
+  const rentingSubmitRef = useRef(false); // guardia sincrónica contra doble-click en "Confirmar arriendo"
   const [urlModalRow, setUrlModalRow] = useState(null);
   const [disponibilidadRow, setDisponibilidadRow] = useState(null);
   const [filterE, setFilterE] = useState([]);
@@ -577,22 +598,28 @@ export default function PizarraArriendoPage() {
   };
 
   const handleRentedConfirm = async ({ comision, entrega, meses }) => {
+    if (rentingSubmitRef.current) return; // evita doble-click: doble insert en arrendadas + doble creación de tareas
+    rentingSubmitRef.current = true;
     const row = rentingRow;
     setRentingRow(null);
-    let fechaGar = null;
-    if (row.fecha_salida) {
-      const parts = String(row.fecha_salida).split('T')[0].split('-');
-      const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]), 12, 0, 0);
-      d.setDate(d.getDate() + 60);
-      fechaGar = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    try {
+      let fechaGar = null;
+      if (row.fecha_salida) {
+        const parts = String(row.fecha_salida).split('T')[0].split('-');
+        const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]), 12, 0, 0);
+        d.setDate(d.getDate() + 60);
+        fechaGar = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      }
+      const now = new Date();
+      const mes = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+      await supabase.from('arrendadas_meses').upsert({ mes }, { onConflict: 'mes' });
+      await supabase.from('arrendadas').insert({ mes, propiedad: row.propiedad, arriendo: row.precio, comision, tipo: row.tipo, admin: row.admin, e1: row.e1, e2: row.e2, entrega: entrega || null, contrato: 'Pendiente', liquidacion: 'Pendiente', fecha_gar: fechaGar, dev_gar: 'Pendiente', cuentas: 'Pendiente', promocion: row.promo || null, meses: meses || null });
+      await createAutoTasks('pizarra_arrendada', row.propiedad, row.e1, row.e2, row.tipo, entrega);
+      await supabase.from('pizarra').delete().eq('id', row.id);
+      setRows(prev => prev.filter(r => r.id !== row.id));
+    } finally {
+      rentingSubmitRef.current = false;
     }
-    const now = new Date();
-    const mes = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    await supabase.from('arrendadas_meses').upsert({ mes }, { onConflict: 'mes' });
-    await supabase.from('arrendadas').insert({ mes, propiedad: row.propiedad, arriendo: row.precio, comision, tipo: row.tipo, admin: row.admin, e1: row.e1, e2: row.e2, entrega: entrega || null, contrato: 'Pendiente', liquidacion: 'Pendiente', fecha_gar: fechaGar, dev_gar: 'Pendiente', cuentas: 'Pendiente', promocion: row.promo || null, meses: meses || null });
-    await createAutoTasks('pizarra_arrendada', row.propiedad, row.e1, row.e2, row.tipo, entrega);
-    await supabase.from('pizarra').delete().eq('id', row.id);
-    setRows(prev => prev.filter(r => r.id !== row.id));
   };
 
   const HEADERS = [
