@@ -17,10 +17,14 @@ export default async function handler(req, res) {
   }
 
   const target = new Date();
-  target.setDate(target.getDate() - 90);
+  target.setDate(target.getDate() - 60);
   const targetStr = target.toISOString().split('T')[0];
 
   // Cargar templates activos de pagos_90_dias
+  // (se mantiene este nombre de trigger en la tabla task_templates aunque
+  // el umbral ahora sea de 60 días / 2 meses, para no romper los templates
+  // ya configurados en Supabase — si prefieres renombrarlo, hay que
+  // actualizar tanto este valor como la columna `trigger` en la tabla)
   const { data: templates } = await supabase
     .from('task_templates')
     .select('*')
