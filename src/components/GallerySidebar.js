@@ -27,6 +27,35 @@ const getLastViewedIdx = (setId, urlsLen) => {
   return urlsLen - 1;
 };
 
+// Cuántas imágenes del set conocíamos la última vez que se revisó (ya sea
+// porque se abrió la galería, o porque se detectó un desbloqueo en vivo).
+// Se usa para distinguir "hay imágenes nuevas desde la última vez" de
+// "el usuario simplemente estaba viendo una foto anterior a propósito".
+const getKnownCount = (setId) => {
+  if (!setId) return 0;
+  const raw = localStorage.getItem(`galleryKnownCount_${setId}`);
+  const n = parseInt(raw, 10);
+  return isNaN(n) ? 0 : n;
+};
+const setKnownCount = (setId, count) => {
+  if (!setId) return;
+  localStorage.setItem(`galleryKnownCount_${setId}`, String(count));
+};
+
+// Regla pedida: si se desbloqueó algo nuevo desde la última vez que se supo
+// de este set, mostrar esa imagen nueva (y registrar que ya se conoce). Si
+// no hay nada nuevo, respetar la última que el usuario vio manualmente.
+const resolveMainIdx = (setId, urlsLen) => {
+  if (!setId || urlsLen === 0) return 0;
+  const known = getKnownCount(setId);
+  if (urlsLen > known) {
+    setKnownCount(setId, urlsLen);
+    localStorage.setItem(`galleryLastViewed_${setId}`, String(urlsLen - 1));
+    return urlsLen - 1;
+  }
+  return getLastViewedIdx(setId, urlsLen);
+};
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   useEffect(() => {
@@ -51,6 +80,14 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
   const [newSetName, setNewSetName] = useState('');
   const [imageLoadErrors, setImageLoadErrors] = useState({});
   const [deletingSet, setDeletingSet] = useState(false);
+
+  // El contador unlockedSinceOpen no se resetea en el padre al cerrar la
+  // galería, así que puede llegar ya con valor > 0 en un nuevo montaje
+  // (por desbloqueos ocurridos mientras la galería estaba cerrada). Guardamos
+  // el valor con el que llegó al montar como base, y solo reaccionamos
+  // cuando SUPERA esa base — es decir, solo ante un desbloqueo nuevo
+  // ocurrido mientras la galería está efectivamente abierta.
+  const initialUnlockRef = useRef(unlockedSinceOpen);
 
   const setsRef = useRef(sets);
   const progressRef = useRef(progress);
@@ -102,7 +139,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       if (stored) {
         const urls = buildImageUrls(stored, setsData, progressData);
         setImages(urls);
-        setMainIdx(getLastViewedIdx(stored, urls.length));
+        setMainIdx(resolveMainIdx(stored, urls.length));
         setImageLoadErrors({});
       }
     };
@@ -110,12 +147,13 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
   }, [fetchSets, fetchProgress, buildImageUrls]);
 
   useEffect(() => {
-    if (unlockedSinceOpen > 0) {
+    if (unlockedSinceOpen > initialUnlockRef.current) {
       fetchProgress().then(progressData => {
         if (activeSetId) {
           const urls = buildImageUrls(activeSetId, setsRef.current, progressData);
           setImages(urls);
           setMainIdx(urls.length > 0 ? urls.length - 1 : 0);
+          setKnownCount(activeSetId, urls.length);
           setImageLoadErrors({});
         }
       });
@@ -126,7 +164,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     if (!activeSetId) { setImages([]); return; }
     const urls = buildImageUrls(activeSetId, setsRef.current, progressRef.current);
     setImages(urls);
-    setMainIdx(getLastViewedIdx(activeSetId, urls.length));
+    setMainIdx(resolveMainIdx(activeSetId, urls.length));
     setImageLoadErrors({});
   }, [activeSetId, buildImageUrls]);
 
@@ -137,7 +175,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     setImageLoadErrors({});
     const urls = buildImageUrls(id, setsRef.current, progressRef.current);
     setImages(urls);
-    setMainIdx(getLastViewedIdx(id, urls.length));
+    setMainIdx(resolveMainIdx(id, urls.length));
   };
 
   const handleDeleteSet = async () => {
@@ -155,6 +193,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       await supabase.from('gallery_sets').delete().eq('id', activeSetId);
       localStorage.removeItem('galleryActiveSet');
       localStorage.removeItem(`galleryLastViewed_${activeSetId}`);
+      localStorage.removeItem(`galleryKnownCount_${activeSetId}`);
       setActiveSetId(null);
       setImages([]);
       setMainIdx(0);
@@ -221,6 +260,7 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     const urls = buildImageUrls(setId, freshSets, freshProgress);
     setImages(urls);
     setMainIdx(0);
+    setKnownCount(setId, urls.length);
     setImageLoadErrors({});
     setShowNewSet(false);
     setNewSetName('');
