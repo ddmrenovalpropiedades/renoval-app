@@ -82,7 +82,7 @@ const antiguedad = (fechaStr) => {
   if (!fechaStr) return '';
   const fecha = new Date(fechaStr + 'T12:00:00');
   const diff = (new Date() - fecha) / (1000 * 60 * 60 * 24);
-  return diff > 90 ? '+ 3 meses' : '- 3 meses';
+  return diff > 60 ? '+ 2 meses' : '- 2 meses';
 };
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -420,8 +420,8 @@ function MetricsView({ onClose }) {
   // Solo descontado: todas las CxC cuya columna CAJA vale "FUERA"
   const soloDescontado = filteredPagos.filter(p => isCajaFuera(p)).reduce((s, p) => s + (p.cxc || 0), 0);
 
-  const esReciente = (p) => antiguedad(p.fecha) === '- 3 meses';
-  const esAntigua = (p) => antiguedad(p.fecha) === '+ 3 meses';
+  const esReciente = (p) => antiguedad(p.fecha) === '- 2 meses';
+  const esAntigua = (p) => antiguedad(p.fecha) === '+ 2 meses';
   const totalRecientes = filteredPagos
     .filter(p => esReciente(p) && (p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p)))
     .reduce((s, p) => s + (p.cxc || 0), 0);
@@ -537,7 +537,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
       <td style={s.tdCenter}><InlineSelect value={pago.tipo} options={TIPO_OPTIONS} onChange={v => update('tipo', v)} /></td>
       <td style={s.tdCenter}><MoneyInput value={pago.comision} onChange={v => update('comision', v)} /></td>
       <td style={s.tdCenter}><DatePicker value={pago.fecha_caja} onChange={v => update('fecha_caja', v)} /></td>
-      <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: 600, color: ant === '+ 3 meses' ? '#ea4335' : '#34a853', whiteSpace: 'nowrap' }}>{ant}</td>
+      <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: 600, color: ant === '+ 2 meses' ? '#ea4335' : '#34a853', whiteSpace: 'nowrap' }}>{ant}</td>
       <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: cajaFuera ? 700 : 400, color: cajaFuera ? '#c62828' : '#dadce0' }}
         title="Calculado automáticamente: 'FUERA' cuando el estado es D y la fecha de caja aún no llega">
         {cajaFuera ? 'FUERA' : '—'}
@@ -654,7 +654,7 @@ export default function PagosPage() {
     if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
     else if (estadoFilter.length > 1) query = query.in('estado', estadoFilter);
     if (antiguedadFilter) {
-      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 60);
       const cutoffStr = cutoff.toISOString().split('T')[0];
       if (antiguedadFilter === 'reciente') query = query.gte('fecha', cutoffStr);
       else if (antiguedadFilter === 'antigua') query = query.lt('fecha', cutoffStr);
@@ -733,7 +733,7 @@ export default function PagosPage() {
           </div>
           <div style={s.filterGroup}>{PAGADO_POR_OPTIONS.map(v => <button key={v} onClick={() => toggleFilter(filterPor, setFilterPor, v)} style={{ ...s.filterBtn, ...(filterPor.includes(v) ? s.filterBtnActive : {}) }}>{v}</button>)}</div>
           <div style={s.filterGroup}>{ESTADO_OPTIONS.map(v => <button key={v} onClick={() => toggleFilter(filterEstado, setFilterEstado, v)} style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>)}</div>
-          <div style={s.filterGroup}>{[{ val: 'reciente', label: '- 3m' }, { val: 'antigua', label: '+ 3m' }].map(({ val, label }) => <button key={val} onClick={() => { setFilterAntiguedad(prev => prev === val ? '' : val); setPage(0); }} style={{ ...s.filterBtn, ...(filterAntiguedad === val ? s.filterBtnActive : {}) }}>{label}</button>)}</div>
+          <div style={s.filterGroup}>{[{ val: 'reciente', label: '- 2m' }, { val: 'antigua', label: '+ 2m' }].map(({ val, label }) => <button key={val} onClick={() => { setFilterAntiguedad(prev => prev === val ? '' : val); setPage(0); }} style={{ ...s.filterBtn, ...(filterAntiguedad === val ? s.filterBtnActive : {}) }}>{label}</button>)}</div>
           {activeFilters && <button onClick={() => { setFilterPor([]); setFilterEstado([]); setFilterAntiguedad(''); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>}
           <button onClick={handleExport} disabled={exporting} title="Exportar a Excel"
            style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:exporting?'not-allowed':'pointer', opacity:exporting?0.6:1 }}>
