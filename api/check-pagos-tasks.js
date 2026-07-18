@@ -85,7 +85,7 @@ export default async function handler(req, res) {
       category: 'PAGOS',
       urgent: true,
       completed: false,
-      notas: noteParts.join('\n') || null,
+      notes: noteParts.join('\n') || null,
       recurrence: 'none',
       position: -Date.now(),
     }).select().single();
