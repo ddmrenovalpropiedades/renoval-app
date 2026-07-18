@@ -40,9 +40,12 @@ const insertMirrorTask = async (mirrorTask) => {
 async function handleSubtaskSideEffects(subtaskTitle, parentTask) {
   const title = (subtaskTitle || '').trim();
 
-  // Extraer nombre de propiedad del título de la tarea padre (ej: "Arriendo Av. Providencia 123")
-  const propMatch = parentTask?.title?.match(/^(?:Arriendo|Dev Gar)\s+(.+)$/i);
-  const propiedad = propMatch ? propMatch[1].trim() : null;
+  // Extraer nombre de propiedad del título de la tarea padre.
+  // "Dev Gar {{propiedad}}" mantiene su prefijo (no se tocó al quitar
+  // "Arriendo" de los templates); los títulos de arriendo ahora son
+  // directamente el nombre de la propiedad, sin prefijo.
+  const devGarMatch = parentTask?.title?.match(/^Dev Gar\s+(.+)$/i);
+  const propiedad = devGarMatch ? devGarMatch[1].trim() : (parentTask?.title || null);
 
   // Notificar dueño → aviso = Listo en Pizarra
   if (title === 'Notificar dueno' || title === 'Notificar dueño') {
