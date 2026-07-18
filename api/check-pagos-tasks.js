@@ -50,6 +50,7 @@ export default async function handler(req, res) {
 
   const created = [];
   const skipped = [];
+  const failed = [];
 
   for (const pago of (pagos || [])) {
     const ownerEmail = INITIALS_TO_EMAIL[pago.pagado_por];
@@ -91,6 +92,7 @@ export default async function handler(req, res) {
 
     if (insertError) {
       console.error(`Error creando tarea para ${pago.propiedad}:`, insertError);
+      failed.push({ propiedad: pago.propiedad, error: insertError.message });
       continue;
     }
 
@@ -139,6 +141,7 @@ export default async function handler(req, res) {
     message: `Revisión completada para ${targetStr}.`,
     created,
     skipped,
+    failed,
     ...(backupResult ? { backup: backupResult } : {}),
   });
 }
