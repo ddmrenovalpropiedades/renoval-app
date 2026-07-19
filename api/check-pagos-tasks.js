@@ -16,6 +16,14 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // Modo normal (cron diario): un solo día exacto = hoy - 60 días.
+  // Modo backfill (manual, vía query params ?low=YYYY-MM-DD&high=YYYY-MM-DD):
+  // revisa un rango de fechas en vez de un solo día. Se implementó así, en
+  // vez de como endpoint separado, porque el plan Hobby de Vercel tiene un
+  // límite de 12 Serverless Functions por deployment.
+  const { low, high } = req.query;
+  const isBackfill = !!(low && high);
+
   const target = new Date();
   target.setDate(target.getDate() - 60);
   const targetStr = target.toISOString().split('T')[0];
@@ -35,12 +43,17 @@ export default async function handler(req, res) {
     return res.status(200).json({ message: 'No hay templates activos para pagos_90_dias.' });
   }
 
-  const { data: pagos, error: pagosError } = await supabase
+  let pagosQuery = supabase
     .from('pagos')
     .select('id, propiedad, descripcion, cxc, notas, pagado_por, fecha')
     .in('pagado_por', ['DD', 'FD'])
-    .in('estado', ['P', 'PG'])
-    .eq('fecha', targetStr);
+    .in('estado', ['P', 'PG']);
+
+  pagosQuery = isBackfill
+    ? pagosQuery.gte('fecha', low).lte('fecha', high)
+    : pagosQuery.eq('fecha', targetStr);
+
+  const { data: pagos, error: pagosError } = await pagosQuery;
 
   if (pagosError) return res.status(500).json({ error: pagosError.message });
 
@@ -116,7 +129,7 @@ export default async function handler(req, res) {
   const hoy = new Date();
   const esLunes = hoy.getDay() === 1; // 0=Dom, 1=Lun, 2=Mar...
 
-  if (esLunes) {
+  if (esLunes && !isBackfill) {
     try {
       console.log('Lunes detectado — iniciando respaldo semanal a Drive...');
       const backupRes = await fetch(
@@ -138,7 +151,9 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({
-    message: `Revisión completada para ${targetStr}.`,
+    message: isBackfill
+      ? `Backfill completado para pagos entre ${low} y ${high}.`
+      : `Revisión completada para ${targetStr}.`,
     created,
     skipped,
     failed,
