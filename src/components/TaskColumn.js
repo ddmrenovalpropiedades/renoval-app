@@ -21,8 +21,10 @@ const VISIBLE_LIMIT = 8; // máximo items (tareas + subtareas) antes de truncar
 // ── Efectos secundarios al completar subtareas ────────────────────────────────
 async function runSubtaskSideEffects(subtaskTitle, parentTaskTitle) {
   const title = (subtaskTitle || '').trim();
-  const propMatch = (parentTaskTitle || '').match(/^(?:Arriendo|Dev Gar)\s+(.+)$/i);
-  const propiedad = propMatch ? propMatch[1].trim() : null;
+  // "Dev Gar {{propiedad}}" mantiene su prefijo; los títulos de arriendo
+  // ahora son directamente el nombre de la propiedad, sin prefijo "Arriendo".
+  const devGarMatch = (parentTaskTitle || '').match(/^Dev Gar\s+(.+)$/i);
+  const propiedad = devGarMatch ? devGarMatch[1].trim() : (parentTaskTitle ? parentTaskTitle.trim() : null);
   if (!propiedad) return;
 
   if (title === 'Notificar dueño' || title === 'Notificar dueno') {
