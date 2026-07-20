@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Check, X, DollarSign, Trash2, Link2, Calendar, Download } from 'lucide-react';
@@ -109,16 +109,9 @@ const ENCARGADO_COLORS = { DD: '#1565C0', FD: '#2E7D32', EA: '#6A1B9A', FG: '#E6
 const ENCARGADOS_ALL = ['DD', 'FD', 'EA', 'FG'];
 
 const EMPTY_FORM_VENTA = {
-  propiedad: '', precio: '', status: '', e1: '', e2: '', db: '', eb: '', comuna: '',
+  propiedad: '', precio: '', status: 'Aún no', e1: '', e2: '', db: '', eb: '', comuna: '',
   url_publicacion: '', conv_asignar_a: '',
 };
-
-const FORM_KEYS_VENTA = Object.keys(EMPTY_FORM_VENTA);
-const normalizeForCompare = (obj) => FORM_KEYS_VENTA.reduce((acc, k) => {
-  const v = obj[k];
-  acc[k] = (v === null || v === undefined) ? '' : String(v);
-  return acc;
-}, {});
 
 function PriceInput({ value, onChange, uf, isNew }) {
   const [editing, setEditing] = useState(false);
@@ -130,12 +123,13 @@ function PriceInput({ value, onChange, uf, isNew }) {
   const startEditing = () => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount != null ? String(amount) : ''); setEditing(true); };
   const commitEdit = () => { setEditing(false); onChange(raw === '' ? '' : currency === 'UF' ? `UF ${raw}` : raw); };
   if (editing) return (
-    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff', height: 28, boxSizing: 'border-box' }}>
-      <select value={currency} onMouseDown={e => e.stopPropagation()} onChange={e => setCurrency(e.target.value)} style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '0 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed', height: '100%' }}>
+    <div
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) commitEdit(); }}
+      style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff', height: 28, boxSizing: 'border-box' }}>
+      <select value={currency} onChange={e => setCurrency(e.target.value)} style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '0 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed', height: '100%' }}>
         <option value="CLP">$</option><option value="UF">UF</option>
       </select>
       <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
-        onBlur={e => { if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return; commitEdit(); }}
         onKeyDown={e => e.key === 'Enter' && e.target.blur()}
         style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, padding: '0 5px', fontFamily: 'inherit' }} />
     </div>
@@ -164,7 +158,7 @@ function InlineSelectCell({ value, options, onChange, colors }) {
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
       {value && <span style={{ position: 'absolute', pointerEvents: 'none', fontSize: 11, fontWeight: 700, color: colors[value] || '#5f6368', background: (colors[value] || '#9aa0a6') + '22', border: `1px solid ${(colors[value] || '#9aa0a6')}44`, borderRadius: 20, padding: '1px 8px', zIndex: 1 }}>{value}</span>}
       <select value={value || ''} onChange={e => onChange(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', textAlign: 'center', lineHeight: 1, color: 'transparent', zIndex: 2, position: 'relative' }}>
-        <option value="">—</option>{options.map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="" style={{ color: '#202124', background: '#fff' }}>—</option>{options.map(o => <option key={o} value={o} style={{ color: '#202124', background: '#fff' }}>{o}</option>)}
       </select>
     </div>
   );
@@ -212,24 +206,20 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const hasEdits = !isNew && JSON.stringify(normalizeForCompare(form)) !== JSON.stringify(normalizeForCompare(row));
-  const hasEditsRef = useRef(false);
-  hasEditsRef.current = hasEdits;
-
+  // Ya no hay botón de "guardar cambios" por fila: cada campo se persiste de
+  // inmediato en Supabase apenas cambia (ver `update` más abajo), así que el
+  // form se puede re-sincronizar siempre desde `row` sin condición.
   useEffect(() => {
-    if (!hasEditsRef.current) setForm(prev => ({ ...prev, ...row }));
-  }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
+    setForm(prev => ({ ...prev, ...row }));
+  }, [row]);
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v })); // usado solo en la fila nueva (aún no existe id)
 
-  const handleSave = async () => {
-    await supabase.from('pizarra_ventas').update({
-      propiedad: form.propiedad || null, precio: form.precio || null,
-      status: form.status || null, e1: form.e1 || null, e2: form.e2 || null,
-      db: form.db || null, eb: form.eb || null, comuna: form.comuna || null,
-      url_publicacion: form.url_publicacion || null, conv_asignar_a: form.conv_asignar_a || null,
-    }).eq('id', row.id);
-    onSave({ ...row, ...form });
+  // Auto-guardado: persiste un solo campo apenas cambia.
+  const update = async (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    await supabase.from('pizarra_ventas').update({ [field]: value }).eq('id', row.id);
+    onSave({ id: row.id, [field]: value });
   };
 
   const handleNewSave = async () => {
@@ -273,7 +263,7 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
           style={{ ...newRowInput, minWidth: 90 }}
         />
       </td>
-      <td style={st.tdCenter}><select value={form.status||''} onChange={e=>setForm(p=>({...p,status:e.target.value}))} style={newRowSelect}><option value="">—</option><option value="Aún no">Aún no</option><option value="Listo">Listo</option></select></td>
+      <td style={st.tdCenter}><select value={form.status||'Aún no'} onChange={e=>setForm(p=>({...p,status:e.target.value}))} style={newRowSelect}><option value="Aún no">Aún no</option><option value="Listo">Listo</option></select></td>
       <td style={st.tdCenter}>
         <div style={{ ...reqWrapper('e1'), position: 'relative' }}>
           {form.e1 && <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', fontSize: 11, fontWeight: 700, color: ENCARGADO_COLORS[form.e1], background: ENCARGADO_COLORS[form.e1] + '22', border: `1px solid ${ENCARGADO_COLORS[form.e1]}44`, borderRadius: 20, padding: '1px 8px', zIndex: 1, whiteSpace: 'nowrap' }}>{form.e1}</span>}
@@ -301,21 +291,21 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
     <tr style={{ background: '#fff' }} onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
       <td style={st.tdProp}>
         <FichaCellWrap propiedad={fichaPropiedadResuelta} onOpenFicha={onOpenFicha}>
-          <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} uppercase />
+          <InlineEditCell value={form.propiedad} onChange={v => update('propiedad', v)} uppercase />
         </FichaCellWrap>
       </td>
-      <td style={st.td}><PriceInput value={form.precio} onChange={v => set('precio', v)} uf={uf} /></td>
+      <td style={st.td}><PriceInput value={form.precio} onChange={v => update('precio', v)} uf={uf} /></td>
       <td style={st.td}>
-        <select value={form.status || ''} onChange={e => set('status', e.target.value)}
+        <select value={form.status || ''} onChange={e => update('status', e.target.value)}
           style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1, color: form.status === 'Listo' ? '#34a853' : '#202124', ...(form.status === 'Aún no' ? { background: '#FFF9C4', borderRadius: 4, padding: '2px 4px' } : {}) }}>
           <option value="">—</option><option value="Aún no">Aún no</option><option value="Listo">Listo</option>
         </select>
       </td>
-      <td style={st.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} colors={ENCARGADO_COLORS} /></td>
-      <td style={st.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} colors={ENCARGADO_COLORS} /></td>
-      <td style={st.tdCenter}><SlashInput value={form.db} onChange={v => set('db', v)} /></td>
-      <td style={st.tdCenter}><SlashInput value={form.eb} onChange={v => set('eb', v)} /></td>
-      <td style={st.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} uppercase /></td>
+      <td style={st.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => update('e1', v)} colors={ENCARGADO_COLORS} /></td>
+      <td style={st.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => update('e2', v)} colors={ENCARGADO_COLORS} /></td>
+      <td style={st.tdCenter}><SlashInput value={form.db} onChange={v => update('db', v)} /></td>
+      <td style={st.tdCenter}><SlashInput value={form.eb} onChange={v => update('eb', v)} /></td>
+      <td style={st.td}><InlineEditCell value={form.comuna} onChange={v => update('comuna', v)} uppercase /></td>
       <td style={st.tdCenter}>
         <button onClick={handleOpenUrlModal}
           style={{ ...st.urlBtn, ...(form.url_publicacion ? st.urlBtnActive : st.urlBtnInactive) }}
@@ -324,7 +314,6 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
         </button>
       </td>
       <td style={st.tdActions}>
-        {hasEdits && <button onClick={handleSave} style={st.actionBtnGreen} title="Guardar cambios"><Check size={14} /></button>}
         <button onClick={() => onOpenDisponibilidad(row)} style={st.actionBtnPurple}><Calendar size={13} /></button>
         <button onClick={() => onSold(row)} style={st.actionBtnBlue} title="Registrar venta"><DollarSign size={13} /></button>
         {confirmDelete ? (
