@@ -122,9 +122,9 @@ const UrgentDot = () => (
 );
 
 const EMPTY_FORM = {
-  propiedad: '', precio: '', promo: '', status: '', e1: '', e2: '', db: '', eb: '', comuna: '',
-  fecha_salida: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
-  url_publicacion: '', conv_asignar_a: '',
+  propiedad: '', precio: '', promo: '', status: 'Aún no', e1: '', e2: '', db: '', eb: '', comuna: '',
+  fecha_salida: '', fecha_publicacion: '', aviso: 'Aún no', respaldo: 'Aún no', tipo: '', admin: '',
+  url_publicacion: '', conv_asignar_a: '', status_notas: '',
 };
 
 async function createAutoTasks(trigger, propiedad, e1, e2, tipo, fechaEntrega) {
@@ -198,12 +198,13 @@ function PriceInput({ value, onChange, uf, isNew }) {
   const startEditing = () => { setCurrency(isUF ? 'UF' : 'CLP'); setRaw(amount != null ? String(amount) : ''); setEditing(true); };
   const commitEdit = () => { setEditing(false); onChange(raw === '' ? '' : currency === 'UF' ? `UF ${raw}` : raw); };
   if (editing) return (
-    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff', height: 28, boxSizing: 'border-box' }}>
-      <select value={currency} onMouseDown={e => e.stopPropagation()} onChange={e => setCurrency(e.target.value)} style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '0 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed', height: '100%' }}>
+    <div
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) commitEdit(); }}
+      style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, overflow: 'hidden', background: '#fff', height: 28, boxSizing: 'border-box' }}>
+      <select value={currency} onChange={e => setCurrency(e.target.value)} style={{ border: 'none', outline: 'none', background: '#f8f9fa', fontSize: 11, padding: '0 4px', cursor: 'pointer', fontFamily: 'inherit', borderRight: '1px solid #e8eaed', height: '100%' }}>
         <option value="CLP">$</option><option value="UF">UF</option>
       </select>
       <input autoFocus value={raw} onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
-        onBlur={e => { if (e.relatedTarget && e.relatedTarget.tagName === 'SELECT') return; commitEdit(); }}
         onKeyDown={e => e.key === 'Enter' && e.target.blur()}
         style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, padding: '0 5px', fontFamily: 'inherit' }} />
     </div>
@@ -298,6 +299,55 @@ const rentStyles = {
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
+function StatusNotesModal({ row, onClose, onSave }) {
+  const [text, setText] = useState(row.status_notas || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(row.id, text);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div style={statusNotesStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={statusNotesStyles.modal}>
+        <div style={statusNotesStyles.header}>
+          <span style={statusNotesStyles.title}>Notas de status</span>
+          <button onClick={onClose} style={statusNotesStyles.closeBtn}><X size={18} /></button>
+        </div>
+        <p style={statusNotesStyles.prop}>{row.propiedad}</p>
+        <div style={{ padding: '0 20px' }}>
+          <textarea
+            autoFocus
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="Escribe notas sobre el status de la publicación..."
+            style={statusNotesStyles.textarea}
+          />
+        </div>
+        <div style={statusNotesStyles.actions}>
+          <button onClick={handleSave} disabled={saving} style={statusNotesStyles.confirmBtn}>{saving ? 'Guardando...' : 'Guardar'}</button>
+          <button onClick={onClose} style={statusNotesStyles.cancelBtn}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const statusNotesStyles = {
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 },
+  modal: { background: '#fff', borderRadius: 16, width: 460, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif", overflow: 'hidden' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 20px 6px' },
+  title: { fontSize: 18, fontWeight: 700, color: '#202124' },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#5f6368', borderRadius: 6 },
+  prop: { fontSize: 13, color: '#5f6368', margin: '0 20px 16px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8 },
+  textarea: { width: '100%', minHeight: 160, border: '1px solid #dadce0', borderRadius: 8, padding: '10px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 },
+  actions: { display: 'flex', gap: 8, padding: '20px' },
+  confirmBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+};
+
 function InlineEditCell({ value, onChange, uppercase }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState(value || '');
@@ -310,7 +360,7 @@ function InlineSelectCell({ value, options, onChange, colors }) {
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
       {value && <span style={{ position: 'absolute', pointerEvents: 'none', fontSize: 11, fontWeight: 700, color: colors[value] || '#5f6368', background: (colors[value] || '#9aa0a6') + '22', border: `1px solid ${(colors[value] || '#9aa0a6')}44`, borderRadius: 20, padding: '1px 8px', zIndex: 1 }}>{value}</span>}
       <select value={value || ''} onChange={e => onChange(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, width: '100%', appearance: 'none', WebkitAppearance: 'none', textAlign: 'center', lineHeight: 1, color: 'transparent', zIndex: 2, position: 'relative' }}>
-        <option value="">—</option>{options.map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="" style={{ color: '#202124', background: '#fff' }}>—</option>{options.map(o => <option key={o} value={o} style={{ color: '#202124', background: '#fff' }}>{o}</option>)}
       </select>
     </div>
   );
@@ -333,38 +383,30 @@ function SlashInputNew({ value, onChange }) {
   );
 }
 
-const FORM_KEYS = Object.keys(EMPTY_FORM);
-const normalizeForCompare = (obj) => FORM_KEYS.reduce((acc, k) => {
-  const v = obj[k]; acc[k] = (v === null || v === undefined) ? '' : String(v); return acc;
-}, {});
-
-function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad, fichaPropiedadResuelta, onOpenFicha }) {
+function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew, uf, onOpenUrlModal, onOpenDisponibilidad, onOpenStatusNotes, fichaPropiedadResuelta, onOpenFicha }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...row });
   const [attempted, setAttempted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [submittingNew, setSubmittingNew] = useState(false);
   const submittingNewRef = useRef(false); // chequeo sincrónico: el state solo es para el estilo visual
 
-  const hasEdits = !isNew && JSON.stringify(normalizeForCompare(form)) !== JSON.stringify(normalizeForCompare(row));
-  const hasEditsRef = useRef(false);
-  hasEditsRef.current = hasEdits;
-
+  // Ya no hay botón de "guardar cambios" por fila: cada campo se persiste de
+  // inmediato en Supabase apenas cambia (ver `update` más abajo). Por eso el
+  // form ahora se puede re-sincronizar siempre desde `row` sin condición
+  // (antes se evitaba pisar ediciones locales pendientes; ya no aplica
+  // porque no quedan ediciones "pendientes" de guardar).
   useEffect(() => {
-    if (!hasEditsRef.current) setForm(prev => ({ ...prev, ...row }));
-  }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
+    setForm(prev => ({ ...prev, ...row }));
+  }, [row]);
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v })); // usado solo en la fila nueva (aún no existe id)
 
-  const handleSave = async () => {
-    await supabase.from('pizarra').update({
-      propiedad: form.propiedad || null, precio: form.precio || null, promo: form.promo || null,
-      status: form.status || null, e1: form.e1 || null, e2: form.e2 || null,
-      db: form.db || null, eb: form.eb || null, comuna: form.comuna || null,
-      fecha_salida: form.fecha_salida || null, aviso: form.aviso || null,
-      respaldo: form.respaldo || null, tipo: form.tipo || null, admin: form.admin || null,
-      url_publicacion: form.url_publicacion || null, conv_asignar_a: form.conv_asignar_a || null,
-    }).eq('id', row.id);
-    onSave({ ...row, ...form });
+  // Auto-guardado: persiste un solo campo apenas cambia, y notifica al padre
+  // para que las demás pantallas / la fila misma queden sincronizadas.
+  const update = async (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    await supabase.from('pizarra').update({ [field]: value }).eq('id', row.id);
+    onSave({ id: row.id, [field]: value });
   };
 
   const handleNewSave = async () => {
@@ -403,7 +445,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
   const errors = attempted ? { propiedad: !form.propiedad.trim(), fecha_salida: !form.fecha_salida, e1: !form.e1, e2: !form.e2, tipo: !form.tipo, admin: !form.admin } : {};
 
   const AvisoCell = ({ field }) => (
-    <select value={form[field] || ''} onChange={e => set(field, e.target.value)}
+    <select value={form[field] || ''} onChange={e => update(field, e.target.value)}
       style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1, color: form[field] === 'Listo' ? '#34a853' : form[field] === 'Aún no' ? '#fff' : '#202124', ...(form[field] === 'Aún no' ? { background: '#ea4335', borderRadius: 4, padding: '2px 4px' } : {}) }}>
       <option value="" style={{ color: '#202124', background: '#fff' }}>—</option>
       {['Aún no','Listo'].map(o => <option key={o} value={o} style={{ color: '#202124', background: '#fff' }}>{o}</option>)}
@@ -419,6 +461,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       <td style={styles.tdCenter}><PriceInput value={form.precio} onChange={v=>setForm(p=>({...p,precio:v}))} uf={uf} isNew={true} /></td>
       <td style={styles.tdCenter}><PriceInput value={form.promo} onChange={v=>setForm(p=>({...p,promo:v}))} uf={uf} isNew={true} /></td>
       <td style={styles.tdCenter}><select value={form.status||'Aún no'} onChange={e=>setForm(p=>({...p,status:e.target.value}))} style={newRowSelect}><option value="Aún no">Aún no</option><option value="Listo">Listo</option></select></td>
+      <td style={styles.tdProp}><span style={{ color: '#dadce0', fontSize: 11 }}>— (disponible tras guardar)</span></td>
       <td style={styles.tdCenter}>
         <div style={{ ...reqWrapper('e1'), position: 'relative' }}>
           {form.e1 && <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', fontSize: 11, fontWeight: 700, color: ENCARGADO_COLORS[form.e1], background: ENCARGADO_COLORS[form.e1] + '22', border: `1px solid ${ENCARGADO_COLORS[form.e1]}44`, borderRadius: 20, padding: '1px 8px', zIndex: 1, whiteSpace: 'nowrap' }}>{form.e1}</span>}
@@ -435,6 +478,7 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
       <td style={styles.tdCenter}><SlashInputNew value={form.eb||''} onChange={v=>setForm(p=>({...p,eb:v}))} /></td>
       <td style={styles.tdCenter}><input value={form.comuna||''} onChange={e=>setForm(p=>({...p,comuna:e.target.value.toUpperCase()}))} style={{ ...newRowInput, display: 'block', width: 90 }} /></td>
       <td style={styles.tdCenter}><DateFieldNew value={form.fecha_salida} onChange={v=>setForm(p=>({...p,fecha_salida:v}))} hasError={!!errors.fecha_salida} /></td>
+      <td style={styles.tdCenter}><DateFieldNew value={form.fecha_publicacion} onChange={v=>setForm(p=>({...p,fecha_publicacion:v}))} /></td>
       <td style={styles.tdCenter}><select value={form.aviso||'Aún no'} onChange={e=>setForm(p=>({...p,aviso:e.target.value}))} style={newRowSelect}><option value="Aún no">Aún no</option><option value="Listo">Listo</option></select></td>
       <td style={styles.tdCenter}><select value={form.respaldo||'Aún no'} onChange={e=>setForm(p=>({...p,respaldo:e.target.value}))} style={newRowSelect}><option value="Aún no">Aún no</option><option value="Listo">Listo</option></select></td>
       <td style={styles.tdCenter}><div style={reqWrapper('tipo')}><select value={form.tipo||''} onChange={e=>setForm(p=>({...p,tipo:e.target.value}))} style={selectInsideWrapper}><option value="">—</option><option>Nuevo</option><option>Renovación</option></select></div></td>
@@ -453,34 +497,40 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
         <FichaCellWrap propiedad={fichaPropiedadResuelta} onOpenFicha={onOpenFicha}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {showAlert && <UrgentDot />}
-            <InlineEditCell value={form.propiedad} onChange={v => set('propiedad', v)} uppercase />
+            <InlineEditCell value={form.propiedad} onChange={v => update('propiedad', v)} uppercase />
           </div>
         </FichaCellWrap>
       </td>
-      <td style={styles.td}><PriceInput value={form.precio} onChange={v => set('precio', v)} uf={uf} /></td>
-      <td style={styles.td}><PriceInput value={form.promo} onChange={v => set('promo', v)} uf={uf} /></td>
+      <td style={styles.td}><PriceInput value={form.precio} onChange={v => update('precio', v)} uf={uf} /></td>
+      <td style={styles.td}><PriceInput value={form.promo} onChange={v => update('promo', v)} uf={uf} /></td>
       <td style={{ ...styles.td, ...(form.status?.toUpperCase() === 'PUBLICAR' ? { background: '#FDD835' } : {}) }}>
-        <select value={form.status || ''} onChange={e => set('status', e.target.value)} style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1, color: form.status === 'Listo' ? '#34a853' : '#202124', ...(form.status === 'Aún no' ? { background: '#FFF9C4', borderRadius: 4, padding: '2px 4px' } : {}) }}>
+        <select value={form.status || ''} onChange={e => update('status', e.target.value)} style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', lineHeight: 1, color: form.status === 'Listo' ? '#34a853' : '#202124', ...(form.status === 'Aún no' ? { background: '#FFF9C4', borderRadius: 4, padding: '2px 4px' } : {}) }}>
           <option value="">—</option><option value="Aún no">Aún no</option><option value="Listo">Listo</option>
         </select>
       </td>
-      <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => set('e1', v)} colors={ENCARGADO_COLORS} /></td>
-      <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => set('e2', v)} colors={ENCARGADO_COLORS} /></td>
-      <td style={styles.tdCenter}><SlashInput value={form.db} onChange={v => set('db', v)} /></td>
-      <td style={styles.tdCenter}><SlashInput value={form.eb} onChange={v => set('eb', v)} /></td>
-      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => set('comuna', v)} uppercase /></td>
-      <td style={styles.tdCenter}><DateCellInput value={form.fecha_salida} onChange={v => set('fecha_salida', v)} /></td>
+      <td style={{ ...styles.tdProp, height: 'auto', minHeight: 38 }}>
+        <div onClick={() => onOpenStatusNotes(row)} title="Click para editar notas de status"
+          style={{ cursor: 'pointer', fontSize: 12, padding: '6px 2px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: form.status_notas ? '#202124' : '#dadce0', minHeight: 20 }}>
+          {form.status_notas || '—'}
+        </div>
+      </td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.e1} options={['DD','FD']} onChange={v => update('e1', v)} colors={ENCARGADO_COLORS} /></td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.e2} options={['EA','FG']} onChange={v => update('e2', v)} colors={ENCARGADO_COLORS} /></td>
+      <td style={styles.tdCenter}><SlashInput value={form.db} onChange={v => update('db', v)} /></td>
+      <td style={styles.tdCenter}><SlashInput value={form.eb} onChange={v => update('eb', v)} /></td>
+      <td style={styles.td}><InlineEditCell value={form.comuna} onChange={v => update('comuna', v)} uppercase /></td>
+      <td style={styles.tdCenter}><DateCellInput value={form.fecha_salida} onChange={v => update('fecha_salida', v)} /></td>
+      <td style={styles.tdCenter}><DateCellInput value={form.fecha_publicacion} onChange={v => update('fecha_publicacion', v)} /></td>
       <td style={styles.tdCenter}><AvisoCell field="aviso" /></td>
       <td style={styles.tdCenter}><AvisoCell field="respaldo" /></td>
-      <td style={styles.tdCenter}><InlineSelectCell value={form.tipo} options={['Nuevo','Renovación']} onChange={v => set('tipo', v)} /></td>
-      <td style={styles.tdCenter}><InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => set('admin', v)} /></td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.tipo} options={['Nuevo','Renovación']} onChange={v => update('tipo', v)} /></td>
+      <td style={styles.tdCenter}><InlineSelectCell value={form.admin} options={['Sí','No']} onChange={v => update('admin', v)} /></td>
       <td style={styles.tdCenter}>
         <button onClick={handleOpenUrlModal} style={{ ...styles.urlBtn, ...(form.url_publicacion ? styles.urlBtnActive : styles.urlBtnInactive) }} title={form.url_publicacion ? 'URL cargada' : 'Sin URL'}>
           <Link2 size={13} />
         </button>
       </td>
       <td style={styles.tdActions}>
-        {hasEdits && <button onClick={handleSave} style={styles.actionBtnGreen} title="Guardar cambios"><Check size={14} /></button>}
         <button onClick={() => onOpenDisponibilidad(row)} style={styles.actionBtnPurple}><Calendar size={13} /></button>
         <button onClick={() => onRented(row)} style={styles.actionBtnBlue}><Home size={13} /></button>
         {confirmDelete ? (
@@ -504,6 +554,7 @@ export default function PizarraArriendoPage() {
   const rentingSubmitRef = useRef(false); // guardia sincrónica contra doble-click en "Confirmar arriendo"
   const [urlModalRow, setUrlModalRow] = useState(null);
   const [disponibilidadRow, setDisponibilidadRow] = useState(null);
+  const [statusNotesRow, setStatusNotesRow] = useState(null);
   const [filterE, setFilterE] = useState([]);
   const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
   const [fichaPropiedad, setFichaPropiedad] = useState(null);
@@ -549,9 +600,11 @@ export default function PizarraArriendoPage() {
   const handleExport = () => exportToExcel(rows, [
     { key: 'propiedad', label: 'Propiedad' }, { key: 'precio', label: 'Precio' },
     { key: 'promo', label: 'Promo' }, { key: 'status', label: 'Publicación' },
+    { key: 'status_notas', label: 'Status (notas)' },
     { key: 'e1', label: 'E1' }, { key: 'e2', label: 'E2' },
     { key: 'db', label: 'D/B' }, { key: 'eb', label: 'E/B' },
     { key: 'comuna', label: 'Comuna' }, { key: 'fecha_salida', label: 'Fecha Salida' },
+    { key: 'fecha_publicacion', label: 'Fecha Publicación' },
     { key: 'aviso', label: 'Aviso' }, { key: 'respaldo', label: 'Respaldo' },
     { key: 'tipo', label: 'Tipo' }, { key: 'admin', label: 'Admin' },
   ], 'Pizarra');
@@ -629,7 +682,7 @@ export default function PizarraArriendoPage() {
     if (form.id) {
       setRows(prev => prev.map(r => r.id === form.id ? { ...r, ...form } : r));
     } else {
-      const payload = { propiedad: form.propiedad.trim(), precio: form.precio || null, promo: form.promo || null, status: form.status || null, e1: form.e1 || null, e2: form.e2 || null, db: form.db || null, eb: form.eb || null, comuna: form.comuna || null, fecha_salida: form.fecha_salida || null, aviso: form.aviso || null, respaldo: form.respaldo || null, tipo: form.tipo || null, admin: form.admin || null };
+      const payload = { propiedad: form.propiedad.trim(), precio: form.precio || null, promo: form.promo || null, status: form.status || null, e1: form.e1 || null, e2: form.e2 || null, db: form.db || null, eb: form.eb || null, comuna: form.comuna || null, fecha_salida: form.fecha_salida || null, fecha_publicacion: form.fecha_publicacion || null, aviso: form.aviso || null, respaldo: form.respaldo || null, tipo: form.tipo || null, admin: form.admin || null };
       const minPos = rows.length > 0 ? Math.min(...rows.map(r => r.position ?? 0)) - 1 : 0;
       const { data } = await supabase.from('pizarra').insert({ ...payload, position: minPos }).select().single();
       if (data) await createAutoTasks('pizarra_nueva_propiedad', data.propiedad, data.e1, data.e2, data.tipo, data.fecha_salida);
@@ -649,6 +702,11 @@ export default function PizarraArriendoPage() {
     await supabase.from('pizarra').update({ url_publicacion: url, conv_asignar_a: asignarA || 'e2' }).eq('id', id);
     setRows(prev => prev.map(r => r.id === id ? { ...r, url_publicacion: url, conv_asignar_a: asignarA || 'e2' } : r));
     if (_onSaved) _onSaved(url, asignarA);
+  };
+
+  const handleSaveStatusNotes = async (id, notas) => {
+    await supabase.from('pizarra').update({ status_notas: notas || null }).eq('id', id);
+    setRows(prev => prev.map(r => r.id === id ? { ...r, status_notas: notas || null } : r));
   };
 
   const handleRentedConfirm = async ({ comision, entrega, meses }) => {
@@ -678,9 +736,9 @@ export default function PizarraArriendoPage() {
 
   const HEADERS = [
     { label: 'PROPIEDAD', minWidth: 200 }, { label: 'PRECIO', minWidth: 90 }, { label: 'PROMO', minWidth: 90 },
-    { label: 'PUBLICACION', minWidth: 80 }, { label: 'E1', minWidth: 70 }, { label: 'E2', minWidth: 70 },
+    { label: 'PUBLICACION', minWidth: 80 }, { label: 'STATUS', minWidth: 200 }, { label: 'E1', minWidth: 70 }, { label: 'E2', minWidth: 70 },
     { label: 'D/B', minWidth: 55 }, { label: 'E/B', minWidth: 55 }, { label: 'COMUNA', minWidth: 90 },
-    { label: 'FECHA SALIDA', minWidth: 90 }, { label: 'AVISO', minWidth: 65 }, { label: 'RESPALDO', minWidth: 65 },
+    { label: 'FECHA SALIDA', minWidth: 90 }, { label: 'FECHA PUBLICACION', minWidth: 90 }, { label: 'AVISO', minWidth: 65 }, { label: 'RESPALDO', minWidth: 65 },
     { label: 'TIPO', minWidth: 80 }, { label: 'ADMIN', minWidth: 55 }, { label: 'URL', minWidth: 45 }, { label: '', minWidth: 80 },
   ];
 
@@ -721,16 +779,16 @@ export default function PizarraArriendoPage() {
         {loading ? <div style={styles.loading}>Cargando pizarra...</div> : (
           <table style={styles.table}>
             <thead>
-              <tr>{HEADERS.map((h, i) => <th key={i} style={{ ...styles.th, textAlign: h.label === 'PROPIEDAD' ? 'left' : 'center', minWidth: h.minWidth }}>{h.label}</th>)}</tr>
+              <tr>{HEADERS.map((h, i) => <th key={i} style={{ ...styles.th, textAlign: (h.label === 'PROPIEDAD' || h.label === 'STATUS') ? 'left' : 'center', minWidth: h.minWidth }}>{h.label}</th>)}</tr>
             </thead>
             <tbody>
               {addingNew && <PropertyRow row={EMPTY_FORM} onSave={handleSave} onDelete={() => {}} onRented={() => {}} isNew={true} onCancelNew={() => setAddingNew(false)} uf={uf} onOpenUrlModal={() => {}} onOpenDisponibilidad={() => {}} />}
               {filtered.length === 0 && !addingNew
-                ? <tr><td colSpan={16} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
+                ? <tr><td colSpan={18} style={styles.empty}>No hay propiedades en la pizarra.</td></tr>
                 : filtered.map(row => (
                   <PropertyRow key={row.id} row={row} onSave={handleSave} onDelete={handleDelete}
                     onRented={r => setRentingRow(r)} uf={uf}
-                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow}
+                    onOpenUrlModal={setUrlModalRow} onOpenDisponibilidad={setDisponibilidadRow} onOpenStatusNotes={setStatusNotesRow}
                     fichaPropiedadResuelta={carteraReverseMap.get(row.propiedad) || null}
                     onOpenFicha={setFichaPropiedad} />
                 ))
@@ -749,6 +807,7 @@ export default function PizarraArriendoPage() {
       {rentingRow && <RentModal row={rentingRow} onConfirm={handleRentedConfirm} onCancel={() => setRentingRow(null)} uf={uf} />}
       {urlModalRow && <UrlPublicacionModal row={urlModalRow} onSave={handleSaveUrl} onClose={() => setUrlModalRow(null)} />}
       {disponibilidadRow && <DisponibilidadSidebar row={disponibilidadRow} onClose={() => setDisponibilidadRow(null)} />}
+      {statusNotesRow && <StatusNotesModal row={statusNotesRow} onClose={() => setStatusNotesRow(null)} onSave={handleSaveStatusNotes} />}
       {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
     </div>
   );
@@ -769,10 +828,10 @@ const styles = {
   tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
   table: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' },
   th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 10, whiteSpace: 'nowrap' },
-  td:        { padding: '0 10px', height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center', lineHeight: 1 },
-  tdProp:    { padding: '0 10px', height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left', lineHeight: 1 },
-  tdCenter:  { padding: '0 8px', height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', lineHeight: 1 },
-  tdActions: { padding: '0 6px', height: 38, borderBottom: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap', lineHeight: 1 },
+  td:        { padding: '0 10px', minHeight: 38, height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', textAlign: 'center', lineHeight: 1 },
+  tdProp:    { padding: '0 10px', minHeight: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', verticalAlign: 'middle', maxWidth: 240, textAlign: 'left', lineHeight: 1 },
+  tdCenter:  { padding: '0 8px', minHeight: 38, height: 38, fontSize: 12, color: '#202124', borderBottom: '1px solid #d0d5dd', borderRight: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', lineHeight: 1 },
+  tdActions: { padding: '0 6px', minHeight: 38, height: 38, borderBottom: '1px solid #d0d5dd', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap', lineHeight: 1 },
   actionBtnGray:   { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#5f6368' },
   actionBtnGreen:  { background: '#e6f4ea', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#34a853' },
   actionBtnBlue:   { background: '#e8f0fe', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', color: '#1a73e8' },
