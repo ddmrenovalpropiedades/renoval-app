@@ -508,9 +508,20 @@ export default function PizarraArriendoPage() {
   const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
   const [fichaPropiedad, setFichaPropiedad] = useState(null);
   // Orden por fecha de salida: null = orden por defecto (position), 'asc' = más
-  // antigua a más reciente. Se deja preparado como toggle simple por ahora
-  // (único criterio); más adelante se puede extender a un menú con más opciones.
-  const [sortFechaSalida, setSortFechaSalida] = useState(null);
+  // antigua a más reciente. Persistido en localStorage para no tener que
+  // reaplicarlo cada vez que se carga la página (mismo patrón que el orden
+  // de tareas en mobile).
+  const [sortFechaSalida, setSortFechaSalida] = useState(() => {
+    try { return localStorage.getItem('pizarra_arriendo_sort_fecha_salida') || null; }
+    catch (e) { return null; }
+  });
+
+  useEffect(() => {
+    try {
+      if (sortFechaSalida) localStorage.setItem('pizarra_arriendo_sort_fecha_salida', sortFechaSalida);
+      else localStorage.removeItem('pizarra_arriendo_sort_fecha_salida');
+    } catch (e) { /* localStorage no disponible: el orden simplemente no persiste */ }
+  }, [sortFechaSalida]);
   const uf = useUFValue();
   const { exportToExcel } = useExcelExport();
 
@@ -552,6 +563,14 @@ export default function PizarraArriendoPage() {
     setLoading(false);
   }, []);
 
+  // Igual que fetchRows pero sin mostrar el estado de carga — para los
+  // refrescos de respaldo (reconexión de canal, pestaña que vuelve a estar
+  // visible) donde no queremos que la tabla parpadee con "Cargando...".
+  const silentRefetchRows = useCallback(async () => {
+    const { data } = await supabase.from('pizarra').select('*').order('position', { ascending: true }).order('created_at', { ascending: false });
+    if (data) setRows(data);
+  }, []);
+
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
   useEffect(() => {
@@ -560,9 +579,30 @@ export default function PizarraArriendoPage() {
         if (payload.eventType === 'INSERT') setRows(prev => [payload.new, ...prev]);
         else if (payload.eventType === 'UPDATE') setRows(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
         else if (payload.eventType === 'DELETE') setRows(prev => prev.filter(r => r.id !== payload.old.id));
-      }).subscribe();
+      })
+      .subscribe((status) => {
+        // Diagnóstico: si el canal se cae (ej. pestaña en segundo plano por
+        // tiempo prolongado) queda registrado en consola para poder
+        // confirmar la causa la próxima vez que se reporte el problema.
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Pizarra Realtime: canal caído (' + status + '), refrescando datos como respaldo...');
+          silentRefetchRows();
+        }
+      });
     return () => supabase.removeChannel(channel);
-  }, []);
+  }, [silentRefetchRows]);
+
+  // Red de seguridad adicional: si la pestaña estuvo en segundo plano y
+  // vuelve a estar visible, se refrescan los datos por si el WebSocket de
+  // Realtime se cortó silenciosamente mientras tanto (sin disparar los
+  // estados de error de arriba).
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') silentRefetchRows();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [silentRefetchRows]);
 
   const filtered = useMemo(() => {
     let result = rows;
