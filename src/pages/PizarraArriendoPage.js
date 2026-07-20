@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Check, X, Home, Trash2, Link2, Calendar, Download } from 'lucide-react';
+import { Plus, Check, X, Home, Trash2, Link2, Calendar, Download, ArrowUpDown } from 'lucide-react';
 import { useExcelExport } from '../hooks/useExcelExport';
 import UrlPublicacionModal from '../components/pizarra/UrlPublicacionModal';
 import DisponibilidadSidebar from '../components/pizarra/DisponibilidadSidebar';
@@ -507,6 +507,10 @@ export default function PizarraArriendoPage() {
   const [filterE, setFilterE] = useState([]);
   const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
   const [fichaPropiedad, setFichaPropiedad] = useState(null);
+  // Orden por fecha de salida: null = orden por defecto (position), 'asc' = más
+  // antigua a más reciente. Se deja preparado como toggle simple por ahora
+  // (único criterio); más adelante se puede extender a un menú con más opciones.
+  const [sortFechaSalida, setSortFechaSalida] = useState(null);
   const uf = useUFValue();
   const { exportToExcel } = useExcelExport();
 
@@ -561,9 +565,19 @@ export default function PizarraArriendoPage() {
   }, []);
 
   const filtered = useMemo(() => {
-    if (!filterE.length) return rows;
-    return rows.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
-  }, [rows, filterE]);
+    let result = rows;
+    if (filterE.length) result = result.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
+    if (sortFechaSalida === 'asc') {
+      // Filas sin fecha_salida quedan al final, sin importar el resto del orden.
+      result = [...result].sort((a, b) => {
+        if (!a.fecha_salida && !b.fecha_salida) return 0;
+        if (!a.fecha_salida) return 1;
+        if (!b.fecha_salida) return -1;
+        return a.fecha_salida < b.fecha_salida ? -1 : a.fecha_salida > b.fecha_salida ? 1 : 0;
+      });
+    }
+    return result;
+  }, [rows, filterE, sortFechaSalida]);
 
   const totals = useMemo(() => {
     let totalCLP = 0;
@@ -648,6 +662,12 @@ export default function PizarraArriendoPage() {
             ))}
             {filterE.length > 0 && <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>}
           </div>
+          <button
+            onClick={() => setSortFechaSalida(prev => prev === 'asc' ? null : 'asc')}
+            title="Ordenar por fecha de salida: más antigua a más reciente"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: sortFechaSalida === 'asc' ? '#e8f0fe' : '#fff', border: `1px solid ${sortFechaSalida === 'asc' ? '#1a73e8' : '#dadce0'}`, borderRadius: 8, fontSize: 13, cursor: 'pointer', color: sortFechaSalida === 'asc' ? '#1a73e8' : '#3c4043', fontFamily: 'inherit', fontWeight: sortFechaSalida === 'asc' ? 700 : 400 }}>
+            <ArrowUpDown size={14} /> Fecha salida
+          </button>
           <button onClick={handleExport} disabled={loading} title="Exportar a Excel" style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:loading?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:loading?0.5:1 }}>
             <Download size={14} color="#34a853" /> Excel
           </button>
