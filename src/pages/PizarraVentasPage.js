@@ -213,8 +213,6 @@ function SaleRow({ row, onSave, onDelete, onSold, isNew=false, onCancelNew, uf, 
     setForm(prev => ({ ...prev, ...row }));
   }, [row]);
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v })); // usado solo en la fila nueva (aún no existe id)
-
   // Auto-guardado: persiste un solo campo apenas cambia.
   const update = async (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
