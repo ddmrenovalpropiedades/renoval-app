@@ -399,8 +399,6 @@ function PropertyRow({ row, onSave, onDelete, onRented, isNew=false, onCancelNew
     setForm(prev => ({ ...prev, ...row }));
   }, [row]);
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v })); // usado solo en la fila nueva (aún no existe id)
-
   // Auto-guardado: persiste un solo campo apenas cambia, y notifica al padre
   // para que las demás pantallas / la fila misma queden sincronizadas.
   const update = async (field, value) => {
