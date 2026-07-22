@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Trash2, RefreshCw, AlertCircle, Check } from 'lucide-react';
+import { X, Trash2, RefreshCw, AlertCircle, Check, Calendar } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { formatLocalDate } from '../hooks/useTasks';
 import AnimatedCheckbox from './AnimatedCheckbox';
@@ -27,6 +27,88 @@ function DatePicker({ value, onChange, style = {} }) {
   );
 }
 
+// ─── Modal: fecha de publicación al completar la subtarea "Publicar" ──────────
+function PublicarFechaModal({ propiedad, onConfirm, onCancel }) {
+  const [fecha, setFecha] = useState(() => new Date().toISOString().split('T')[0]);
+  const ref = useRef(null);
+  const formatDateCL = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+  return (
+    <div style={publicarModalStyles.overlay} onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div style={publicarModalStyles.modal}>
+        <div style={publicarModalStyles.header}>
+          <span style={publicarModalStyles.title}>Fecha de publicación</span>
+          <button onClick={onCancel} style={publicarModalStyles.closeBtn}><X size={18} /></button>
+        </div>
+        <p style={publicarModalStyles.prop}>{propiedad}</p>
+        <div style={{ padding: '0 20px 4px' }}>
+          <label style={publicarModalStyles.label}>¿Qué día se publicó?</label>
+          <div onClick={() => ref.current && ref.current.showPicker && ref.current.showPicker()}
+            style={{ ...publicarModalStyles.dateBox, cursor: 'pointer', position: 'relative' }}>
+            <span style={{ color: fecha ? '#202124' : '#9aa0a6' }}>{fecha ? formatDateCL(fecha) : 'Seleccionar fecha...'}</span>
+            <Calendar size={15} color="#9aa0a6" />
+            <input ref={ref} type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+              style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} />
+          </div>
+        </div>
+        <div style={publicarModalStyles.actions}>
+          <button onClick={() => onConfirm(fecha)} disabled={!fecha} style={{ ...publicarModalStyles.confirmBtn, ...(!fecha ? { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' } : {}) }}>
+            Confirmar
+          </button>
+          <button onClick={onCancel} style={publicarModalStyles.cancelBtn}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const publicarModalStyles = {
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 },
+  modal: { background: '#fff', borderRadius: 16, width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif", overflow: 'hidden' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 20px 6px' },
+  title: { fontSize: 18, fontWeight: 700, color: '#202124' },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#5f6368', borderRadius: 6 },
+  prop: { fontSize: 13, color: '#5f6368', margin: '0 20px 16px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8 },
+  label: { fontSize: 12, fontWeight: 600, color: '#5f6368', display: 'block', marginBottom: 6 },
+  dateBox: { border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  actions: { display: 'flex', gap: 8, padding: '20px' },
+  confirmBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+};
+
+// ── Efectos secundarios al completar subtareas ────────────────────────────────
+// Antes este panel no corría NINGÚN efecto secundario al completar una
+// subtarea (a diferencia de TaskColumn.js) — completar "Publicar", "Notificar
+// dueño", etc. desde acá no actualizaba Pizarra/Arrendadas. Se agrega la
+// misma lógica para que el comportamiento sea consistente sin importar desde
+// dónde se completa la subtarea.
+// `extra.fechaPublicacion` (opcional): solo se usa cuando la subtarea es
+// "Publicar", para guardar además la fecha de publicación en Pizarra.
+async function runSubtaskSideEffects(subtaskTitle, parentTaskTitle, extra = {}) {
+  const title = (subtaskTitle || '').trim();
+  const devGarMatch = (parentTaskTitle || '').match(/^Dev Gar\s+(.+)$/i);
+  const propiedad = devGarMatch ? devGarMatch[1].trim() : (parentTaskTitle ? parentTaskTitle.trim() : null);
+  if (!propiedad) return;
+
+  if (title === 'Notificar dueño' || title === 'Notificar dueno') {
+    await supabase.from('pizarra').update({ aviso: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Respaldar publicación' || title === 'Respaldar publicacion') {
+    await supabase.from('pizarra').update({ respaldo: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Publicar') {
+    const updates = { status: 'Listo' };
+    if (extra.fechaPublicacion) updates.fecha_publicacion = extra.fechaPublicacion;
+    await supabase.from('pizarra').update(updates).ilike('propiedad', propiedad);
+  }
+  if (title === 'Liquidación' || title === 'Liquidacion') {
+    await supabase.from('arrendadas').update({ liquidacion: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Respaldo contrato carpeta') {
+    await supabase.from('arrendadas').update({ contrato: 'Listo' }).ilike('propiedad', propiedad);
+  }
+  if (title === 'Pago cuentas') {
+    await supabase.from('arrendadas').update({ cuentas: 'Listo' }).ilike('propiedad', propiedad);
+  }
+}
 
 
 const RECURRENCE_OPTIONS = [
@@ -91,6 +173,8 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
   const [proxima, setProxima] = useState(task.proxima_vencer || false);
   const [dueDate, setDueDate] = useState(task.due_date || '');
   const [savedMsg, setSavedMsg] = useState('');
+  // Subtarea "Publicar" pendiente de confirmar fecha (modal abierto)
+  const [publicarModalSubtask, setPublicarModalSubtask] = useState(null);
   const subtaskInputRef = useRef();
 
   useEffect(() => { loadSubtasks(); }, [task.id]); // eslint-disable-line
@@ -137,12 +221,23 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
     if (e.key === 'Escape') setNewSubtask('');
   };
 
-  const handleCompleteSubtask = async (subtask) => {
+  // Completa de verdad la subtarea — separado de handleCompleteSubtask para
+  // poder interponer el modal de fecha de publicación antes de llegar acá.
+  const doCompleteSubtask = async (subtask, extra = {}) => {
+    await runSubtaskSideEffects(subtask.title, task.title, extra);
     await supabase.from('tasks').delete().eq('id', subtask.id);
     const remaining = subtasks.filter(s => s.id !== subtask.id);
     setSubtasks(remaining);
     if (onSubtaskCompleted) onSubtaskCompleted();
     if (remaining.length === 0) { await onComplete(task); onClose(); }
+  };
+
+  const handleCompleteSubtask = async (subtask) => {
+    if ((subtask.title || '').trim() === 'Publicar') {
+      setPublicarModalSubtask(subtask);
+      return;
+    }
+    await doCompleteSubtask(subtask);
   };
 
   const handleDeleteSubtask = async (subtaskId) => {
@@ -369,6 +464,18 @@ export default function TaskPanel({ task, onClose, onUpdate, onDelete, onComplet
           )}
         </div>
       </div>
+
+      {publicarModalSubtask && (
+        <PublicarFechaModal
+          propiedad={task.title}
+          onCancel={() => setPublicarModalSubtask(null)}
+          onConfirm={async (fecha) => {
+            const subtask = publicarModalSubtask;
+            setPublicarModalSubtask(null);
+            await doCompleteSubtask(subtask, { fechaPublicacion: fecha });
+          }}
+        />
+      )}
     </div>
   );
 }
