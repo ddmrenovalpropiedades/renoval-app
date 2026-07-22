@@ -157,12 +157,17 @@ export default function TasksPage() {
   };
 
   // ── Cargar categorías ────────────────────────────────────────────────────────
+  // Usa effectiveEmail (el usuario que se está viendo), no profile.email (quien
+  // tiene la sesión iniciada) — así, al ver el tablero de otro usuario, se
+  // cargan las categorías/listas propias de ESE usuario, no las del que está
+  // mirando.
   React.useEffect(() => {
-    if (!profile?.email) return;
+    if (!effectiveEmail) return;
     const loadCategories = async () => {
-      const { data } = await supabase.from('task_categories').select('*').order('position', { ascending: true });
+      const { data, error } = await supabase.from('task_categories').select('*').order('position', { ascending: true });
+      if (error) { console.error('Error cargando categorías:', error); return; }
       if (data && data.length > 0) {
-        const filtered = data.filter(c => c.is_default || c.user_email === profile.email);
+        const filtered = data.filter(c => c.is_default || c.user_email === effectiveEmail);
         const migrated = filtered.map(c => {
           if (c.name === 'Entrada') return { ...c, name: 'Llegada arrendatario' };
           if (c.name === 'Salida') return { ...c, name: 'Publicar/Arrendar' };
@@ -177,13 +182,16 @@ export default function TasksPage() {
       }
     };
     loadCategories();
-  }, [profile?.email]);
+  }, [effectiveEmail]);
 
   // ── Cargar layout desde localStorage una vez que tenemos categorías ──────────
+  // Igual que arriba: la clave de localStorage y el filtrado de categorías
+  // faltantes usan effectiveEmail, para que el layout siga al usuario que se
+  // está viendo.
   React.useEffect(() => {
-    if (!categories || !profile?.email) return;
+    if (!categories || !effectiveEmail) return;
     const catNames = categories.map(c => c.name);
-    const storageKey = `tasksLayout_${profile.email}`;
+    const storageKey = `tasksLayout_${effectiveEmail}`;
 
     try {
       const saved = localStorage.getItem(storageKey);
@@ -212,7 +220,7 @@ export default function TasksPage() {
     // Sin layout guardado: construir desde cero
     // Migrar columnOrder viejo si existe
     try {
-      const oldKey = `tasksColumnOrder_${profile.email}`;
+      const oldKey = `tasksColumnOrder_${effectiveEmail}`;
       const oldSaved = localStorage.getItem(oldKey);
       if (oldSaved) {
         const oldOrder = JSON.parse(oldSaved).map(n => {
@@ -231,13 +239,13 @@ export default function TasksPage() {
 
     const defaultLayout = buildDefaultLayout(catNames);
     setLayout(defaultLayout);
-  }, [categories, profile?.email]);
+  }, [categories, effectiveEmail]);
 
   const saveLayout = React.useCallback((newLayout) => {
-    if (!profile?.email) return;
+    if (!effectiveEmail) return;
     setLayout(newLayout);
-    localStorage.setItem(`tasksLayout_${profile.email}`, JSON.stringify(newLayout));
-  }, [profile?.email]);
+    localStorage.setItem(`tasksLayout_${effectiveEmail}`, JSON.stringify(newLayout));
+  }, [effectiveEmail]);
 
   const getCategoryColor = (name) => {
     const cat = categories?.find(c => c.name === name);
@@ -247,41 +255,52 @@ export default function TasksPage() {
   const isProtected = (name) => ['Llegada arrendatario','Publicar/Arrendar','Equipo','Solicitudes','PAGOS'].includes(name);
 
   // ── Auto-insertar PAGOS para admins ─────────────────────────────────────────
+  // También basado en effectiveEmail: si el usuario que se está viendo es
+  // DD o FD y todavía no tiene su propia fila de PAGOS, se crea para ESE
+  // usuario (antes se creaba siempre para profile.email, el que tiene la
+  // sesión iniciada, lo que causaba que nunca se creara para el otro admin
+  // al verlo a través de "ver como").
   React.useEffect(() => {
-    if (!profile?.email) return;
-    const isAdmin = ['ddm@renovalpropiedades.com','fdm@renovalpropiedades.com'].includes(profile.email);
+    if (!effectiveEmail) return;
+    const isAdmin = ['ddm@renovalpropiedades.com','fdm@renovalpropiedades.com'].includes(effectiveEmail);
     if (!isAdmin) return;
     const hasPagos = categories?.some(c => c.name === 'PAGOS');
     if (hasPagos) return;
     const insertPagos = async () => {
       const pos = (categories?.length || 6);
-      const { data } = await supabase.from('task_categories')
-        .insert({ name: 'PAGOS', color: '#C62828', position: pos, is_default: false, user_email: profile.email })
+      const { data, error } = await supabase.from('task_categories')
+        .insert({ name: 'PAGOS', color: '#C62828', position: pos, is_default: false, user_email: effectiveEmail })
         .select().single();
+      if (error) { console.error('Error creando categoría PAGOS para', effectiveEmail, ':', error); return; }
       if (data) {
         setCategories(prev => [...(prev || []), data]);
         setLayout(prev => {
           if (!prev) return prev;
           const newLayout = [...prev, ['PAGOS']];
-          localStorage.setItem(`tasksLayout_${profile.email}`, JSON.stringify(newLayout));
+          localStorage.setItem(`tasksLayout_${effectiveEmail}`, JSON.stringify(newLayout));
           return newLayout;
         });
       }
     };
     insertPagos();
-  }, [profile?.email, categories]);
+  }, [effectiveEmail, categories]);
 
   const handleAddCategory = async () => {
     if (!newCatName.trim()) return;
     const pos = (categories?.length || 5);
-    const { data } = await supabase.from('task_categories')
-      .insert({ name: newCatName.trim(), color: newCatColor, position: pos, is_default: false, user_email: profile?.email })
+    const { data, error } = await supabase.from('task_categories')
+      .insert({ name: newCatName.trim(), color: newCatColor, position: pos, is_default: false, user_email: effectiveEmail })
       .select().single();
+    if (error) {
+      console.error('Error creando lista:', error);
+      alert('No se pudo crear la lista: ' + error.message);
+      return;
+    }
     if (data) {
       setCategories(prev => [...(prev || []), data]);
       setLayout(prev => {
         const newLayout = prev ? [...prev, [data.name]] : [[data.name]];
-        localStorage.setItem(`tasksLayout_${profile?.email}`, JSON.stringify(newLayout));
+        localStorage.setItem(`tasksLayout_${effectiveEmail}`, JSON.stringify(newLayout));
         return newLayout;
       });
     }
@@ -294,12 +313,12 @@ export default function TasksPage() {
     if (isProtected(name)) return;
     if (!window.confirm(`¿Eliminar la lista "${name}"? Las tareas en esta lista también se eliminarán.`)) return;
     await supabase.from('tasks').delete().eq('category', name).eq('assigned_to', effectiveEmail);
-    await supabase.from('task_categories').delete().eq('name', name).eq('user_email', profile?.email);
+    await supabase.from('task_categories').delete().eq('name', name).eq('user_email', effectiveEmail);
     setCategories(prev => prev.filter(c => c.name !== name));
     setLayout(prev => {
       if (!prev) return prev;
       const newLayout = removeFromLayout(prev, name);
-      localStorage.setItem(`tasksLayout_${profile?.email}`, JSON.stringify(newLayout));
+      localStorage.setItem(`tasksLayout_${effectiveEmail}`, JSON.stringify(newLayout));
       return newLayout;
     });
   };
