@@ -317,15 +317,46 @@ const rentStyles = {
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
 };
 
+const TASK_ASSIGNEE_OPTIONS = ['DD', 'FD', 'EA', 'FG'];
+
 function StatusNotesModal({ row, onClose, onSave }) {
   const [text, setText] = useState(row.status_notas || '');
   const [saving, setSaving] = useState(false);
+
+  // ── Módulo de creación de tareas ────────────────────────────
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskAssignee, setNewTaskAssignee] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
+  const [addedTasks, setAddedTasks] = useState([]); // feedback de tareas creadas en esta sesión del modal
 
   const handleSave = async () => {
     setSaving(true);
     await onSave(row.id, text);
     setSaving(false);
     onClose();
+  };
+
+  const handleAddTask = async () => {
+    if (!newTaskTitle.trim() || !newTaskAssignee) return;
+    const assigneeEmail = ENCARGADO_EMAIL[newTaskAssignee];
+    if (!assigneeEmail) return;
+    setAddingTask(true);
+    const { error } = await supabase.from('tasks').insert({
+      owner_email: assigneeEmail,
+      title: newTaskTitle.trim(),
+      category: 'Publicar/Arrendar',
+      completed: false,
+      recurrence: 'none',
+      position: -Date.now(),
+    });
+    setAddingTask(false);
+    if (error) {
+      alert('No se pudo crear la tarea: ' + error.message);
+      return;
+    }
+    setAddedTasks(prev => [...prev, { title: newTaskTitle.trim(), assignee: newTaskAssignee }]);
+    setNewTaskTitle('');
+    setNewTaskAssignee('');
   };
 
   return (
@@ -345,6 +376,46 @@ function StatusNotesModal({ row, onClose, onSave }) {
             style={statusNotesStyles.textarea}
           />
         </div>
+
+        <div style={statusNotesStyles.taskSection}>
+          <div style={statusNotesStyles.taskSectionTitle}>Cargar tarea a Publicar/Arrendar</div>
+          <input
+            value={newTaskTitle}
+            onChange={e => setNewTaskTitle(e.target.value)}
+            placeholder="Nombre de la tarea..."
+            style={statusNotesStyles.taskInput}
+            onKeyDown={e => e.key === 'Enter' && handleAddTask()}
+          />
+          <div style={statusNotesStyles.taskRow}>
+            <div style={statusNotesStyles.assigneeGroup}>
+              {TASK_ASSIGNEE_OPTIONS.map(a => (
+                <button key={a} onClick={() => setNewTaskAssignee(a)}
+                  style={{
+                    ...statusNotesStyles.assigneeBtn,
+                    ...(newTaskAssignee === a ? { background: ENCARGADO_COLORS[a] + '22', color: ENCARGADO_COLORS[a], borderColor: ENCARGADO_COLORS[a], fontWeight: 700 } : {}),
+                  }}>
+                  {a}
+                </button>
+              ))}
+            </div>
+            <button onClick={handleAddTask} disabled={!newTaskTitle.trim() || !newTaskAssignee || addingTask}
+              style={{ ...statusNotesStyles.addTaskBtn, ...((!newTaskTitle.trim() || !newTaskAssignee) ? { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' } : {}) }}>
+              {addingTask ? 'Agregando...' : 'Agregar tarea'}
+            </button>
+          </div>
+          {addedTasks.length > 0 && (
+            <div style={statusNotesStyles.addedList}>
+              {addedTasks.map((t, i) => (
+                <div key={i} style={statusNotesStyles.addedItem}>
+                  <span style={{ ...statusNotesStyles.addedBadge, background: ENCARGADO_COLORS[t.assignee] + '22', color: ENCARGADO_COLORS[t.assignee] }}>{t.assignee}</span>
+                  <span>{t.title}</span>
+                  <span style={statusNotesStyles.addedCheck}>✓ creada</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div style={statusNotesStyles.actions}>
           <button onClick={handleSave} disabled={saving} style={statusNotesStyles.confirmBtn}>{saving ? 'Guardando...' : 'Guardar'}</button>
           <button onClick={onClose} style={statusNotesStyles.cancelBtn}>Cancelar</button>
@@ -361,6 +432,17 @@ const statusNotesStyles = {
   closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#5f6368', borderRadius: 6 },
   prop: { fontSize: 13, color: '#5f6368', margin: '0 20px 16px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8 },
   textarea: { width: '100%', minHeight: 160, border: '1px solid #dadce0', borderRadius: 8, padding: '10px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 },
+  taskSection: { padding: '16px 20px 4px', borderTop: '1px solid #f1f3f4', marginTop: 16 },
+  taskSectionTitle: { fontSize: 12, fontWeight: 600, color: '#5f6368', marginBottom: 8 },
+  taskInput: { width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 },
+  taskRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  assigneeGroup: { display: 'flex', gap: 4, flex: 1 },
+  assigneeBtn: { padding: '6px 12px', borderRadius: 20, border: '1px solid #dadce0', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#5f6368', fontFamily: 'inherit' },
+  addTaskBtn: { padding: '8px 14px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  addedList: { marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 },
+  addedItem: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#3c4043', background: '#f8f9fa', borderRadius: 6, padding: '5px 8px' },
+  addedBadge: { fontSize: 10, fontWeight: 700, borderRadius: 10, padding: '1px 7px', flexShrink: 0 },
+  addedCheck: { marginLeft: 'auto', color: '#34a853', fontSize: 11, flexShrink: 0 },
   actions: { display: 'flex', gap: 8, padding: '20px' },
   confirmBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
   cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
