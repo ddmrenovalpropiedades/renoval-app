@@ -280,6 +280,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
   const [search, setSearch] = useState('');
   const [filterE, setFilterE] = useState([]);
   const [filterUmbral, setFilterUmbral] = useState(0);
+  const [filterGCVacio, setFilterGCVacio] = useState(false);
   const ENCARGADOS = ['DD','FD','EA','FG','AM'];
   const ENCARGADO_COLORS = { DD:'#1565C0', FD:'#2E7D32', EA:'#6A1B9A', FG:'#E65100', AM:'#37474F' };
 
@@ -290,6 +291,15 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
     await supabase.from('saldos').update(changes).eq('id', rowId);
     setEdits(prev=>{ const n={...prev}; delete n[rowId]; return n; });
   };
+
+  // "GC vacío": el campo GC Ac (mes actual) está vacío, excluyendo las
+  // propiedades marcadas en Atributos como que NO tienen gasto común
+  // (tiene_gc === false) — para esas, el campo vacío es esperado.
+  const isGCVacio = useCallback((row) => {
+    const attr = attrsMap[row.propiedad];
+    if (attr?.tiene_gc === false) return false;
+    return !row.gc_ac || !String(row.gc_ac).trim();
+  }, [attrsMap]);
 
   const filtered = useMemo(() => {
     let result = rows.filter(r=>r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos);
@@ -302,21 +312,12 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
     }
     if (filterE.length) result = result.filter(r=>filterE.every(e=>[r.e1,r.e2].includes(e)));
     if (filterUmbral>0) result = result.filter(r=>rowExceedsUmbral(r,attrsMap,filterUmbral,mult1,mult2));
+    if (filterGCVacio) result = result.filter(isGCVacio);
     return result;
-  }, [rows,search,filterE,filterUmbral,attrsMap,mult1,mult2]);
+  }, [rows,search,filterE,filterUmbral,filterGCVacio,attrsMap,mult1,mult2,isGCVacio]);
 
   // ── Indicadores (respetan los filtros activos: búsqueda, encargado, umbral) ──
-  // "Gastos comunes vacíos": propiedades con GC Ac (mes actual) vacío,
-  // excluyendo las que en Atributos se marcaron explícitamente como que NO
-  // tienen gasto común (tiene_gc === false) — para esas, el campo vacío es
-  // esperado y no representa un dato faltante.
-  const gcVaciosCount = useMemo(() => {
-    return filtered.filter(r => {
-      const attr = attrsMap[r.propiedad];
-      if (attr?.tiene_gc === false) return false;
-      return !r.gc_ac || !String(r.gc_ac).trim();
-    }).length;
-  }, [filtered, attrsMap]);
+  const gcVaciosCount = useMemo(() => filtered.filter(isGCVacio).length, [filtered, isGCVacio]);
 
   const COL_HEADER_COLORS = {
     agua: { bg: '#E3F2FD', color: '#1565C0' }, // azul DD
@@ -365,6 +366,8 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
           <div style={{width:1,background:'#dadce0',height:20,margin:'0 4px'}}/>
           <button onClick={()=>setFilterUmbral(filterUmbral===1?0:1)} style={{...st.filterBtn,...(filterUmbral===1?{background:'#fff3e0',color:'#e65100',borderColor:'#e65100',fontWeight:700}:{})}}>≥ U1</button>
           <button onClick={()=>setFilterUmbral(filterUmbral===2?0:2)} style={{...st.filterBtn,...(filterUmbral===2?{background:'#fce8e6',color:'#c5221f',borderColor:'#c5221f',fontWeight:700}:{})}}>≥ U2</button>
+          <div style={{width:1,background:'#dadce0',height:20,margin:'0 4px'}}/>
+          <button onClick={()=>setFilterGCVacio(v=>!v)} style={{...st.filterBtn,...(filterGCVacio?{background:'#fce8e6',color:'#c5221f',borderColor:'#c5221f',fontWeight:700}:{})}}>GC Vacíos</button>
         </div>
       </div>
       <div style={st.tableWrapper}>
