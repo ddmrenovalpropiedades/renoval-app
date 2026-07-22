@@ -305,6 +305,19 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
     return result;
   }, [rows,search,filterE,filterUmbral,attrsMap,mult1,mult2]);
 
+  // ── Indicadores (respetan los filtros activos: búsqueda, encargado, umbral) ──
+  // "Gastos comunes vacíos": propiedades con GC Ac (mes actual) vacío,
+  // excluyendo las que en Atributos se marcaron explícitamente como que NO
+  // tienen gasto común (tiene_gc === false) — para esas, el campo vacío es
+  // esperado y no representa un dato faltante.
+  const gcVaciosCount = useMemo(() => {
+    return filtered.filter(r => {
+      const attr = attrsMap[r.propiedad];
+      if (attr?.tiene_gc === false) return false;
+      return !r.gc_ac || !String(r.gc_ac).trim();
+    }).length;
+  }, [filtered, attrsMap]);
+
   const COL_HEADER_COLORS = {
     agua: { bg: '#E3F2FD', color: '#1565C0' }, // azul DD
     luz:  { bg: '#FFFDE7', color: '#F57F17' }, // amarillo más cargado
@@ -415,6 +428,12 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
             </tbody>
           </table>
         )}
+      </div>
+
+      <div style={st.totalsRow}>
+        <span style={st.totalsLabel}>TOTAL</span>
+        <span style={st.totalsItem}>Número de propiedades: <strong>{filtered.length}</strong></span>
+        <span style={st.totalsItem}>Gastos comunes vacíos: <strong style={{ color: gcVaciosCount > 0 ? '#c62828' : '#202124' }}>{gcVaciosCount}</strong></span>
       </div>
     </>
   );
@@ -1487,4 +1506,7 @@ const st = {
   modalHeader:{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 20px', borderBottom:'1px solid #e8eaed' },
   modalTitle:{ fontSize:16, fontWeight:700, color:'#202124' },
   closeBtn:{ background:'none', border:'none', cursor:'pointer', padding:4, color:'#5f6368', borderRadius:6 },
+  totalsRow:{ display:'flex', alignItems:'center', gap:24, padding:'10px 16px', marginTop:8, background:'#fff', border:'1px solid #e8eaed', borderRadius:10, flexShrink:0 },
+  totalsLabel:{ fontSize:14, fontWeight:700, color:'#5f6368', letterSpacing:0.8 },
+  totalsItem:{ fontSize:17, color:'#3c4043' },
 };
