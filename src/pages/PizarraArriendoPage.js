@@ -93,7 +93,25 @@ const useUFValue = () => {
     const today = new Date();
     const y = today.getFullYear(), m = String(today.getMonth() + 1).padStart(2, '0'), d = String(today.getDate()).padStart(2, '0');
     fetch(`https://mindicador.cl/api/uf/${d}-${m}-${y}`)
-      .then(r => r.json()).then(data => { const val = data?.serie?.[0]?.valor; if (val) setUf(val); }).catch(() => {});
+      .then(r => r.json())
+      .then(data => {
+        const val = data?.serie?.[0]?.valor;
+        if (val) { setUf(val); return; }
+        // Respaldo: si la consulta por la fecha exacta de hoy no trae datos
+        // (ej. aún no se publica, o algún problema puntual del servicio),
+        // se intenta con el endpoint general, que trae el último valor
+        // conocido de la UF.
+        return fetch('https://mindicador.cl/api/uf')
+          .then(r2 => r2.json())
+          .then(data2 => { const val2 = data2?.serie?.[0]?.valor; if (val2) setUf(val2); })
+          .catch(() => {});
+      })
+      .catch(() => {
+        fetch('https://mindicador.cl/api/uf')
+          .then(r2 => r2.json())
+          .then(data2 => { const val2 = data2?.serie?.[0]?.valor; if (val2) setUf(val2); })
+          .catch(() => {});
+      });
   }, []);
   return uf;
 };
@@ -556,21 +574,21 @@ export default function PizarraArriendoPage() {
   const [filterE, setFilterE] = useState([]);
   const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
   const [fichaPropiedad, setFichaPropiedad] = useState(null);
-  // Orden por fecha de salida: null = orden por defecto (position), 'asc' = más
-  // antigua a más reciente. Persistido en localStorage para no tener que
-  // reaplicarlo cada vez que se carga la página (mismo patrón que el orden
-  // de tareas en mobile).
-  const [sortFechaSalida, setSortFechaSalida] = useState(() => {
-    try { return localStorage.getItem('pizarra_arriendo_sort_fecha_salida') || null; }
+  // Orden de la tabla: null = por defecto (position). Criterios disponibles:
+  // 'fecha_salida', 'fecha_publicacion', 'alfabetico'. Persistido en
+  // localStorage para no tener que reaplicarlo cada vez que se carga la
+  // página (mismo patrón que el orden de tareas en mobile).
+  const [sortOption, setSortOption] = useState(() => {
+    try { return localStorage.getItem('pizarra_arriendo_sort_option') || null; }
     catch (e) { return null; }
   });
 
   useEffect(() => {
     try {
-      if (sortFechaSalida) localStorage.setItem('pizarra_arriendo_sort_fecha_salida', sortFechaSalida);
-      else localStorage.removeItem('pizarra_arriendo_sort_fecha_salida');
+      if (sortOption) localStorage.setItem('pizarra_arriendo_sort_option', sortOption);
+      else localStorage.removeItem('pizarra_arriendo_sort_option');
     } catch (e) { /* localStorage no disponible: el orden simplemente no persiste */ }
-  }, [sortFechaSalida]);
+  }, [sortOption]);
   const uf = useUFValue();
   const { exportToExcel } = useExcelExport();
 
@@ -658,17 +676,21 @@ export default function PizarraArriendoPage() {
   const filtered = useMemo(() => {
     let result = rows;
     if (filterE.length) result = result.filter(r => filterE.every(e => [r.e1, r.e2].includes(e)));
-    if (sortFechaSalida === 'asc') {
-      // Filas sin fecha_salida quedan al final, sin importar el resto del orden.
+    if (sortOption === 'fecha_salida' || sortOption === 'fecha_publicacion') {
+      const field = sortOption;
+      // Filas sin el campo de fecha correspondiente quedan al final, sin
+      // importar el resto del orden.
       result = [...result].sort((a, b) => {
-        if (!a.fecha_salida && !b.fecha_salida) return 0;
-        if (!a.fecha_salida) return 1;
-        if (!b.fecha_salida) return -1;
-        return a.fecha_salida < b.fecha_salida ? -1 : a.fecha_salida > b.fecha_salida ? 1 : 0;
+        if (!a[field] && !b[field]) return 0;
+        if (!a[field]) return 1;
+        if (!b[field]) return -1;
+        return a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0;
       });
+    } else if (sortOption === 'alfabetico') {
+      result = [...result].sort((a, b) => (a.propiedad || '').localeCompare(b.propiedad || '', 'es'));
     }
     return result;
-  }, [rows, filterE, sortFechaSalida]);
+  }, [rows, filterE, sortOption]);
 
   const totals = useMemo(() => {
     let totalCLP = 0;
@@ -745,10 +767,6 @@ export default function PizarraArriendoPage() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Pizarra Arriendo</h1>
-          <div style={styles.subtitleRow}>
-            <p style={styles.subtitle}>{filtered.length} propiedades</p>
-            {uf && <span style={styles.ufBadge}>UF hoy: {formatCLP(uf)}</span>}
-          </div>
         </div>
         <div style={styles.headerRight}>
           <div style={styles.filters}>
@@ -758,12 +776,19 @@ export default function PizarraArriendoPage() {
             ))}
             {filterE.length > 0 && <button onClick={() => setFilterE([])} style={styles.clearFilter}>Limpiar</button>}
           </div>
-          <button
-            onClick={() => setSortFechaSalida(prev => prev === 'asc' ? null : 'asc')}
-            title="Ordenar por fecha de salida: más antigua a más reciente"
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: sortFechaSalida === 'asc' ? '#e8f0fe' : '#fff', border: `1px solid ${sortFechaSalida === 'asc' ? '#1a73e8' : '#dadce0'}`, borderRadius: 8, fontSize: 13, cursor: 'pointer', color: sortFechaSalida === 'asc' ? '#1a73e8' : '#3c4043', fontFamily: 'inherit', fontWeight: sortFechaSalida === 'asc' ? 700 : 400 }}>
-            <ArrowUpDown size={14} /> Fecha salida
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 2px' }}>
+            <ArrowUpDown size={14} color={sortOption ? '#1a73e8' : '#5f6368'} style={{ flexShrink: 0 }} />
+            <select
+              value={sortOption || ''}
+              onChange={e => setSortOption(e.target.value || null)}
+              title="Ordenar tabla"
+              style={{ padding: '9px 10px', background: sortOption ? '#e8f0fe' : '#fff', border: `1px solid ${sortOption ? '#1a73e8' : '#dadce0'}`, borderRadius: 8, fontSize: 13, cursor: 'pointer', color: sortOption ? '#1a73e8' : '#3c4043', fontFamily: 'inherit', fontWeight: sortOption ? 700 : 400, outline: 'none' }}>
+              <option value="">Sin ordenar</option>
+              <option value="fecha_salida">Fecha salida</option>
+              <option value="fecha_publicacion">Fecha publicación</option>
+              <option value="alfabetico">Alfabético</option>
+            </select>
+          </div>
           <button onClick={handleExport} disabled={loading} title="Exportar a Excel" style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 14px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:loading?'not-allowed':'pointer', color:'#3c4043', fontFamily:'inherit', opacity:loading?0.5:1 }}>
             <Download size={14} color="#34a853" /> Excel
           </button>
@@ -800,6 +825,7 @@ export default function PizarraArriendoPage() {
         <span style={styles.totalsLabel}>TOTAL</span>
         <span style={styles.totalsItem}>Total por colocar: <strong>{formatCLP(totals.totalCLP)}</strong></span>
         <span style={styles.totalsItem}>Propiedades: <strong>{filtered.length}</strong></span>
+        {uf && <span style={styles.totalsItem}>UF hoy: <strong>{formatCLP(uf)}</strong></span>}
       </div>
 
       {rentingRow && <RentModal row={rentingRow} onConfirm={handleRentedConfirm} onCancel={() => setRentingRow(null)} uf={uf} />}
