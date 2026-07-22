@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { X, Upload, ChevronLeft, ChevronRight, ImageIcon, Trash2 } from 'lucide-react';
 
 const MAX_SETS = 10;
+const MAX_IMAGES_PER_SET = 150;
 const SIDEBAR_WIDTH_NORMAL = 320;
 const SIDEBAR_WIDTH_EXPANDED = 532;
 const MAX_EXPANDED_IMAGE_WIDTH = 500;
@@ -184,7 +185,10 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
     if (!window.confirm(`¿Eliminar "${setName}" y todas sus imágenes? Esta acción no se puede deshacer.`)) return;
     setDeletingSet(true);
     try {
-      const { data: fileList } = await supabase.storage.from('gallery').list(activeSetId);
+      // limit explícito: por defecto Supabase Storage .list() solo devuelve
+      // hasta 100 archivos, lo que dejaba imágenes huérfanas sin borrar en
+      // sets con más de 100 archivos.
+      const { data: fileList } = await supabase.storage.from('gallery').list(activeSetId, { limit: MAX_IMAGES_PER_SET });
       if (fileList && fileList.length > 0) {
         const paths = fileList.map(f => `${activeSetId}/${f.name}`);
         await supabase.storage.from('gallery').remove(paths);
@@ -212,6 +216,10 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
 
     const validFiles = files.filter(f => ACCEPTED_EXT_REGEX.test(f.name));
     if (!validFiles.length) { alert('Solo se aceptan archivos JPG, GIF o WEBP'); return; }
+    if (validFiles.length > MAX_IMAGES_PER_SET) {
+      alert(`Máximo ${MAX_IMAGES_PER_SET} archivos por set (intentaste subir ${validFiles.length}).`);
+      return;
+    }
 
     validFiles.sort((a, b) => {
       const na = parseInt(a.name.replace(/\D/g, '')) || 0;
@@ -231,7 +239,10 @@ export default function GallerySidebar({ onClose, userEmail, unlockedSinceOpen =
       setId = data.id;
       await supabase.from('gallery_progress').insert({ set_id: setId, unlocked_count: 1 });
     } else if (isReplace) {
-      const { data: fileList } = await supabase.storage.from('gallery').list(setId);
+      // limit explícito: mismo motivo que en handleDeleteSet — sin esto, un
+      // set con más de 100 archivos dejaba residuos de la carga anterior al
+      // reemplazar las imágenes.
+      const { data: fileList } = await supabase.storage.from('gallery').list(setId, { limit: MAX_IMAGES_PER_SET });
       if (fileList && fileList.length > 0) {
         await supabase.storage.from('gallery').remove(fileList.map(f => `${setId}/${f.name}`));
       }
