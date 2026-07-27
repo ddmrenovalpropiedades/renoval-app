@@ -646,9 +646,10 @@ export default function PagosPage() {
     loadCartera();
   }, []);
 
-  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter) => {
-    setLoading(true);
-    let query = supabase.from('pagos').select('*', { count: 'exact' });
+  // Helper compartido: aplica los mismos filtros (encargado, estado, antigüedad,
+  // búsqueda) tanto para traer la página visible como para calcular los
+  // totales de abajo sobre el conjunto filtrado completo.
+  const applyPagosFilters = (query, porFilter, estadoFilter, searchText, antiguedadFilter) => {
     if (porFilter.length === 1) query = query.eq('pagado_por', porFilter[0]);
     else if (porFilter.length > 1) query = query.in('pagado_por', porFilter);
     if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
@@ -664,6 +665,13 @@ export default function PagosPage() {
       const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo'];
       for (const word of words) query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
     }
+    return query;
+  };
+
+  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter) => {
+    setLoading(true);
+    let query = supabase.from('pagos').select('*', { count: 'exact' });
+    query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter);
     const from = currentPage * PAGE_SIZE;
     const { data, count } = await query.order('position', { ascending: false }).range(from, from + PAGE_SIZE - 1);
     setPagos(data || []);
@@ -671,7 +679,30 @@ export default function PagosPage() {
     setLoading(false);
   }, []);
 
+  // Totales "Total P" / "Total PG": suman CxC sobre TODO el conjunto
+  // filtrado (no solo la página de 100 filas visible), respetando los
+  // mismos filtros activos (encargado, estado, antigüedad, búsqueda).
+  const [pagosTotals, setPagosTotals] = useState({ totalP: 0, totalPG: 0 });
+  const fetchTotals = useCallback(async (porFilter, estadoFilter, searchText, antiguedadFilter) => {
+    let totalP = 0, totalPG = 0;
+    let from = 0;
+    while (true) {
+      let query = supabase.from('pagos').select('cxc, estado');
+      query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter);
+      const { data } = await query.range(from, from + 999);
+      if (!data || data.length === 0) break;
+      for (const p of data) {
+        if (p.estado === 'P') totalP += (p.cxc || 0);
+        else if (p.estado === 'PG') totalPG += (p.cxc || 0);
+      }
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    setPagosTotals({ totalP, totalPG });
+  }, []);
+
   useEffect(() => { fetchPagos(page, filterPor, filterEstado, search, filterAntiguedad); }, [fetchPagos, page, filterPor, filterEstado, search, filterAntiguedad]);
+  useEffect(() => { fetchTotals(filterPor, filterEstado, search, filterAntiguedad); }, [fetchTotals, filterPor, filterEstado, search, filterAntiguedad]);
   useEffect(() => {
     const timer = setTimeout(() => { setSearch(searchInput); setPage(0); }, 300);
     return () => clearTimeout(timer);
@@ -764,6 +795,11 @@ export default function PagosPage() {
       </div>
 
       <Pagination page={page} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={handlePageChange} />
+      <div style={s.totalsRow}>
+        <span style={s.totalsLabel}>TOTAL</span>
+        <span style={s.totalsItem}>Total P: <strong style={{ color: '#c62828' }}>{formatCLP(pagosTotals.totalP)}</strong></span>
+        <span style={s.totalsItem}>Total PG: <strong style={{ color: '#f57c00' }}>{formatCLP(pagosTotals.totalPG)}</strong></span>
+      </div>
       {notesFor && <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} />}
       {showMetrics && <MetricsView onClose={() => setShowMetrics(false)} />}
       {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
@@ -792,6 +828,9 @@ const s = {
   actionBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center' },
   empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
   loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
+  totalsRow: { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
+  totalsLabel: { fontSize: 14, fontWeight: 700, color: '#5f6368', letterSpacing: 0.8 },
+  totalsItem: { fontSize: 17, color: '#3c4043' },
   searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
   searchInput: { paddingLeft: 30, paddingRight: 28, paddingTop: 7, paddingBottom: 7, border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit', width: 220 },
   clearSearch: { position: 'absolute', right: 8, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', color: '#9aa0a6' },
