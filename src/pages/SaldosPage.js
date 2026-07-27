@@ -1,837 +1,1515 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Plus, X, FileText, Trash2, BarChart2, ChevronLeft, ChevronRight, Search, Download, Paperclip, Image as ImageIcon } from 'lucide-react';
-import PropertyAutocomplete from '../components/PropertyAutocomplete';
+import { Search, X, Upload, Save, AlertCircle, RefreshCw, Send, Eye, Plus, Trash2, Mail, BarChart2, Download, SlidersHorizontal, MessageSquare } from 'lucide-react';
 import { useExcelExport } from '../hooks/useExcelExport';
+import PropertyAutocomplete from '../components/PropertyAutocomplete';
 import FichaSidebar, { FichaCellWrap } from '../components/FichaSidebar';
 
-const normalize = (str) =>
-  String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-// La celda de propiedad de esta página se guarda con la misma dirección
-// abreviada que usa PropertyAutocomplete (transformAddress internamente),
-// distinta al nombre completo que vive en Cartera. Se duplica la función acá
-// (igual patrón que en Pizarra Arriendo/Venta) solo para poder armar el mapa
-// inverso necesario para la Ficha.
-const transformAddress = (full) => {
-  const short = full.split(',')[0].trim();
-  return short.replace(/\bDepartamento\s+/gi, 'D').replace(/\bCasa\s+/gi, 'C');
-};
-
-// ── Adjuntos de Notas (JPG/PDF por pago) ────────────────────────
-// Mismo bucket que usa la Ficha de propiedad; tabla distinta (pago_files)
-// porque acá el adjunto pertenece a un pago puntual, no a la propiedad.
-const FILES_BUCKET = 'ficha-adjuntos';
-const FILE_ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'application/pdf'];
-const FILE_ACCEPTED_EXT = /\.(jpe?g|pdf)$/i;
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-const genFileId = () => (
-  typeof window !== 'undefined' && window.crypto?.randomUUID
-    ? window.crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-);
-
-const formatFileSize = (bytes) => {
-  if (!bytes && bytes !== 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-
-// Descarga forzada vía blob — un <a download> normal no funciona confiable
-// para URLs de otro origen (como las de Supabase Storage).
-async function forceDownload(url, filename) {
-  try {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = filename || 'archivo';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(blobUrl);
-  } catch (e) {
-    console.error('Error al descargar, se abre en pestaña nueva:', e);
-    window.open(url, '_blank');
-  }
-}
-
-const PAGADO_POR_OPTIONS = ['DD', 'FD'];
-const ESTADO_OPTIONS = ['P', 'D', 'PG'];
-const TIPO_OPTIONS = ['T', 'C', 'A'];
-const PAGE_SIZE = 100;
-
-const formatCLP = (n) => {
-  if (n === null || n === undefined || n === '') return '';
-  const num = typeof n === 'string' ? parseFloat(n.replace(/[^0-9.-]/g, '')) : n;
-  if (isNaN(num)) return '';
-  return '$' + Math.round(num).toLocaleString('es-CL');
-};
-
-const parseCLP = (str) => {
-  if (!str && str !== 0) return null;
-  const n = parseFloat(String(str).replace(/[^0-9.-]/g, ''));
+// ── Helpers ──────────────────────────────────────────────────
+const parseAmount = (val) => {
+  if (!val || typeof val !== 'string') return null;
+  if (['pagada', 'temporalmente no', 'error desconocido'].includes(val.toLowerCase())) return null;
+  const n = parseInt(val.replace(/[^0-9]/g, ''), 10);
   return isNaN(n) ? null : n;
 };
-
-const antiguedad = (fechaStr) => {
-  if (!fechaStr) return '';
-  const fecha = new Date(fechaStr + 'T12:00:00');
-  const diff = (new Date() - fecha) / (1000 * 60 * 60 * 24);
-  return diff > 60 ? '+ 2 meses' : '- 2 meses';
+const parseArriendo = (val) => {
+  if (val === null || val === undefined || val === '') return null;
+  const str = String(val).replace(/[^0-9.-]/g, '');
+  const n = Math.abs(parseFloat(str));
+  return isNaN(n) ? null : n;
 };
+const normalize = (str) =>
+  String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const isPagada = (val) => !!(val && val.toLowerCase() === 'pagada');
 
-const today = () => new Date().toISOString().split('T')[0];
-
-// La columna CAJA es calculada, no editable a mano: vale "FUERA" cuando el
-// pago está en estado "D" (descontado) y su fecha de caja todavía no llegó
-// (es posterior a hoy). En cualquier otro caso queda vacía. Se recalcula en
-// cada render con la fecha de hoy, así nunca queda desactualizada (a
-// diferencia de guardar el texto "FUERA" a mano, que dejaba de ser válido
-// apenas pasaba la fecha y nadie lo actualizaba).
-const isCajaFuera = (pago) => pago?.estado === 'D' && !!pago?.fecha_caja && pago.fecha_caja > today();
-
-const ESTADO_COLORS = {
-  P:  { bg: '#fce8e6', color: '#c62828' },
-  D:  { bg: '#e6f4ea', color: '#2e7d32' },
-  PG: { bg: '#fff3e0', color: '#f57c00' },
-};
-
-// ── MoneyInput ─────────────────────────────────────────────────
-// - Doble clic para entrar en modo edición (permite copiar con clic simple)
-// - Ancho fijo del input para no expandir la columna
-function MoneyInput({ value, onChange, style = {}, alwaysVisible = false }) {
-  const [editing, setEditing] = useState(false);
-  const [raw, setRaw] = useState('');
-
-  const start = () => {
-    const n = parseCLP(value);
-    setRaw(n != null ? String(Math.round(n)) : '');
-    setEditing(true);
-  };
-
-  const commit = () => {
-    setEditing(false);
-    const n = parseCLP(raw);
-    onChange(n != null ? n : null);
-  };
-
-  if (editing) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1a73e8', borderRadius: 6, padding: '2px 6px', background: '#fff', width: 110, boxSizing: 'border-box', flexShrink: 0 }}>
-        <span style={{ fontSize: 12, color: '#9aa0a6', marginRight: 2 }}>$</span>
-        <input
-          autoFocus
-          value={raw ? parseInt(raw || '0').toLocaleString('es-CL') : ''}
-          onChange={e => setRaw(e.target.value.replace(/[^0-9]/g, ''))}
-          onBlur={commit}
-          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-          style={{ border: 'none', outline: 'none', width: 80, fontSize: 12, fontFamily: 'inherit' }}
-        />
-      </div>
-    );
+const getLast12Months = () => {
+  const months = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    months.push(`${y}-${m}`);
   }
+  return months;
+};
+const formatMes = (mes) => {
+  const [y, m] = mes.split('-');
+  const names = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return `${names[parseInt(m)-1]} ${y}`;
+};
+const currentMes = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+};
+const prevMes = () => {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+};
 
+// ── Color logic ───────────────────────────────────────────────
+// Umbrales por defecto usados solo cuando la propiedad no tiene un valor de
+// "promedio" cargado en Atributos para esa cuenta.
+const DEFAULT_THRESHOLDS = { agua: [40000, 60000], luz: [55000, 80000], gas: [45000, 60000], gc: [70000, 180000] };
+
+const getThresholds = (attr, tipo, mult1, mult2) => {
+  const promedio = attr?.[`${tipo}_promedio`];
+  if (promedio) return [promedio * mult1, promedio * mult2];
+  return DEFAULT_THRESHOLDS[tipo] || [Infinity, Infinity];
+};
+
+const rowExceedsUmbral = (row, attrsMap, level, mult1 = 1.9, mult2 = 2.8) => {
+  const attr = attrsMap?.[row.propiedad];
+  const checkField = (val, tipo) => {
+    const n = parseAmount(val);
+    if (!n || isPagada(val)) return false;
+    const [t1, t2] = getThresholds(attr, tipo, mult1, mult2);
+    return level === 1 ? n >= t1 : n >= t2;
+  };
   return (
-    <div
-      onDoubleClick={start}
-      title="Doble clic para editar"
-      style={{
-        cursor: 'text', fontSize: 12, padding: '2px 6px', borderRadius: 6,
-        width: 110, boxSizing: 'border-box', flexShrink: 0,
-        border: alwaysVisible ? '1px solid #dadce0' : 'none',
-        background: alwaysVisible ? '#fff' : 'transparent',
-        userSelect: 'text',
-        ...style,
-      }}
-    >
-      {value != null && value !== ''
-        ? formatCLP(value)
-        : <span style={{ color: alwaysVisible ? '#9aa0a6' : '#dadce0' }}>{alwaysVisible ? '$—' : '—'}</span>
-      }
-    </div>
+    checkField(row.agua_ac,'agua')||checkField(row.agua_an,'agua')||
+    checkField(row.luz_ac,'luz')||checkField(row.luz_an,'luz')||
+    checkField(row.gas_ac,'gas')||checkField(row.gas_an,'gas')||
+    checkField(row.gc_ac,'gc')||checkField(row.gc_an,'gc')
   );
-}
+};
+const getCellStyle = (val, tipo, attr, emptyWhite=false, mult1=1.9, mult2=2.8) => {
+  const base = { padding:0, fontSize:12, textAlign:'center', width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:4 };
+  const u1 = { background:'#FFE0B2', color:'#202124', borderRadius:6 }; // naranja suave — supera umbral 1
+  const u2 = { background:'#FFCDD2', color:'#202124', borderRadius:6 }; // rojo suave  — supera umbral 2
+  if (!val||val==='') return { ...base, background: emptyWhite?'#fff':'#fff', border: emptyWhite?'none':'1px solid #bdbdbd', borderRadius:4 };
+  if (isPagada(val)) return { ...base, background:'#fff', color:'#bdbdbd' };
+  const n = parseAmount(val);
+  if (n===null) return { ...base, background:'#fff', color:'#202124' };
+  if (tipo==='agua'||tipo==='luz'||tipo==='gas'||tipo==='gc') {
+    const [t1, t2] = getThresholds(attr, tipo, mult1, mult2);
+    if (n<t1) return { ...base, background:'#fff', color:'#bdbdbd' };
+    if (n<t2) return { ...base, ...u1 };
+    return { ...base, ...u2 };
+  }
+  if (tipo==='arriendo') {
+    if (n<10000) return { ...base, background:'#fff', color:'#bdbdbd' };
+    return { ...base, background:'#fff', color:'#202124' };
+  }
+  return { ...base, background:'#fff', color:'#202124' };
+};
 
-function InlineText({ value, onChange }) {
+// ── Editable cell ─────────────────────────────────────────────
+function EditableCell({ value, tipo, alerta, onChange, attr, emptyWhite, mult1, mult2 }) {
   const [editing, setEditing] = useState(false);
-  const [raw, setRaw] = useState(value || '');
+  const [local, setLocal] = useState(value||'');
+  const cellStyle = getCellStyle(value, tipo, attr, emptyWhite, mult1, mult2);
+  const handleBlur = () => { setEditing(false); if (local!==(value||'')) onChange(local); };
   if (editing) return (
-    <input autoFocus value={raw}
-      onChange={e => setRaw(e.target.value)}
-      onBlur={() => { setEditing(false); if (raw !== value) onChange(raw); }}
-      onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-      style={{ border: '1px solid #1a73e8', borderRadius: 5, padding: '3px 5px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+    <input value={local} onChange={e=>setLocal(e.target.value)} onBlur={handleBlur}
+      autoFocus style={{ ...getCellStyle('',tipo,attr,true,mult1,mult2), border:'1px solid #1a73e8', outline:'none', width:'100%', textAlign:'center', padding:'4px 6px' }} />
   );
+  const display = tipo==='arriendo'&&value&&!isNaN(parseFloat(value))
+    ? '$'+Math.round(parseFloat(value)).toLocaleString('es-CL') : value||'';
   return (
-    <div onClick={() => { setRaw(value || ''); setEditing(true); }}
-      style={{ cursor: 'text', fontSize: 12, padding: '2px 2px', minHeight: 20 }}>
-      {value || <span style={{ color: '#dadce0' }}>—</span>}
+    <div onClick={()=>{ setLocal(value||''); setEditing(true); }}
+      style={{ ...cellStyle, cursor:'text', minHeight:28, padding:'4px 6px' }}>
+      {alerta&&<AlertCircle size={11} color="#ea4335" style={{flexShrink:0}} />}
+      {display}
     </div>
   );
 }
 
-function InlineSelect({ value, options, onChange }) {
+function UploadBtn({ label, tipo, onUpload, lastUpload }) {
+  const ref = useRef();
   return (
-    <select value={value || ''} onChange={e => onChange(e.target.value)}
-      style={{ border: 'none', outline: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, appearance: 'none', WebkitAppearance: 'none', textAlign: 'center', width: '100%' }}>
-      <option value="">—</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
-}
-
-function DatePicker({ value, onChange, style = {} }) {
-  const ref = React.useRef(null);
-  const fmt = (iso) => {
-    if (!iso) return '';
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  };
-  const handleClick = () => {
-    if (ref.current) {
-      try { ref.current.showPicker(); } catch(e) { ref.current.click(); }
-    }
-  };
-  return (
-    <div onClick={handleClick} style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', ...style }}>
-      <span style={{ fontSize: 11, fontFamily: 'inherit', color: value ? 'inherit' : '#9aa0a6', userSelect: 'none', whiteSpace: 'nowrap' }}>
-        {value ? fmt(value) : 'dd/mm/aaaa'}
-      </span>
-      <input ref={ref} type="date" value={value || ''} onChange={e => onChange(e.target.value)}
-        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0, border: 'none', padding: 0, margin: 0 }} />
+    <div style={st.uploadCard}>
+      <div style={st.uploadLabel}>{label}</div>
+      {lastUpload&&<div style={st.uploadMeta}>Última carga: {new Date(lastUpload.uploaded_at).toLocaleDateString('es-CL')} ({lastUpload.row_count} filas)</div>}
+      <button onClick={()=>ref.current.click()} style={st.uploadBtn}><Upload size={13} style={{marginRight:5}}/>Cargar archivo</button>
+      <input ref={ref} type="file" accept=".xls,.xlsx" style={{display:'none'}}
+        onChange={e=>{ if(e.target.files[0]){onUpload(tipo,e.target.files[0]);e.target.value='';} }} />
     </div>
   );
 }
 
-function NotesPanel({ pago, onClose, onSave }) {
-  const { profile } = useAuth();
-  const [text, setText] = useState(pago.notas || '');
+// ── UMBRAL MODAL ───────────────────────────────────────────────
+function UmbralModal({ config, onClose, onSave }) {
+  const [m1, setM1] = useState(String(config.multiplicador1));
+  const [m2, setM2] = useState(String(config.multiplicador2));
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Archivos adjuntos del pago
-  const [files, setFiles] = useState([]);
-  const [loadingFiles, setLoadingFiles] = useState(true);
-  const [uploadingFile, setUploadingFile] = useState(false);
-  const [confirmDeleteFileId, setConfirmDeleteFileId] = useState(null);
-  const fileInputRef = useRef(null);
-
-  const fetchFiles = useCallback(async () => {
-    setLoadingFiles(true);
-    const { data } = await supabase.from('pago_files').select('*').eq('pago_id', String(pago.id)).order('created_at', { ascending: false });
-    setFiles(data || []);
-    setLoadingFiles(false);
-  }, [pago.id]);
-
-  useEffect(() => { fetchFiles(); }, [fetchFiles]);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('pago_files_' + Math.random().toString(36).slice(2))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pago_files' }, (payload) => {
-        const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
-        if (!row || row.pago_id !== String(pago.id)) return;
-        if (payload.eventType === 'INSERT') {
-          setFiles(prev => prev.some(f => f.id === payload.new.id) ? prev : [payload.new, ...prev]);
-        } else if (payload.eventType === 'DELETE') {
-          setFiles(prev => prev.filter(f => f.id !== payload.old.id));
-        }
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [pago.id]);
-
-  const handleSave = () => { onSave(pago.id, text); onClose(); };
-
-  const handleFileButtonClick = () => fileInputRef.current?.click();
-
-  const handleFileInputChange = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    const validType = FILE_ACCEPTED_TYPES.includes(file.type) || FILE_ACCEPTED_EXT.test(file.name);
-    if (!validType) { alert('Solo se permiten archivos JPG o PDF.'); return; }
-    if (file.size > MAX_FILE_SIZE) { alert('El archivo no puede superar los 10 MB.'); return; }
-    setUploadingFile(true);
-    try {
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      const path = `${genFileId()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from(FILES_BUCKET).upload(path, file, { upsert: false });
-      if (uploadError) throw uploadError;
-      const { data: urlData } = supabase.storage.from(FILES_BUCKET).getPublicUrl(path);
-      const payload = {
-        pago_id: String(pago.id),
-        archivo_url: urlData.publicUrl,
-        archivo_path: path,
-        archivo_nombre: file.name,
-        archivo_tipo: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'),
-        archivo_size: file.size,
-        autor_email: profile?.email || null,
-        autor_iniciales: profile?.iniciales || null,
-      };
-      const { data, error } = await supabase.from('pago_files').insert(payload).select().single();
-      if (error) throw error;
-      if (data) setFiles(prev => prev.some(f => f.id === data.id) ? prev : [data, ...prev]);
-    } catch (e) {
-      console.error('Error subiendo archivo:', e);
-      alert('No se pudo subir el archivo: ' + e.message);
-    }
-    setUploadingFile(false);
-  };
-
-  const handleDeleteFile = async (id) => {
-    const file = files.find(f => f.id === id);
-    await supabase.from('pago_files').delete().eq('id', id);
-    if (file?.archivo_path) supabase.storage.from(FILES_BUCKET).remove([file.archivo_path]).catch(() => {});
-    setFiles(prev => prev.filter(f => f.id !== id));
-    setConfirmDeleteFileId(null);
+  const handleSave = async () => {
+    const v1 = parseFloat(String(m1).replace(',', '.'));
+    const v2 = parseFloat(String(m2).replace(',', '.'));
+    if (isNaN(v1) || isNaN(v2) || v1 <= 0 || v2 <= 0) { setErrorMsg('Ingresa valores numéricos válidos.'); return; }
+    if (v2 <= v1) { setErrorMsg('El multiplicador U2 debe ser mayor al de U1.'); return; }
+    setErrorMsg('');
+    setSaving(true);
+    await onSave({ multiplicador1: v1, multiplicador2: v2 });
+    setSaving(false);
+    onClose();
   };
 
   return (
-    <div style={panelStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={panelStyles.panel}>
-        <div style={panelStyles.header}>
-          <div>
-            <div style={panelStyles.prop}>{pago.propiedad}</div>
-            <div style={panelStyles.desc}>{pago.descripcion}</div>
-          </div>
-          <button onClick={onClose} style={panelStyles.closeBtn}><X size={18} /></button>
+    <div style={st.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...st.modal, width: 400 }}>
+        <div style={st.modalHeader}>
+          <span style={st.modalTitle}>Multiplicadores de umbral</span>
+          <button onClick={onClose} style={st.closeBtn}><X size={18}/></button>
         </div>
-
-        <div style={panelStyles.body}>
-          <label style={panelStyles.label}>Notas</label>
-          <textarea value={text} onChange={e => setText(e.target.value)}
-            placeholder="Ingresa notas sobre este pago..."
-            style={panelStyles.textarea} autoFocus />
+        <div style={{ padding:'16px 20px 8px', fontSize:13, color:'#5f6368', lineHeight:1.6 }}>
+          Se aplican sobre el promedio cargado en Atributos (agua, luz, gas y GC) para calcular U1 y U2. Ej: promedio $50.000 con multiplicador U1 = 1.9 → umbral 1 = $95.000.
         </div>
-
-        <div style={panelStyles.filesSection}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
-            <label style={panelStyles.label}>Archivos</label>
-            <button onClick={handleFileButtonClick} disabled={uploadingFile} style={panelStyles.uploadBtn}>
-              <Paperclip size={12} /> {uploadingFile ? 'Subiendo...' : 'Subir'}
-            </button>
-            <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,application/pdf,image/jpeg" style={{ display: 'none' }} onChange={handleFileInputChange} />
+        <div style={{ padding:'8px 20px 4px', display:'flex', gap:12 }}>
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:12, fontWeight:600, color:'#5f6368', display:'block', marginBottom:6 }}>Multiplicador U1</label>
+            <input value={m1} onChange={e=>setM1(e.target.value)} style={{ width:'100%', border:'1px solid #dadce0', borderRadius:8, padding:'8px 10px', fontSize:14, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }}/>
           </div>
-          <div style={panelStyles.filesList}>
-            {loadingFiles ? (
-              <div style={{ fontSize: 12, color: '#9aa0a6', textAlign: 'center', padding: 10 }}>Cargando...</div>
-            ) : files.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#9aa0a6', textAlign: 'center', padding: 10, fontStyle: 'italic' }}>Sin archivos cargados.</div>
-            ) : files.map(file => (
-              <div key={file.id} style={panelStyles.fileItem}>
-                {file.archivo_tipo?.startsWith('image') ? <ImageIcon size={14} color="#5f6368" style={{ flexShrink: 0 }} /> : <FileText size={14} color="#5f6368" style={{ flexShrink: 0 }} />}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: '#202124', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.archivo_nombre}>{file.archivo_nombre}</div>
-                  <div style={{ fontSize: 10, color: '#9aa0a6' }}>{formatFileSize(file.archivo_size)}{file.autor_iniciales ? ` · ${file.autor_iniciales}` : ''}</div>
-                </div>
-                <button onClick={() => forceDownload(file.archivo_url, file.archivo_nombre)} title="Descargar" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#1a73e8', display: 'flex', flexShrink: 0 }}><Download size={13} /></button>
-                {confirmDeleteFileId === file.id ? (
-                  <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                    <button onClick={() => handleDeleteFile(file.id)} style={{ background: '#fce8e6', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '4px 5px', color: '#ea4335', display: 'flex' }} title="Confirmar eliminar"><Trash2 size={12} /></button>
-                    <button onClick={() => setConfirmDeleteFileId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 5px', color: '#5f6368', display: 'flex' }} title="Cancelar"><X size={12} /></button>
-                  </div>
-                ) : (
-                  <button onClick={() => setConfirmDeleteFileId(file.id)} title="Eliminar" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#9aa0a6', display: 'flex', flexShrink: 0 }}><Trash2 size={13} /></button>
-                )}
-              </div>
-            ))}
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:12, fontWeight:600, color:'#5f6368', display:'block', marginBottom:6 }}>Multiplicador U2</label>
+            <input value={m2} onChange={e=>setM2(e.target.value)} style={{ width:'100%', border:'1px solid #dadce0', borderRadius:8, padding:'8px 10px', fontSize:14, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }}/>
           </div>
         </div>
-
-        <div style={panelStyles.footer}>
-          <button onClick={handleSave} style={panelStyles.saveBtn}>Guardar</button>
-          <button onClick={onClose} style={panelStyles.cancelBtn}>Cancelar</button>
+        {errorMsg && <div style={{ padding:'8px 20px 0', fontSize:12, color:'#c62828' }}>{errorMsg}</div>}
+        <div style={{ padding:'20px', display:'flex', gap:8, justifyContent:'flex-end' }}>
+          <button onClick={onClose} style={st.btnSecondary}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving} style={st.btnPrimary}>{saving ? 'Guardando...' : 'Guardar'}</button>
         </div>
       </div>
     </div>
   );
 }
 
-const panelStyles = {
-  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', zIndex: 3000 },
-  panel: { background: '#fff', width: 380, height: '100vh', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.15)', fontFamily: "'Google Sans','Segoe UI',sans-serif" },
-  header: { padding: '20px 20px 16px', borderBottom: '1px solid #e8eaed', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 },
-  prop: { fontSize: 15, fontWeight: 700, color: '#202124', marginBottom: 4 },
-  desc: { fontSize: 12, color: '#5f6368' },
-  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#5f6368', borderRadius: 6 },
-  body: { flexShrink: 0, padding: 20, display: 'flex', flexDirection: 'column', gap: 8 },
-  label: { fontSize: 12, fontWeight: 600, color: '#5f6368' },
-  textarea: { minHeight: 130, border: '1px solid #dadce0', borderRadius: 8, padding: 12, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6, boxSizing: 'border-box' },
-  filesSection: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '14px 20px 0', borderTop: '1px solid #e8eaed' },
-  filesList: { flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 10 },
-  fileItem: { display: 'flex', alignItems: 'center', gap: 8, background: '#f8f9fa', border: '1px solid #e8eaed', borderRadius: 8, padding: '7px 9px', flexShrink: 0 },
-  uploadBtn: { display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #dadce0', borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#5f6368', cursor: 'pointer', fontFamily: 'inherit' },
-  footer: { padding: '12px 20px', borderTop: '1px solid #e8eaed', display: 'flex', gap: 8, flexShrink: 0 },
-  saveBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
-  cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
-};
+// ── CONFIRM MODAL ─────────────────────────────────────────────
+function ConfirmModal({ title, message, onConfirm, onCancel }) {
+  return (
+    <div style={st.overlay} onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div style={{ ...st.modal, width: 420 }}>
+        <div style={st.modalHeader}>
+          <span style={st.modalTitle}>{title}</span>
+          <button onClick={onCancel} style={st.closeBtn}><X size={18}/></button>
+        </div>
+        <div style={{ padding:'16px 20px', fontSize:13, color:'#3c4043', lineHeight:1.6 }}>
+          {message}
+        </div>
+        <div style={{ padding:'0 20px 20px', display:'flex', gap:8, justifyContent:'flex-end' }}>
+          <button onClick={onCancel} style={st.btnSecondary}>Cancelar</button>
+          <button onClick={onConfirm} style={{ ...st.btnPrimary, display:'flex', alignItems:'center', gap:6 }}>
+            <Send size={13}/> Confirmar envío
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-const METRICS_USER_OPTIONS = [
-  { value: 'DD', label: 'DD', color: '#1565C0' },
-  { value: 'FD', label: 'FD', color: '#2E7D32' },
-  { value: 'SIN_ASIGNAR', label: 'Sin asignar', color: '#5f6368' },
+// ── TEST MODAL ───────────────────────────────────────────────
+const TEST_PROPS = [
+  { propiedad: 'Vitacura 9123 C25',             mail: 'ddm@renovalpropiedades.com' },
+  { propiedad: 'María Monvel 1078 D9',           mail: 'fdm@renovalpropiedades.com' },
+  { propiedad: 'Alonso de Córdova 123 D27',      mail: 'diegoadm9@gmail.com' },
 ];
 
-function MetricsView({ onClose }) {
-  const [pagos, setPagos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [userFilter, setUserFilter] = useState([]);
-  const fmt = formatCLP;
-
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      let all = [];
-      let from = 0;
-      const batchSize = 1000;
-      while (true) {
-        const { data } = await supabase.from('pagos').select('cxc, estado, fecha, pagado_por, fecha_caja').range(from, from + batchSize - 1);
-        if (!data || data.length === 0) break;
-        all = [...all, ...data];
-        if (data.length < batchSize) break;
-        from += batchSize;
-      }
-      setPagos(all);
-      setLoading(false);
-    };
-    fetchAll();
-  }, []);
-
-  const toggleUserFilter = (val) => setUserFilter(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]);
-
-  // Sin filtro seleccionado = todas las CxC (DD + FD + sin asignar), igual
-  // que el comportamiento original. Con filtro, se consideran solo las CxC
-  // cuyo "pagado por" matchee alguna de las opciones tildadas — "Sin
-  // asignar" agrupa las que no tienen ni DD ni FD en esa columna (pagos
-  // antiguos sin ese dato).
-  const filteredPagos = userFilter.length === 0 ? pagos : pagos.filter(p => userFilter.some(v => v === 'SIN_ASIGNAR' ? !p.pagado_por : p.pagado_por === v));
-
-  // ── TOTALES ──────────────────────────────────────────────────
-  // Total fuera: P + PG + (D con caja "FUERA", es decir fecha_caja futura)
-  const totalFuera = filteredPagos
-    .filter(p => p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p))
-    .reduce((s, p) => s + (p.cxc || 0), 0);
-  const pendientesRenoval = filteredPagos.filter(p => p.estado === 'P').reduce((s, p) => s + (p.cxc || 0), 0);
-  const pendientesGarantia = filteredPagos.filter(p => p.estado === 'PG').reduce((s, p) => s + (p.cxc || 0), 0);
-  // Solo descontado: todas las CxC cuya columna CAJA vale "FUERA"
-  const soloDescontado = filteredPagos.filter(p => isCajaFuera(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-
-  const esReciente = (p) => antiguedad(p.fecha) === '- 2 meses';
-  const esAntigua = (p) => antiguedad(p.fecha) === '+ 2 meses';
-  const totalRecientes = filteredPagos
-    .filter(p => esReciente(p) && (p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p)))
-    .reduce((s, p) => s + (p.cxc || 0), 0);
-  const pRecientes = filteredPagos.filter(p => p.estado === 'P' && esReciente(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-  const pgRecientes = filteredPagos.filter(p => p.estado === 'PG' && esReciente(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-  const totalAntiguas = filteredPagos
-    .filter(p => esAntigua(p) && (p.estado === 'P' || p.estado === 'PG' || isCajaFuera(p)))
-    .reduce((s, p) => s + (p.cxc || 0), 0);
-  const pAntiguas = filteredPagos.filter(p => p.estado === 'P' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-  const pgAntiguas = filteredPagos.filter(p => p.estado === 'PG' && esAntigua(p)).reduce((s, p) => s + (p.cxc || 0), 0);
-
-  const MetricCard = ({ title, rows }) => (
-    <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 12, padding: '16px 20px' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#5f6368', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</div>
-      {rows.map(([label, value, highlight], i) => (
-        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < rows.length - 1 ? '1px solid #f1f3f4' : 'none' }}>
-          <span style={{ fontSize: 13, color: '#3c4043' }}>{label}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: highlight || '#202124' }}>{value}</span>
-        </div>
-      ))}
-    </div>
-  );
-
+function TestModal({ onClose, onSend }) {
+  const [mails, setMails] = useState(TEST_PROPS.map(p => ({ ...p })));
+  const setMail = (i, v) => setMails(prev => prev.map((r, idx) => idx === i ? { ...r, mail: v } : r));
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
-      <div style={{ background: '#f8f9fa', borderRadius: 16, width: 640, maxHeight: '90vh', overflow: 'auto', padding: 28, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans','Segoe UI',sans-serif" }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#202124' }}>Métricas de Pagos</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5f6368' }}><X size={20} /></button>
+    <div style={st.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...st.modal, width: 540 }}>
+        <div style={st.modalHeader}>
+          <span style={st.modalTitle}>🧪 Envío de prueba</span>
+          <button onClick={onClose} style={st.closeBtn}><X size={18}/></button>
         </div>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#5f6368' }}>Filtrar por:</span>
-          {METRICS_USER_OPTIONS.map(opt => {
-            const active = userFilter.includes(opt.value);
-            return (
-              <button key={opt.value} onClick={() => toggleUserFilter(opt.value)}
-                style={{
-                  padding: '5px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-                  border: `1px solid ${active ? opt.color : '#dadce0'}`,
-                  background: active ? opt.color + '22' : '#fff',
-                  color: active ? opt.color : '#5f6368',
-                  fontWeight: active ? 700 : 400,
-                }}>
-                {opt.label}
-              </button>
-            );
-          })}
-          {userFilter.length > 0 && (
-            <button onClick={() => setUserFilter([])} style={{ padding: '5px 10px', borderRadius: 20, border: 'none', background: 'none', fontSize: 12, cursor: 'pointer', color: '#ea4335', fontFamily: 'inherit' }}>Limpiar</button>
-          )}
+        <div style={{ padding:'16px 20px', fontSize:13, color:'#5f6368', marginBottom:4 }}>
+          Se enviarán 3 correos de prueba. Puedes editar los correos destino antes de enviar.
         </div>
-
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 }}>Cargando métricas...</div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <MetricCard title="Totales" rows={[
-              ['Total fuera', fmt(totalFuera), '#ea4335'],
-              ['Pendientes Renoval (P)', fmt(pendientesRenoval)],
-              ['Pendientes garantía (PG)', fmt(pendientesGarantia)],
-              ['Solo descontado', fmt(soloDescontado)],
-            ]} />
-            <MetricCard title="Recientes" rows={[
-              ['Total recientes', fmt(totalRecientes)],
-              ['P recientes', fmt(pRecientes)],
-              ['PG recientes', fmt(pgRecientes)],
-            ]} />
-            <MetricCard title="Antiguos" rows={[
-              ['Total antiguas', fmt(totalAntiguas), '#ea4335'],
-              ['P antiguas', fmt(pAntiguas)],
-              ['PG antiguas', fmt(pgAntiguas)],
-            ]} />
+        <div style={{ padding:'0 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
+          {mails.map((row, i) => (
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, alignItems:'center', padding:'10px 12px', background:'#f8f9fa', borderRadius:8 }}>
+              <div style={{ fontSize:12, fontWeight:600, color:'#202124' }}>{row.propiedad}</div>
+              <input value={row.mail} onChange={e => setMail(i, e.target.value)}
+                style={{ border:'1px solid #dadce0', borderRadius:6, padding:'5px 8px', fontSize:12, outline:'none', fontFamily:'inherit' }}/>
+            </div>
+          ))}
+          <div style={{ display:'flex', gap:8, marginTop:8 }}>
+            <button onClick={() => onSend(mails)} style={{ ...st.btnPrimary, display:'flex', alignItems:'center', gap:6 }}>
+              <Send size={13}/> Enviar prueba
+            </button>
+            <button onClick={onClose} style={st.btnSecondary}>Cancelar</button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [hovered, setHovered] = useState(false);
-
-  const update = async (field, value) => {
-    const updates = { [field]: value };
-    await supabase.from('pagos').update(updates).eq('id', pago.id);
-    onUpdate({ ...pago, ...updates });
-  };
-
-  const ant = antiguedad(pago.fecha);
-  const estadoStyle = ESTADO_COLORS[pago.estado] || {};
-  const hasNotes = !!(pago.notas && pago.notas.trim());
-  const cajaFuera = isCajaFuera(pago);
-
+// ── EMAIL PREVIEW MODAL ───────────────────────────────────────
+function EmailPreviewModal({ propiedad, mailAdmin, onClose }) {
+  const mes = new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
   return (
-    <tr style={{ background: hovered ? '#f8f9fa' : '#fff', transition: 'background 0.1s' }}
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-      <td style={s.td}>
-        <FichaCellWrap propiedad={fichaPropiedadResuelta} onOpenFicha={onOpenFicha}>
-          <InlineText value={pago.propiedad} onChange={v => update('propiedad', v.toUpperCase())} />
-        </FichaCellWrap>
-      </td>
-      <td style={s.td}><InlineText value={pago.descripcion} onChange={v => update('descripcion', v.toUpperCase())} /></td>
-      <td style={s.tdCenter}><MoneyInput value={pago.cxc} onChange={v => update('cxc', v)} /></td>
-      <td style={s.tdCenter}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700, background: estadoStyle.bg, color: estadoStyle.color, minWidth: 32 }}>
-          <InlineSelect value={pago.estado} options={ESTADO_OPTIONS} onChange={v => update('estado', v)} />
+    <div style={st.overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{ ...st.modal, width:520 }}>
+        <div style={st.modalHeader}>
+          <span style={st.modalTitle}>Vista previa del correo</span>
+          <button onClick={onClose} style={st.closeBtn}><X size={18}/></button>
         </div>
-      </td>
-      <td style={s.tdCenter}><DatePicker value={pago.fecha} onChange={v => update('fecha', v)} /></td>
-      <td style={s.tdCenter}><InlineSelect value={pago.pagado_por} options={PAGADO_POR_OPTIONS} onChange={v => update('pagado_por', v)} /></td>
-      <td style={s.tdCenter}><InlineSelect value={pago.tipo} options={TIPO_OPTIONS} onChange={v => update('tipo', v)} /></td>
-      <td style={s.tdCenter}><MoneyInput value={pago.comision} onChange={v => update('comision', v)} /></td>
-      <td style={s.tdCenter}><DatePicker value={pago.fecha_caja} onChange={v => update('fecha_caja', v)} /></td>
-      <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: 600, color: ant === '+ 2 meses' ? '#ea4335' : '#34a853', whiteSpace: 'nowrap' }}>{ant}</td>
-      <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: cajaFuera ? 700 : 400, color: cajaFuera ? '#c62828' : '#dadce0' }}
-        title="Calculado automáticamente: 'FUERA' cuando el estado es D y la fecha de caja aún no llega">
-        {cajaFuera ? 'FUERA' : '—'}
-      </td>
-      <td style={s.tdActions}>
-        <button onClick={() => onOpenNotes(pago)} style={{ ...s.actionBtn, background: hasNotes ? '#e8f0fe' : 'none', color: hasNotes ? '#1a73e8' : '#9aa0a6' }} title="Notas"><FileText size={13} /></button>
-        {confirmDelete ? (
-          <>
-            <button onClick={async () => { await supabase.from('pagos').delete().eq('id', pago.id); onDelete(pago.id); }} style={{ ...s.actionBtn, background: '#fce8e6', color: '#ea4335' }} title="Confirmar"><Trash2 size={13} /></button>
-            <button onClick={() => setConfirmDelete(false)} style={{ ...s.actionBtn, color: '#5f6368' }} title="Cancelar"><X size={12} /></button>
-          </>
-        ) : (
-          <button onClick={() => setConfirmDelete(true)} style={{ ...s.actionBtn, color: '#9aa0a6' }} title="Eliminar"><Trash2 size={13} /></button>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function NewPagoRow({ onSave, onCancel, maxPosition }) {
-  const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), pagado_por: '', tipo: '', comision: '', fecha_caja: '', notas: '' });
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-  const handleSave = async () => {
-    if (!form.propiedad.trim()) return;
-    const newPosition = (maxPosition || 0) + 1;
-    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, notas: form.notas || null, position: newPosition }).select().single();
-    if (data) onSave(data);
-  };
-  const previewCajaFuera = isCajaFuera({ estado: form.estado, fecha_caja: form.fecha_caja });
-  return (
-    <tr style={{ background: '#f0f7ff' }}>
-      <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} placeholder="Propiedad *" hasError={false} /></td>
-      <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value.toUpperCase())} placeholder="Descripción" style={inputStyle} /></td>
-      <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} alwaysVisible /></td>
-      <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
-      <td style={s.tdCenter}><DatePicker value={form.fecha} onChange={v => set('fecha', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
-      <td style={s.tdCenter}><select value={form.pagado_por} onChange={e => set('pagado_por', e.target.value)} style={selectStyle}><option value="">—</option>{PAGADO_POR_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
-      <td style={s.tdCenter}><select value={form.tipo} onChange={e => set('tipo', e.target.value)} style={selectStyle}><option value="">—</option>{TIPO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
-      <td style={s.tdCenter}><MoneyInput value={form.comision} onChange={v => set('comision', v)} alwaysVisible /></td>
-      <td style={s.tdCenter}><DatePicker value={form.fecha_caja} onChange={v => set('fecha_caja', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
-      <td style={{ ...s.tdCenter, fontSize: 11, color: '#9aa0a6' }}>{form.fecha ? antiguedad(form.fecha) : '—'}</td>
-      <td style={{ ...s.tdCenter, fontSize: 11, fontWeight: previewCajaFuera ? 700 : 400, color: previewCajaFuera ? '#c62828' : '#dadce0' }}>{previewCajaFuera ? 'FUERA' : '—'}</td>
-      <td style={s.tdActions}>
-        <button onClick={handleSave} style={{ ...s.actionBtn, background: '#e6f4ea', color: '#34a853' }} title="Guardar">✓</button>
-        <button onClick={onCancel} style={{ ...s.actionBtn, color: '#5f6368' }} title="Cancelar"><X size={13} /></button>
-      </td>
-    </tr>
-  );
-}
-
-const inputStyle = { border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%' };
-const selectStyle = { border: '1px solid #dadce0', borderRadius: 5, padding: '3px 4px', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff' };
-
-function Pagination({ page, totalCount, pageSize, onPageChange }) {
-  const totalPages = Math.ceil(totalCount / pageSize);
-  if (totalPages <= 1) return null;
-  const from = page * pageSize + 1;
-  const to = Math.min((page + 1) * pageSize, totalCount);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', borderTop: '1px solid #e8eaed', flexShrink: 0, background: '#fafafa' }}>
-      <span style={{ fontSize: 12, color: '#5f6368' }}>{from}–{to} de {totalCount}</span>
-      <button onClick={() => onPageChange(page - 1)} disabled={page === 0} style={{ ...paginationBtn, opacity: page === 0 ? 0.35 : 1 }}><ChevronLeft size={15} /></button>
-      <span style={{ fontSize: 12, color: '#3c4043', minWidth: 60, textAlign: 'center' }}>Página {page + 1} de {totalPages}</span>
-      <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages - 1} style={{ ...paginationBtn, opacity: page >= totalPages - 1 ? 0.35 : 1 }}><ChevronRight size={15} /></button>
+        <div style={{ padding:'16px 20px', background:'#f8f9fa', borderRadius:8, margin:'0 20px 20px', fontSize:13 }}>
+          <div style={{ marginBottom:8 }}><b>Para:</b> {mailAdmin}</div>
+          <div style={{ marginBottom:8 }}><b>CC:</b> edith@renovalpropiedades.com</div>
+          <div style={{ marginBottom:8 }}><b>De:</b> gcrenovalpropiedades@gmail.com</div>
+          <div style={{ marginBottom:16 }}><b>Asunto:</b> Consulta Gasto Común {mes}</div>
+          <div style={{ borderTop:'1px solid #e8eaed', paddingTop:16, lineHeight:1.8, color:'#3c4043' }}>
+            Buenos días,<br/><br/>
+            Junto con saludar, quería solicitar el saldo de gasto común de la siguiente propiedad:<br/>
+            <b>{propiedad}</b><br/><br/>
+            Quedo atento a su respuesta,<br/><br/>
+            Saludos
+          </div>
+        </div>
+        <div style={{ padding:'0 20px 20px', display:'flex', justifyContent:'flex-end' }}>
+          <button onClick={onClose} style={st.btnSecondary}>Cerrar</button>
+        </div>
+      </div>
     </div>
   );
 }
 
-const paginationBtn = { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, border: '1px solid #dadce0', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#5f6368', padding: 0 };
-
-export default function PagosPage() {
-  const [pagos, setPagos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [addingNew, setAddingNew] = useState(false);
-  const [notesFor, setNotesFor] = useState(null);
-  const [showMetrics, setShowMetrics] = useState(false);
-  const [filterPor, setFilterPor] = useState([]);
-  const [filterEstado, setFilterEstado] = useState([]);
-  const [filterAntiguedad, setFilterAntiguedad] = useState('');
+// ── TAB 1: SALDOS ─────────────────────────────────────────────
+function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUpload, uploading, showUpload, setShowUpload, mult1, mult2, onOpenFicha }) {
+  const [edits, setEdits] = useState({});
   const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [page, setPage] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
-  const [exporting, setExporting] = useState(false);
-  const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
-  const [fichaPropiedad, setFichaPropiedad] = useState(null);
-  const { exportToExcel } = useExcelExport();
+  const [filterE, setFilterE] = useState([]);
+  const [filterUmbral, setFilterUmbral] = useState(0);
+  const [filterGCVacio, setFilterGCVacio] = useState(false);
+  const ENCARGADOS = ['DD','FD','EA','FG','AM'];
+  const ENCARGADO_COLORS = { DD:'#1565C0', FD:'#2E7D32', EA:'#6A1B9A', FG:'#E65100', AM:'#37474F' };
 
-  // Mapa inverso: nomenclatura abreviada (la que guarda esta página, vía
-  // PropertyAutocomplete) -> nombre canónico en Cartera. Ver misma nota en
-  // Pizarra Arriendo/Venta.
-  useEffect(() => {
-    const loadCartera = async () => {
-      let all = [], from = 0;
-      while (true) {
-        const { data, error } = await supabase.from('properties').select('propiedad').range(from, from + 999);
-        if (error || !data || data.length === 0) break;
-        all = [...all, ...data.map(p => p.propiedad)];
-        if (data.length < 1000) break;
-        from += 1000;
-      }
-      const map = new Map();
-      all.forEach(p => map.set(transformAddress(p), p));
-      setCarteraReverseMap(map);
-    };
-    loadCartera();
-  }, []);
-
-  // Helper compartido: aplica los mismos filtros (encargado, estado, antigüedad,
-  // búsqueda) tanto para traer la página visible como para calcular los
-  // totales de abajo sobre el conjunto filtrado completo.
-  const applyPagosFilters = (query, porFilter, estadoFilter, searchText, antiguedadFilter) => {
-    if (porFilter.length === 1) query = query.eq('pagado_por', porFilter[0]);
-    else if (porFilter.length > 1) query = query.in('pagado_por', porFilter);
-    if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
-    else if (estadoFilter.length > 1) query = query.in('estado', estadoFilter);
-    if (antiguedadFilter) {
-      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 60);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
-      if (antiguedadFilter === 'reciente') query = query.gte('fecha', cutoffStr);
-      else if (antiguedadFilter === 'antigua') query = query.lt('fecha', cutoffStr);
-    }
-    if (searchText.trim()) {
-      const words = normalize(searchText.trim()).split(/\s+/).filter(Boolean);
-      const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo'];
-      for (const word of words) query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
-    }
-    return query;
+  const handleCellChange = (rowId, field, value) => setEdits(prev=>({...prev,[rowId]:{...(prev[rowId]||{}),[field]:value}}));
+  const handleSaveRow = async (rowId) => {
+    const changes = edits[rowId];
+    if (!changes||!Object.keys(changes).length) return;
+    await supabase.from('saldos').update(changes).eq('id', rowId);
+    setEdits(prev=>{ const n={...prev}; delete n[rowId]; return n; });
   };
 
-  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter) => {
-    setLoading(true);
-    let query = supabase.from('pagos').select('*', { count: 'exact' });
-    query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter);
-    const from = currentPage * PAGE_SIZE;
-    const { data, count } = await query.order('position', { ascending: false }).range(from, from + PAGE_SIZE - 1);
-    setPagos(data || []);
-    setTotalCount(count || 0);
-    setLoading(false);
-  }, []);
+  // "GC vacío": el campo GC Ac (mes actual) está vacío, excluyendo las
+  // propiedades marcadas en Atributos como que NO tienen gasto común
+  // (tiene_gc === false) — para esas, el campo vacío es esperado.
+  const isGCVacio = useCallback((row) => {
+    const attr = attrsMap[row.propiedad];
+    if (attr?.tiene_gc === false) return false;
+    return !row.gc_ac || !String(row.gc_ac).trim();
+  }, [attrsMap]);
 
-  // Totales "Total P" / "Total PG": suman CxC sobre TODO el conjunto
-  // filtrado (no solo la página de 100 filas visible), respetando los
-  // mismos filtros activos (encargado, estado, antigüedad, búsqueda).
-  const [pagosTotals, setPagosTotals] = useState({ totalP: 0, totalPG: 0 });
-  const fetchTotals = useCallback(async (porFilter, estadoFilter, searchText, antiguedadFilter) => {
-    let totalP = 0, totalPG = 0;
-    let from = 0;
-    while (true) {
-      let query = supabase.from('pagos').select('cxc, estado');
-      query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter);
-      const { data } = await query.range(from, from + 999);
-      if (!data || data.length === 0) break;
-      data.forEach(p => {
-        if (p.estado === 'P') totalP += (p.cxc || 0);
-        else if (p.estado === 'PG') totalPG += (p.cxc || 0);
+  const filtered = useMemo(() => {
+    let result = rows.filter(r=>r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos);
+    if (search.trim()) {
+      const words = normalize(search.trim()).split(/\s+/).filter(Boolean);
+      result = result.filter(r => {
+        const h = normalize([r.propiedad,r.propietario,r.e1,r.e2].filter(Boolean).join(' '));
+        return words.every(w=>h.includes(w));
       });
-      if (data.length < 1000) break;
-      from += 1000;
     }
-    setPagosTotals({ totalP, totalPG });
-  }, []);
+    if (filterE.length) result = result.filter(r=>filterE.every(e=>[r.e1,r.e2].includes(e)));
+    if (filterUmbral>0) result = result.filter(r=>rowExceedsUmbral(r,attrsMap,filterUmbral,mult1,mult2));
+    if (filterGCVacio) result = result.filter(isGCVacio);
+    return result;
+  }, [rows,search,filterE,filterUmbral,filterGCVacio,attrsMap,mult1,mult2,isGCVacio]);
 
-  useEffect(() => { fetchPagos(page, filterPor, filterEstado, search, filterAntiguedad); }, [fetchPagos, page, filterPor, filterEstado, search, filterAntiguedad]);
-  useEffect(() => { fetchTotals(filterPor, filterEstado, search, filterAntiguedad); }, [fetchTotals, filterPor, filterEstado, search, filterAntiguedad]);
-  useEffect(() => {
-    const timer = setTimeout(() => { setSearch(searchInput); setPage(0); }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+  // ── Indicadores (respetan los filtros activos: búsqueda, encargado, umbral) ──
+  const gcVaciosCount = useMemo(() => filtered.filter(isGCVacio).length, [filtered, isGCVacio]);
 
-  const toggleFilter = (arr, setArr, val) => { setArr(arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]); setPage(0); };
-  const handleUpdate = (updated) => setPagos(prev => prev.map(p => p.id === updated.id ? updated : p));
-  const handleDelete = (id) => { setPagos(prev => prev.filter(p => p.id !== id)); setTotalCount(prev => prev - 1); };
-  const handleSaveNew = (newPago) => { setPagos(prev => [newPago, ...prev]); setTotalCount(prev => prev + 1); setAddingNew(false); };
-  const maxPosition = pagos.length > 0 ? Math.max(...pagos.map(p => p.position ?? 0)) : 0;
-  const handleSaveNotes = async (id, notas) => { await supabase.from('pagos').update({ notas }).eq('id', id); setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p)); };
-  const handlePageChange = (newPage) => { setPage(newPage); const wrapper = document.getElementById('pagos-table-wrapper'); if (wrapper) wrapper.scrollTop = 0; };
-
-  const handleExport = async () => {
-    setExporting(true);
-    let all = [];
-    let from = 0;
-    while (true) {
-      const { data } = await supabase.from('pagos').select('*').order('position', { ascending: true }).range(from, from + 999);
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < 1000) break;
-      from += 1000;
-    }
-    // La columna Caja se calcula al momento de exportar (no se guarda en la
-    // base), para que el Excel siempre refleje el estado actual.
-    const withComputedCaja = all.map(p => ({ ...p, caja: isCajaFuera(p) ? 'FUERA' : '' }));
-    exportToExcel(withComputedCaja, [
-      { key: 'propiedad',   label: 'Propiedad' },
-      { key: 'descripcion', label: 'Descripción' },
-      { key: 'cxc',         label: 'CxC' },
-      { key: 'estado',      label: 'Estado' },
-      { key: 'fecha',       label: 'Fecha' },
-      { key: 'pagado_por',  label: 'Pagado Por' },
-      { key: 'tipo',        label: 'Tipo' },
-      { key: 'comision',    label: 'Comisión' },
-      { key: 'fecha_caja',  label: 'Fecha Caja' },
-      { key: 'caja',        label: 'Caja' },
-      { key: 'notas',       label: 'Notas' },
-    ], 'Pagos');
-    setExporting(false);
+  const COL_HEADER_COLORS = {
+    agua: { bg: '#E3F2FD', color: '#1565C0' }, // azul DD
+    luz:  { bg: '#FFFDE7', color: '#F57F17' }, // amarillo más cargado
+    gas:  { bg: '#FFF3E0', color: '#E65100' }, // naranja FG
+    gc:   { bg: '#E8F5E9', color: '#2E7D32' }, // verde FD
   };
 
-  const activeFilters = filterPor.length > 0 || filterEstado.length > 0 || filterAntiguedad || search.trim().length > 0;
-  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
+  const COLS = [
+    {key:'agua_ac',label:'AGUA Ac',tipo:'agua',alerta:'alerta_agua',groupStart:true},
+    {key:'agua_an',label:'AGUA An',tipo:'agua',alerta:null,groupEnd:true},
+    {key:'luz_ac', label:'LUZ Ac', tipo:'luz', alerta:'alerta_luz', groupStart:true},
+    {key:'luz_an', label:'LUZ An', tipo:'luz', alerta:null,groupEnd:true},
+    {key:'gas_ac', label:'GAS Ac', tipo:'gas', alerta:'alerta_gas',groupStart:true},
+    {key:'gas_an', label:'GAS An', tipo:'gas', alerta:null,groupEnd:true},
+    {key:'gc_ac',  label:'GC Ac',  tipo:'gc',  alerta:null,groupStart:true},
+    {key:'gc_an',  label:'GC An',  tipo:'gc',  alerta:null,groupEnd:true},
+    {key:'deuda_arriendo',label:'DEUDA ARR.',tipo:'arriendo',alerta:null,groupStart:true,groupEnd:true},
+  ];
 
   return (
-    <div style={s.container}>
-      <div style={s.header}>
-        <div>
-          <h1 style={s.title}>Pagos</h1>
-          <p style={s.subtitle}>{activeFilters ? `${totalCount} registros (filtrados)` : `${totalCount} registros`}</p>
+    <>
+      {showUpload&&(
+        <div style={st.uploadPanel}>
+          <UploadBtn label="📄 Cuentas actuales" tipo="cuentas_ac" onUpload={handleUpload} lastUpload={lastUploads['cuentas_ac']}/>
+          <UploadBtn label="📄 Cuentas mes anterior" tipo="cuentas_an" onUpload={handleUpload} lastUpload={lastUploads['cuentas_an']}/>
+          <UploadBtn label="📄 Deuda de arriendo" tipo="arriendos" onUpload={handleUpload} lastUpload={lastUploads['arriendos']}/>
+          {uploading&&<div style={st.uploadingMsg}>⏳ Procesando {uploading}...</div>}
         </div>
-        <div style={s.headerRight}>
-          <div style={s.searchWrapper}>
-            <Search size={14} color="#9aa0a6" style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
-            <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Buscar propiedad, descripción..." style={s.searchInput} />
-            {searchInput && <button onClick={() => { setSearchInput(''); setSearch(''); setPage(0); }} style={s.clearSearch}><X size={12} /></button>}
-          </div>
-          <div style={s.filterGroup}>{PAGADO_POR_OPTIONS.map(v => <button key={v} onClick={() => toggleFilter(filterPor, setFilterPor, v)} style={{ ...s.filterBtn, ...(filterPor.includes(v) ? s.filterBtnActive : {}) }}>{v}</button>)}</div>
-          <div style={s.filterGroup}>{ESTADO_OPTIONS.map(v => <button key={v} onClick={() => toggleFilter(filterEstado, setFilterEstado, v)} style={{ ...s.filterBtn, ...(filterEstado.includes(v) ? { ...s.filterBtnActive, background: (ESTADO_COLORS[v]?.bg || '#e8eaed'), color: (ESTADO_COLORS[v]?.color || '#202124'), borderColor: (ESTADO_COLORS[v]?.color || '#dadce0') } : {}) }}>{v}</button>)}</div>
-          <div style={s.filterGroup}>{[{ val: 'reciente', label: '- 2m' }, { val: 'antigua', label: '+ 2m' }].map(({ val, label }) => <button key={val} onClick={() => { setFilterAntiguedad(prev => prev === val ? '' : val); setPage(0); }} style={{ ...s.filterBtn, ...(filterAntiguedad === val ? s.filterBtnActive : {}) }}>{label}</button>)}</div>
-          {activeFilters && <button onClick={() => { setFilterPor([]); setFilterEstado([]); setFilterAntiguedad(''); setSearch(''); setSearchInput(''); setPage(0); }} style={s.clearFilter}>Limpiar</button>}
-          <button onClick={handleExport} disabled={exporting} title="Exportar a Excel"
-           style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:exporting?'not-allowed':'pointer', opacity:exporting?0.6:1 }}>
-           <Download size={15} color="#34a853" />
-          </button>
-          <button onClick={() => setShowMetrics(true)} style={s.metricsBtn}><BarChart2 size={14} style={{ marginRight: 5 }} /> Métricas</button>
-          <button onClick={() => setAddingNew(true)} disabled={addingNew} style={s.addBtn}><Plus size={14} style={{ marginRight: 5 }} /> Nuevo pago</button>
+      )}
+      <div style={st.filtersRow}>
+        <div style={st.searchWrapper}>
+          <Search size={15} color="#9aa0a6" style={st.searchIcon}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar propiedad, propietario, encargado..." style={st.searchInput}/>
+          {search&&<button onClick={()=>setSearch('')} style={st.clearSearch}><X size={13} color="#9aa0a6"/></button>}
+        </div>
+        <div style={st.encargadoFilters}>
+          <span style={st.filterLabel}>Filtrar por:</span>
+          {ENCARGADOS.map(e=>(
+            <button key={e} onClick={()=>setFilterE(prev=>prev.includes(e)?prev.filter(x=>x!==e):[...prev,e])} style={{
+              ...st.filterBtn,
+              ...(filterE.includes(e)?{background:ENCARGADO_COLORS[e]+'22',color:ENCARGADO_COLORS[e],borderColor:ENCARGADO_COLORS[e],fontWeight:700}:{})
+            }}>{e}</button>
+          ))}
+          {filterE.length>0&&<button onClick={()=>setFilterE([])} style={st.clearFilter}>Limpiar</button>}
+          <div style={{width:1,background:'#dadce0',height:20,margin:'0 4px'}}/>
+          <button onClick={()=>setFilterUmbral(filterUmbral===1?0:1)} style={{...st.filterBtn,...(filterUmbral===1?{background:'#fff3e0',color:'#e65100',borderColor:'#e65100',fontWeight:700}:{})}}>≥ U1</button>
+          <button onClick={()=>setFilterUmbral(filterUmbral===2?0:2)} style={{...st.filterBtn,...(filterUmbral===2?{background:'#fce8e6',color:'#c5221f',borderColor:'#c5221f',fontWeight:700}:{})}}>≥ U2</button>
+          <div style={{width:1,background:'#dadce0',height:20,margin:'0 4px'}}/>
+          <button onClick={()=>setFilterGCVacio(v=>!v)} style={{...st.filterBtn,...(filterGCVacio?{background:'#fce8e6',color:'#c5221f',borderColor:'#c5221f',fontWeight:700}:{})}}>GC Vacíos</button>
         </div>
       </div>
-
-      <div id="pagos-table-wrapper" style={s.tableWrapper}>
-        {loading ? <div style={s.loading}>Cargando pagos...</div> : (
-          <table style={s.table}>
-            <thead><tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 2 ? 'left' : 'center' }}>{h}</th>)}</tr></thead>
+      <div style={st.tableWrapper}>
+        {loading?<div style={st.loading}>Cargando saldos...</div>:rows.length===0?<div style={st.loading}>No hay datos cargados aún.</div>:(
+          <table style={st.table}>
+            <thead><tr>
+              <th style={{...st.th,minWidth:280,textAlign:'left'}}>PROPIEDAD</th>
+              <th style={{...st.th,minWidth:160,textAlign:'center'}}>PROPIETARIO</th>
+              {COLS.map(c => {
+                const hc = COL_HEADER_COLORS[c.tipo] || {};
+                return (
+                  <th key={c.key} style={{
+                    ...st.th, minWidth:70, textAlign:'center',
+                    ...(c.groupStart?{borderLeft:'2px solid #bdbdbd'}:{}),
+                    ...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{}),
+                  }}>
+                    {hc.bg ? (
+                      <span style={{ display:'inline-block', background:hc.bg, color:hc.color, borderRadius:20, padding:'6px 10px', fontWeight:700, fontSize:10, letterSpacing:0.5, border:`1px solid ${hc.color}44` }}>
+                        {c.label}
+                      </span>
+                    ) : c.label}
+                  </th>
+                );
+              })}
+              <th style={{...st.th,minWidth:40}}></th>
+              <th style={{...st.th,minWidth:50,textAlign:'center'}}>E1</th>
+              <th style={{...st.th,minWidth:50,textAlign:'center'}}>E2</th>
+            </tr></thead>
             <tbody>
-              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={maxPosition} />}
-              {pagos.length === 0 && !addingNew
-                ? <tr><td colSpan={13} style={s.empty}>No hay pagos registrados.</td></tr>
-                : pagos.map(p => (
-                  <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor}
-                    fichaPropiedadResuelta={carteraReverseMap.get(p.propiedad) || null}
-                    onOpenFicha={setFichaPropiedad} />
-                ))
-              }
+              {filtered.length===0?<tr><td colSpan={COLS.length+4} style={st.empty}>Sin resultados.</td></tr>
+              :filtered.map(row=>{
+                const hasEdits=!!(edits[row.id]&&Object.keys(edits[row.id]).length);
+                const merged={...row,...(edits[row.id]||{})};
+                const EC = ENCARGADO_COLORS;
+                const rowAttrExists = !!attrsMap[row.propiedad];
+                return (
+                  <tr key={row.id} style={{background:'#fff'}}>
+                    <td style={{...st.tdFixed,fontSize:12}}>
+                      <FichaCellWrap propiedad={rowAttrExists ? row.propiedad : null} onOpenFicha={onOpenFicha}>
+                        {row.propiedad}
+                      </FichaCellWrap>
+                    </td>
+                    <td style={{...st.tdFixed,fontSize:11,color:'#5f6368',textAlign:'center'}}>{row.propietario||''}</td>
+                    {COLS.map(c=>{
+                      const rowAttr=attrsMap[row.propiedad];
+                      const emptyWhite=c.tipo==='arriendo'||(c.tipo==='agua'&&rowAttr?.tiene_agua===false)||(c.tipo==='luz'&&rowAttr?.tiene_luz===false)||(c.tipo==='gas'&&rowAttr?.tiene_gas===false)||(c.tipo==='gc'&&rowAttr?.tiene_gc===false);
+                      return (
+                        <td key={c.key} style={{...st.td,padding:'4px 6px',...(c.groupStart?{borderLeft:'2px solid #bdbdbd'}:{}),...(c.groupEnd?{borderRight:'2px solid #bdbdbd'}:{})}}>
+                          <EditableCell value={merged[c.key]||''} tipo={c.tipo} alerta={c.alerta?merged[c.alerta]:false} onChange={val=>handleCellChange(row.id,c.key,val)} attr={rowAttr} emptyWhite={emptyWhite} mult1={mult1} mult2={mult2}/>
+                        </td>
+                      );
+                    })}
+                    <td style={{...st.tdFixed,textAlign:'center'}}>
+                      {hasEdits&&<button onClick={()=>handleSaveRow(row.id)} style={st.saveRowBtn} title="Guardar"><Save size={13} color="#1a73e8"/></button>}
+                    </td>
+                    <td style={{...st.tdFixed,textAlign:'center'}}>{row.e1&&<span style={{...st.badge,background:EC[row.e1]+'22'||'#9aa0a622',color:EC[row.e1]||'#9aa0a6',border:'1px solid '+(EC[row.e1]||'#9aa0a6')+'44'}}>{row.e1}</span>}</td>
+                    <td style={{...st.tdFixed,textAlign:'center'}}>{row.e2&&<span style={{...st.badge,background:EC[row.e2]+'22'||'#9aa0a622',color:EC[row.e2]||'#9aa0a6',border:'1px solid '+(EC[row.e2]||'#9aa0a6')+'44'}}>{row.e2}</span>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
 
-      <Pagination page={page} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={handlePageChange} />
-      <div style={s.totalsRow}>
-        <span style={s.totalsLabel}>TOTAL</span>
-        <span style={s.totalsItem}>Total P: <strong style={{ color: '#c62828' }}>{formatCLP(pagosTotals.totalP)}</strong></span>
-        <span style={s.totalsItem}>Total PG: <strong style={{ color: '#f57c00' }}>{formatCLP(pagosTotals.totalPG)}</strong></span>
+      <div style={st.totalsRow}>
+        <span style={st.totalsLabel}>TOTAL</span>
+        <span style={st.totalsItem}>Número de propiedades: <strong>{filtered.length}</strong></span>
+        <span style={st.totalsItem}>Gastos comunes vacíos: <strong style={{ color: gcVaciosCount > 0 ? '#c62828' : '#202124' }}>{gcVaciosCount}</strong></span>
       </div>
-      {notesFor && <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} />}
-      {showMetrics && <MetricsView onClose={() => setShowMetrics(false)} />}
-      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
+    </>
+  );
+}
+
+// ── TAB 2: CONSULTAS GC ───────────────────────────────────────
+function ConsultasTab({ onOpenFicha }) {
+  const [config, setConfig] = useState([]);
+  const [log, setLog] = useState([]);
+  const [carteraSet, setCarteraSet] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [previewRow, setPreviewRow] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editField, setEditField] = useState(null);
+  const [editValue, setEditValue] = useState('');
+  const [addingNew, setAddingNew] = useState(false);
+  const [newRow, setNewRow] = useState({ propiedad:'', mail_admin:'', cartera:'' });
+  const [sendResult, setSendResult] = useState(null);
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const mes = currentMes();
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [{ data: cfg }, { data: lg }, { data: cartera }] = await Promise.all([
+      supabase.from('gc_consultas_config').select('*').order('propiedad'),
+      supabase.from('gc_consultas_log').select('*').eq('mes', mes),
+      supabase.from('properties').select('propiedad'),
+    ]);
+    setConfig(cfg || []);
+    setLog(lg || []);
+    setCarteraSet(new Set((cartera || []).map(c => c.propiedad)));
+    setLoading(false);
+  }, [mes]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const logMap = useMemo(() => {
+    const m = {};
+    log.forEach(l => { m[l.propiedad] = l; });
+    return m;
+  }, [log]);
+
+  // Propiedades con correo configurado que aún no tienen una respuesta ni un
+  // valor ingresado manualmente para el mes actual. Son las que se deben
+  // incluir la próxima vez que se apriete "Enviar consultas".
+  const pendientesEnvio = useMemo(() => {
+    return config.filter(r => {
+      if (!r.mail_admin || !r.mail_admin.trim()) return false;
+      const status = logMap[r.propiedad]?.status;
+      return status !== 'respondido' && status !== 'manual';
+    });
+  }, [config, logMap]);
+
+  const startEdit = (id, field, currentValue) => {
+    setEditingId(id);
+    setEditField(field);
+    setEditValue(currentValue || '');
+  };
+
+  const saveEdit = async (id) => {
+    if (!editField) return;
+    await supabase.from('gc_consultas_config').update({ [editField]: editValue || null }).eq('id', id);
+    setConfig(prev => prev.map(r => r.id === id ? { ...r, [editField]: editValue || null } : r));
+    setEditingId(null);
+    setEditField(null);
+  };
+
+  const handleDelete = async (id) => {
+    await supabase.from('gc_consultas_config').delete().eq('id', id);
+    setConfig(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleAddNew = async () => {
+    if (!newRow.propiedad.trim()) return;
+    const { data } = await supabase.from('gc_consultas_config').insert({
+      propiedad: newRow.propiedad.trim(),
+      mail_admin: newRow.mail_admin.trim() || null,
+      cartera: newRow.cartera.trim() || null,
+    }).select().single();
+    if (data) { setConfig(prev => [...prev, data]); }
+    setNewRow({ propiedad:'', mail_admin:'', cartera:'' });
+    setAddingNew(false);
+  };
+
+  const doSendAll = async () => {
+    setShowConfirm(false);
+    const toSend = pendientesEnvio;
+    if (!toSend.length) return;
+    setSending(true);
+    setSendResult(null);
+    let sent = 0, errors = 0;
+    const mesLabel = new Date().toLocaleDateString('es-CL', { month:'long', year:'numeric' });
+
+    for (const row of toSend) {
+      try {
+        await fetch('/api/send-gc-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
+          },
+          body: JSON.stringify({
+            propiedad: row.propiedad,
+            mailAdmin: row.mail_admin,
+            mesLabel,
+            isTest: false,
+          }),
+        });
+        await supabase.from('gc_consultas_log').upsert({
+          propiedad: row.propiedad,
+          mes,
+          mail_admin: row.mail_admin,
+          enviado_at: new Date().toISOString(),
+          status: 'enviado',
+        }, { onConflict: 'propiedad,mes' });
+        sent++;
+      } catch (e) {
+        console.error('Error enviando a', row.mail_admin, e);
+        errors++;
+      }
+    }
+    setSendResult({ sent, errors });
+    setSending(false);
+    fetchAll();
+  };
+
+  const handleCheckReplies = async () => {
+    setUpdating(true);
+    try {
+      const enviado_desde = log
+        .filter(l => l.mes === mes && l.enviado_at)
+        .reduce((min, l) => (!min || l.enviado_at < min ? l.enviado_at : min), null);
+
+      // Propiedades que ya tienen valor GC extraído este mes: no hace falta reprocesarlas
+      const ya_resueltas = log
+        .filter(l => l.mes === mes && l.gc_valor)
+        .map(l => l.propiedad);
+
+      const response = await fetch('/api/check-gc-replies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
+        },
+        body: JSON.stringify({
+          mes,
+          propiedades: config.map(r => r.propiedad),
+          enviado_desde,
+          ya_resueltas,
+        }),
+      });
+      const data = await response.json();
+      console.log('check-gc-replies result:', data);
+
+      if (data.gmail_errors?.length) {
+        const isAuthError = data.gmail_errors.some(e => /invalid_grant|invalid_token|unauthorized/i.test(e));
+        alert(
+          (isAuthError
+            ? '⚠ El token de acceso a Gmail venció y hay que renovarlo (ver instrucciones del proyecto).\n\n'
+            : '⚠ Hubo un problema consultando Gmail.\n\n') +
+          'Detalle: ' + data.gmail_errors.join(' | ')
+        );
+      }
+
+      const replies = data.replies || [];
+      for (const r of replies) {
+        if (!r.propiedad) continue;
+        await supabase.from('gc_consultas_log').upsert({
+          propiedad: r.propiedad,
+          mes,
+          respondido_at: r.respondido_at || new Date().toISOString(),
+          status: 'respondido',
+          gc_valor: r.gc_valor || null,
+          pdf_adjuntos: r.pdf_adjuntos || null,
+          // Solo se incluye si vino con texto, para no pisar con null un
+          // respuesta_texto que ya se hubiera guardado en una pasada anterior.
+          ...(r.respuesta_texto ? { respuesta_texto: r.respuesta_texto } : {}),
+        }, { onConflict: 'propiedad,mes' });
+
+        if (r.gc_valor) {
+          await supabase.from('saldos').update({ gc_ac: r.gc_valor }).eq('propiedad', r.propiedad);
+        }
+      }
+      fetchAll();
+    } catch(e) { console.error(e); }
+    setUpdating(false);
+  };
+
+  const withMail = config.filter(r => r.mail_admin?.trim()).length;
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14, flexShrink:0, flexWrap:'wrap' }}>
+        <div style={{ flex:1, fontSize:13, color:'#5f6368' }}>
+          {config.length} propiedades · {withMail} con correo · {pendientesEnvio.length} pendientes · Mes: <b>{formatMes(mes)}</b>
+        </div>
+        <button onClick={() => setAddingNew(true)} disabled={addingNew}
+          style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6 }}>
+          <Plus size={14}/> Nueva fila
+        </button>
+        <button onClick={() => setShowTestModal(true)}
+          style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6, color:'#f57c00', borderColor:'#f57c00' }}>
+          🧪 Prueba
+        </button>
+        <button onClick={handleCheckReplies} disabled={updating}
+          style={{ ...st.btnSecondary, display:'flex', alignItems:'center', gap:6 }}>
+          <RefreshCw size={14} style={{animation:updating?'spin 1s linear infinite':'none'}}/>
+          {updating ? 'Revisando...' : 'Actualizar respuestas'}
+        </button>
+        <button onClick={() => setShowConfirm(true)} disabled={sending || pendientesEnvio.length === 0}
+          style={{ ...st.btnPrimary, display:'flex', alignItems:'center', gap:6 }}>
+          <Send size={14}/>
+          {sending ? 'Enviando...' : `Enviar consultas (${pendientesEnvio.length})`}
+        </button>
+      </div>
+
+      {sendResult && (
+        <div style={{ marginBottom:12, padding:'10px 16px', background: sendResult.errors ? '#fce8e6' : '#e6f4ea', borderRadius:8, fontSize:13, color: sendResult.errors ? '#c62828' : '#2e7d32', flexShrink:0 }}>
+          {sendResult.errors === 0
+            ? `✓ ${sendResult.sent} correos enviados correctamente`
+            : `${sendResult.sent} enviados, ${sendResult.errors} errores`}
+        </div>
+      )}
+
+      <div style={st.tableWrapper}>
+        {loading ? <div style={st.loading}>Cargando...</div> : (
+          <table style={st.table}>
+            <thead><tr>
+              <th style={{...st.th,textAlign:'left',minWidth:200}}>PROPIEDAD</th>
+              <th style={{...st.th,textAlign:'left',minWidth:240}}>CARTERA</th>
+              <th style={{...st.th,textAlign:'left',minWidth:220}}>CORREO ADMINISTRACIÓN</th>
+              <th style={{...st.th,textAlign:'center',minWidth:120}}>ESTADO {formatMes(mes)}</th>
+              <th style={{...st.th,minWidth:80}}></th>
+            </tr></thead>
+            <tbody>
+              {addingNew && (
+                <tr style={{background:'#f0f7ff'}}>
+                  <td style={st.tdFixed}>
+                    <input value={newRow.propiedad} onChange={e=>setNewRow(p=>({...p,propiedad:e.target.value}))}
+                      placeholder="Nombre propiedad" style={inlineInputStyle}/>
+                  </td>
+                  <td style={{...st.tdFixed, position:'relative', overflow:'visible'}}>
+                    <PropertyAutocomplete
+                      value={newRow.cartera}
+                      onChange={v => setNewRow(p => ({ ...p, cartera: v }))}
+                      placeholder="Buscar en Cartera..."
+                      raw
+                    />
+                  </td>
+                  <td style={st.tdFixed}>
+                    <input value={newRow.mail_admin} onChange={e=>setNewRow(p=>({...p,mail_admin:e.target.value}))}
+                      placeholder="correo@admin.com" style={inlineInputStyle}/>
+                  </td>
+                  <td style={{...st.tdFixed,textAlign:'center'}}>—</td>
+                  <td style={{...st.tdFixed,textAlign:'center'}}>
+                    <button onClick={handleAddNew} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853'}}>✓</button>
+                    <button onClick={()=>{setAddingNew(false);setNewRow({propiedad:'',mail_admin:'',cartera:''}); }} style={st.actionBtn}><X size={13}/></button>
+                  </td>
+                </tr>
+              )}
+              {config.map(row => {
+                const logRow = logMap[row.propiedad];
+                const status = logRow?.status;
+                const isEditingMail = editingId === row.id && editField === 'mail_admin';
+                const isEditingCartera = editingId === row.id && editField === 'cartera';
+                const carteraExiste = row.cartera && carteraSet.has(row.cartera);
+
+                return (
+                  <tr key={row.id} style={{background:'#fff'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='#f8f9fa'}
+                    onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
+
+                    {/* PROPIEDAD */}
+                    <td style={{...st.tdFixed,fontSize:12}}>{row.propiedad}</td>
+
+                    {/* CARTERA */}
+                    <td style={{...st.tdFixed, position:'relative', overflow:'visible'}}>
+                      {isEditingCartera ? (
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          <div style={{flex:1, position:'relative'}}>
+                            <PropertyAutocomplete
+                              value={editValue}
+                              onChange={v => setEditValue(v)}
+                              placeholder="Buscar en Cartera..."
+                              raw
+                            />
+                          </div>
+                          <button onClick={()=>saveEdit(row.id)} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853',flexShrink:0}}>✓</button>
+                          <button onClick={()=>{ setEditingId(null); setEditField(null); }} style={{...st.actionBtn,flexShrink:0}}><X size={12}/></button>
+                        </div>
+                      ) : (
+                        <FichaCellWrap propiedad={carteraExiste ? row.cartera : null} onOpenFicha={onOpenFicha}>
+                          <div onClick={() => startEdit(row.id, 'cartera', row.cartera)}
+                            style={{cursor:'text',fontSize:12,padding:'2px 4px',borderRadius:4,minHeight:20}}>
+                            {row.cartera
+                              ? <span style={{color:'#202124'}}>{row.cartera}</span>
+                              : <span style={{color:'#9aa0a6',fontSize:11}}>— sin vincular —</span>}
+                          </div>
+                        </FichaCellWrap>
+                      )}
+                    </td>
+
+                    {/* CORREO */}
+                    <td style={st.tdFixed}>
+                      {isEditingMail ? (
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          <input value={editValue} onChange={e=>setEditValue(e.target.value)}
+                            autoFocus style={{...inlineInputStyle,flex:1}}/>
+                          <button onClick={()=>saveEdit(row.id)} style={{...st.actionBtn,background:'#e6f4ea',color:'#34a853'}}>✓</button>
+                          <button onClick={()=>{ setEditingId(null); setEditField(null); }} style={st.actionBtn}><X size={12}/></button>
+                        </div>
+                      ) : (
+                        <div onClick={()=>startEdit(row.id,'mail_admin',row.mail_admin)}
+                          style={{cursor:'text',fontSize:12,padding:'2px 4px',borderRadius:4,display:'flex',alignItems:'center',gap:6,minHeight:20}}>
+                          {row.mail_admin
+                            ? <span style={{color:'#202124'}}>{row.mail_admin}</span>
+                            : <span style={{color:'#ea4335',fontSize:11,fontWeight:600}}>⚠ Sin correo</span>}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* ESTADO */}
+                    <td style={{...st.tdFixed,textAlign:'center'}}>
+                      {!status && <span style={{fontSize:11,color:'#9aa0a6'}}>—</span>}
+                      {status==='enviado' && <span style={{fontSize:11,fontWeight:600,color:'#1a73e8',background:'#e8f0fe',padding:'2px 10px',borderRadius:20}}>Enviado</span>}
+                      {status==='manual' && (
+                        <div>
+                          <span style={{fontSize:11,fontWeight:600,color:'#6a1b9a',background:'#f3e5f5',padding:'2px 10px',borderRadius:20}}>Ingresado Manual</span>
+                          {logRow?.gc_valor && <div style={{fontSize:11,color:'#5f6368',marginTop:2}}>{logRow.gc_valor}</div>}
+                        </div>
+                      )}
+                      {status==='respondido' && (
+                        <div>
+                          <span style={{fontSize:11,fontWeight:600,color:'#2e7d32',background:'#e6f4ea',padding:'2px 10px',borderRadius:20}}>Respondido</span>
+                          {logRow?.gc_valor && <div style={{fontSize:11,color:'#5f6368',marginTop:2}}>{logRow.gc_valor}</div>}
+                          {logRow?.pdf_adjuntos > 1 && (
+                            <div style={{fontSize:10,color:'#e65100',marginTop:2,display:'flex',alignItems:'center',gap:3,justifyContent:'center'}} title="El correo traía más de un PDF adjunto; se extrajo del primero. Verifica el valor en Reportabilidad.">
+                              <AlertCircle size={10}/> {logRow.pdf_adjuntos} adjuntos — revisar
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* ACCIONES */}
+                    <td style={{...st.tdFixed,textAlign:'center'}}>
+                      {row.mail_admin && (
+                        <button onClick={()=>setPreviewRow(row)} style={{...st.actionBtn,color:'#1a73e8'}} title="Ver correo"><Eye size={14}/></button>
+                      )}
+                      {confirmDeleteId === row.id ? (
+                        <>
+                          <button onClick={async()=>{ await handleDelete(row.id); setConfirmDeleteId(null); }} style={{...st.actionBtn,background:'#fce8e6',color:'#ea4335'}} title="Confirmar eliminar"><Trash2 size={13}/></button>
+                          <button onClick={()=>setConfirmDeleteId(null)} style={{...st.actionBtn,color:'#5f6368'}} title="Cancelar"><X size={12}/></button>
+                        </>
+                      ) : (
+                        <button onClick={()=>setConfirmDeleteId(row.id)} style={{...st.actionBtn,color:'#9aa0a6'}} title="Eliminar"><Trash2 size={13}/></button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {previewRow && <EmailPreviewModal propiedad={previewRow.propiedad} mailAdmin={previewRow.mail_admin} onClose={()=>setPreviewRow(null)}/>}
+
+      {showConfirm && (
+        <ConfirmModal
+          title="Confirmar envío de correos"
+          message={`Se enviarán ${pendientesEnvio.length} correos de consulta de gasto común para ${formatMes(mes)}. Se excluyen las propiedades que ya respondieron o tienen un valor ingresado manualmente este mes. Esta acción no se puede deshacer.`}
+          onConfirm={doSendAll}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+
+      {showTestModal && (
+        <TestModal
+          onClose={() => setShowTestModal(false)}
+          onSend={async (testRows) => {
+            setShowTestModal(false);
+            setSending(true);
+            setSendResult(null);
+            const mesLabel = new Date().toLocaleDateString('es-CL', { month:'long', year:'numeric' });
+            let sent = 0, errors = 0;
+            for (const row of testRows) {
+              if (!row.mail?.trim()) continue;
+              try {
+                await fetch('/api/send-gc-email', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.REACT_APP_CRON_SECRET}`,
+                  },
+                  body: JSON.stringify({
+                    propiedad: row.propiedad,
+                    mailAdmin: row.mail,
+                    mesLabel,
+                    isTest: true,
+                  }),
+                });
+                sent++;
+              } catch(e) { errors++; }
+            }
+            setSendResult({ sent, errors });
+            setSending(false);
+          }}
+        />
+      )}
+      <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
 
-const s = {
-  container: { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Google Sans','Segoe UI',sans-serif" },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexShrink: 0 },
-  title: { fontSize: 24, fontWeight: 700, color: '#202124', margin: '0 0 4px' },
-  subtitle: { fontSize: 13, color: '#5f6368', margin: 0 },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' },
-  filterGroup: { display: 'flex', gap: 4 },
-  filterBtn: { padding: '5px 11px', borderRadius: 20, border: '1px solid #dadce0', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#5f6368', fontFamily: 'inherit' },
-  filterBtnActive: { background: '#e8f0fe', color: '#1a73e8', borderColor: '#1a73e8', fontWeight: 700 },
-  clearFilter: { padding: '5px 10px', borderRadius: 20, border: 'none', background: 'none', fontSize: 12, cursor: 'pointer', color: '#ea4335', fontFamily: 'inherit' },
-  metricsBtn: { display: 'flex', alignItems: 'center', padding: '8px 14px', background: '#fff', border: '1px solid #dadce0', color: '#3c4043', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
-  addBtn: { display: 'flex', alignItems: 'center', padding: '8px 16px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
-  tableWrapper: { flex: 1, overflow: 'auto', border: '1px solid #e8eaed', borderRadius: 12, background: '#fff' },
-  table: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' },
-  th: { padding: '10px 10px', background: '#f8f9fa', fontSize: 10, fontWeight: 700, color: '#5f6368', letterSpacing: 0.5, borderBottom: '2px solid #e8eaed', borderRight: '1px solid #e8eaed', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' },
-  td: { padding: '6px 10px', fontSize: 12, color: '#202124', borderBottom: '1px solid #e8eaed', borderRight: '1px solid #e8eaed', verticalAlign: 'middle', minWidth: 120 },
-  tdCenter: { padding: '6px 8px', fontSize: 12, color: '#202124', borderBottom: '1px solid #e8eaed', borderRight: '1px solid #e8eaed', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' },
-  tdActions: { padding: '4px 6px', borderBottom: '1px solid #e8eaed', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', borderRadius: 5, display: 'inline-flex', alignItems: 'center' },
-  empty: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
-  loading: { padding: 40, textAlign: 'center', color: '#9aa0a6', fontSize: 14 },
-  totalsRow: { display: 'flex', alignItems: 'center', gap: 24, padding: '10px 16px', marginTop: 8, background: '#fff', border: '1px solid #e8eaed', borderRadius: 10, flexShrink: 0 },
-  totalsLabel: { fontSize: 14, fontWeight: 700, color: '#5f6368', letterSpacing: 0.8 },
-  totalsItem: { fontSize: 17, color: '#3c4043' },
-  searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
-  searchInput: { paddingLeft: 30, paddingRight: 28, paddingTop: 7, paddingBottom: 7, border: '1px solid #dadce0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit', width: 220 },
-  clearSearch: { position: 'absolute', right: 8, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', color: '#9aa0a6' },
+// ── SIDEBAR: respuesta de correo + comentario ─────────────────
+function GCDetailSidebar({ propiedad, mes, logEntry, comentarioDraft, setComentarioDraft, onSaveComentario, savingComentario, onClose }) {
+  const hasChanges = comentarioDraft.trim() !== (logEntry?.comentario || '');
+  return (
+    <div style={{ position:'fixed', top:0, right:0, height:'100vh', width:380, maxWidth:'90vw', background:'#fff', boxShadow:'-6px 0 24px rgba(0,0,0,0.18)', zIndex:2500, display:'flex', flexDirection:'column', fontFamily:"'Google Sans','Segoe UI',sans-serif" }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', padding:'18px 20px', borderBottom:'1px solid #e8eaed', flexShrink:0 }}>
+        <div>
+          <div style={{ fontSize:15, fontWeight:700, color:'#202124' }}>{propiedad}</div>
+          <div style={{ fontSize:12, color:'#9aa0a6', marginTop:2 }}>{formatMes(mes)}</div>
+        </div>
+        <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', padding:4, color:'#5f6368' }}><X size={18}/></button>
+      </div>
+
+      <div style={{ flex:1, overflow:'auto', padding:'18px 20px', display:'flex', flexDirection:'column', gap:20 }}>
+        {logEntry?.gc_valor && (
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#9aa0a6', letterSpacing:0.5, marginBottom:6 }}>VALOR GC</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#1e6e3b' }}>{logEntry.gc_valor}</div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize:11, fontWeight:700, color:'#9aa0a6', letterSpacing:0.5, marginBottom:6 }}>RESPUESTA DEL CORREO</div>
+          {logEntry?.respuesta_texto ? (
+            <div style={{ fontSize:13, color:'#3c4043', lineHeight:1.6, whiteSpace:'pre-wrap', background:'#f8f9fa', border:'1px solid #e8eaed', borderRadius:8, padding:'10px 12px', maxHeight:320, overflow:'auto' }}>
+              {logEntry.respuesta_texto}
+            </div>
+          ) : (
+            <div style={{ fontSize:12, color:'#9aa0a6', fontStyle:'italic' }}>
+              {logEntry?.status === 'respondido' ? 'No se guardó texto de la respuesta para este correo.' : 'Sin respuesta registrada para este mes.'}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={{ fontSize:11, fontWeight:700, color:'#9aa0a6', letterSpacing:0.5, marginBottom:6 }}>COMENTARIO</div>
+          <textarea
+            value={comentarioDraft}
+            onChange={e => setComentarioDraft(e.target.value)}
+            placeholder="Escribe un comentario para esta propiedad y mes..."
+            style={{ width:'100%', minHeight:100, border:'1px solid #dadce0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', fontFamily:'inherit', resize:'vertical', boxSizing:'border-box' }}
+          />
+          <div style={{ display:'flex', justifyContent:'flex-end', marginTop:8 }}>
+            <button onClick={onSaveComentario} disabled={savingComentario || !hasChanges}
+              style={{ padding:'7px 16px', background: hasChanges?'#1a73e8':'#e8eaed', color: hasChanges?'#fff':'#9aa0a6', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor: hasChanges?'pointer':'not-allowed', fontFamily:'inherit' }}>
+              {savingComentario ? 'Guardando...' : 'Guardar comentario'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── TAB 3: REPORTABILIDAD ─────────────────────────────────────
+function ReportabilidadTab() {
+  const [config, setConfig] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingCell, setEditingCell] = useState(null); // { propiedad, mes }
+  const [editValue, setEditValue] = useState('');
+  const [savingCell, setSavingCell] = useState(null); // "propiedad|mes"
+  const [sidebarCell, setSidebarCell] = useState(null); // { propiedad, mes }
+  const [comentarioDraft, setComentarioDraft] = useState('');
+  const [savingComentario, setSavingComentario] = useState(false);
+  const months = getLast12Months();
+  const mesCurrent = currentMes();
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [{ data: cfg }, { data: lg }] = await Promise.all([
+      supabase.from('gc_consultas_config').select('propiedad').order('propiedad'),
+      supabase.from('gc_consultas_log').select('*'),
+    ]);
+    setConfig(cfg || []);
+    setLogs(lg || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const logMap = useMemo(() => {
+    const m = {};
+    logs.forEach(l => {
+      if (!m[l.propiedad]) m[l.propiedad] = {};
+      m[l.propiedad][l.mes] = l;
+    });
+    return m;
+  }, [logs]);
+
+  const getCellContent = (logEntry) => {
+    if (!logEntry) return null;
+    if (logEntry.gc_valor) return { type:'valor', text:logEntry.gc_valor, bg:'#e6f4ea', color:'#1e6e3b', fontWeight:700 };
+    if (logEntry.status === 'manual') return { type:'manual', text:'Manual', bg:'#f3e5f5', color:'#6a1b9a', fontWeight:700 };
+    if (logEntry.status === 'respondido') return { type:'respondido', text:'R', bg:'#e6f4ea', color:'#2e7d32', fontWeight:700 };
+    if (logEntry.status === 'enviado') return { type:'enviado', text:'E', bg:'#e8f0fe', color:'#1a73e8', fontWeight:700 };
+    return null;
+  };
+
+  // Entrada / corrección manual de GC — habilitada en cualquier mes. Útil, por
+  // ejemplo, para corregir un valor mal extraído (correo con más de un PDF
+  // adjunto, donde se tomó el valor del PDF equivocado).
+  const startEditManual = (propiedad, mes) => {
+    const current = logMap[propiedad]?.[mes];
+    setEditingCell({ propiedad, mes });
+    setEditValue(current?.gc_valor || '');
+  };
+
+  // Formatea un valor de GC ingresado a mano al mismo formato que usan los
+  // valores extraídos automáticamente del PDF ($XX.XXX), para que ambos se
+  // vean consistentes en Reportabilidad, Consultas GC y Saldos.
+  const formatGCValue = (raw) => {
+    const digits = raw.replace(/[^0-9]/g, '');
+    if (!digits) return raw.trim(); // sin dígitos (caso raro): se deja tal cual
+    const n = parseInt(digits, 10);
+    if (isNaN(n)) return raw.trim();
+    return '$' + n.toLocaleString('es-CL');
+  };
+
+  const saveManualValue = async (propiedad, mes) => {
+    const rawValue = editValue.trim();
+    const value = rawValue ? formatGCValue(rawValue) : '';
+    const existing = logMap[propiedad]?.[mes];
+    // Si el valor no cambió, no hacemos nada.
+    if (value === (existing?.gc_valor || '')) { setEditingCell(null); return; }
+    const cellKey = `${propiedad}|${mes}`;
+    setSavingCell(cellKey);
+    try {
+      const wasManual = existing?.status === 'manual';
+      const payload = value
+        // pdf_adjuntos se limpia: una vez corregido/ingresado a mano, el
+        // valor ya no es ambiguo.
+        ? { propiedad, mes, gc_valor: value, status: 'manual', pdf_adjuntos: null }
+        : { propiedad, mes, gc_valor: null, status: wasManual ? null : (existing?.status || null) };
+      await supabase.from('gc_consultas_log').upsert(payload, { onConflict: 'propiedad,mes' });
+      setLogs(prev => {
+        const idx = prev.findIndex(l => l.propiedad === propiedad && l.mes === mes);
+        if (idx === -1) return [...prev, payload];
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...payload };
+        return next;
+      });
+    } catch (e) {
+      console.error('Error guardando valor manual de GC:', e);
+      alert('No se pudo guardar el valor: ' + e.message);
+    }
+    setSavingCell(null);
+    setEditingCell(null);
+  };
+
+  // Barra lateral: muestra el texto de la respuesta del correo (si existe) y
+  // permite ver/editar el comentario de esa propiedad+mes. Se abre con el
+  // botoncito de la celda, no con el click normal (que sigue editando el
+  // valor de GC como ya funcionaba).
+  const openSidebar = (propiedad, mes) => {
+    const entry = logMap[propiedad]?.[mes];
+    setSidebarCell({ propiedad, mes });
+    setComentarioDraft(entry?.comentario || '');
+  };
+
+  const closeSidebar = () => {
+    setSidebarCell(null);
+    setComentarioDraft('');
+  };
+
+  const saveComentario = async () => {
+    if (!sidebarCell) return;
+    const { propiedad, mes } = sidebarCell;
+    const value = comentarioDraft.trim();
+    setSavingComentario(true);
+    try {
+      const payload = { propiedad, mes, comentario: value || null };
+      await supabase.from('gc_consultas_log').upsert(payload, { onConflict: 'propiedad,mes' });
+      setLogs(prev => {
+        const idx = prev.findIndex(l => l.propiedad === propiedad && l.mes === mes);
+        if (idx === -1) return [...prev, payload];
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...payload };
+        return next;
+      });
+    } catch (e) {
+      console.error('Error guardando comentario:', e);
+      alert('No se pudo guardar el comentario: ' + e.message);
+    }
+    setSavingComentario(false);
+  };
+
+  if (loading) return <div style={st.loading}>Cargando...</div>;
+
+  const totalProps = config.length;
+  const countEnviado = config.filter(({ propiedad }) => { const l = logMap[propiedad]?.[mesCurrent]; return l && (l.status === 'enviado' || l.status === 'respondido'); }).length;
+  const countRespondido = config.filter(({ propiedad }) => logMap[propiedad]?.[mesCurrent]?.status === 'respondido').length;
+  const countConValor = config.filter(({ propiedad }) => !!logMap[propiedad]?.[mesCurrent]?.gc_valor).length;
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+      <div style={{ display:'flex', gap:12, marginBottom:16, flexShrink:0 }}>
+        {[
+          { label:'Propiedades', value:totalProps, color:'#5f6368', bg:'#f8f9fa' },
+          { label:'Enviados', value:countEnviado, color:'#1a73e8', bg:'#e8f0fe' },
+          { label:'Respondidos', value:countRespondido, color:'#2e7d32', bg:'#e6f4ea' },
+          { label:'Con valor GC', value:countConValor, color:'#1e6e3b', bg:'#c8e6c9' },
+        ].map(s => (
+          <div key={s.label} style={{ padding:'10px 16px', background:s.bg, borderRadius:10, textAlign:'center', minWidth:90 }}>
+            <div style={{ fontSize:22, fontWeight:700, color:s.color }}>{s.value}</div>
+            <div style={{ fontSize:11, color:'#5f6368', marginTop:2 }}>{s.label}</div>
+          </div>
+        ))}
+        <div style={{ flex:1, display:'flex', alignItems:'center', paddingLeft:8 }}>
+          <span style={{ fontSize:12, color:'#9aa0a6' }}>Mes actual: <b style={{color:'#202124'}}>{formatMes(mesCurrent)}</b> · click en la celda para ingresar/corregir el valor de GC · ícono <MessageSquare size={11} style={{verticalAlign:'middle'}}/> (aparece al pasar el mouse) para ver la respuesta del correo o dejar un comentario</span>
+        </div>
+      </div>
+
+      <div style={{ ...st.tableWrapper, flex:1 }}>
+        <table style={st.table}>
+          <thead>
+            <tr>
+              <th style={{ ...st.th, textAlign:'left', minWidth:260, position:'sticky', left:0, zIndex:2, background:'#f8f9fa' }}>PROPIEDAD</th>
+              {months.map(m => <th key={m} style={{ ...st.th, minWidth:80, textAlign:'center' }}>{formatMes(m)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {config.map(({ propiedad }) => (
+              <tr key={propiedad} style={{ background:'#fff' }}
+                onMouseEnter={e => e.currentTarget.style.background='#f8f9fa'}
+                onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+                <td style={{ ...st.tdFixed, fontSize:11, position:'sticky', left:0, background:'inherit', zIndex:1 }}>{propiedad}</td>
+                {months.map(m => {
+                  const logEntry = logMap[propiedad]?.[m];
+                  const cell = getCellContent(logEntry);
+                  const isEditing = editingCell?.propiedad === propiedad && editingCell?.mes === m;
+                  const cellKey = `${propiedad}|${m}`;
+                  const flagAdjuntos = logEntry?.pdf_adjuntos > 1 && logEntry?.status !== 'manual';
+                  const hasComentario = !!logEntry?.comentario;
+                  return (
+                    <td key={m}
+                      onClick={!isEditing ? () => startEditManual(propiedad, m) : undefined}
+                      title={!isEditing ? (flagAdjuntos ? `${logEntry.pdf_adjuntos} PDFs adjuntos en el correo — se usó el primero, verifica el valor` : 'Click para ingresar o corregir el valor de GC') : undefined}
+                      style={{ ...st.tdFixed, textAlign:'center', background:cell?.bg||'#fff', padding:'5px 6px', ...(isEditing?{}:{cursor:'text'}) }}>
+                      <div className="gc-cell-wrap" style={{ position:'relative', width:'100%', minHeight:16 }}>
+                        {hasComentario && (
+                          <span title="Tiene comentario" style={{ position:'absolute', top:-5, right:-6, width:0, height:0, borderStyle:'solid', borderWidth:'0 8px 8px 0', borderColor:'transparent #f9a825 transparent transparent' }}/>
+                        )}
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            value={editValue}
+                            disabled={savingCell === cellKey}
+                            onChange={e => setEditValue(e.target.value)}
+                            onBlur={() => saveManualValue(propiedad, m)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            style={{ width:'100%', textAlign:'center', border:'1px solid #1a73e8', borderRadius:4, padding:'2px 4px', fontSize:11, outline:'none', fontFamily:'inherit' }}
+                          />
+                        ) : cell ? (
+                          <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:3, maxWidth:'100%' }}>
+                            {flagAdjuntos && <AlertCircle size={10} color="#e65100" style={{flexShrink:0}}/>}
+                            <span style={{ fontSize:cell.type==='valor'?11:12, fontWeight:cell.fontWeight, color:cell.color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={cell.type==='valor'?cell.text:undefined}>{cell.text}</span>
+                          </span>
+                        ) : (
+                          <span style={{ color:'#dadce0', fontSize:10 }}>—</span>
+                        )}
+                        {!isEditing && (
+                          <button
+                            className="gc-cell-btn"
+                            onClick={e => { e.stopPropagation(); openSidebar(propiedad, m); }}
+                            title="Ver respuesta del correo / comentario"
+                            style={{ position:'absolute', bottom:-6, right:-4, background:'#fff', border:'none', cursor:'pointer', padding:1, display:'flex', color:'#5f6368', borderRadius:4 }}>
+                            <MessageSquare size={11}/>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display:'flex', gap:16, marginTop:10, flexShrink:0, fontSize:11, color:'#9aa0a6', alignItems:'center', flexWrap:'wrap' }}>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e8f0fe', color:'#1a73e8', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>E</span>Enviado</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#2e7d32', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>R</span>Respondido (sin valor extraído)</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#f3e5f5', color:'#6a1b9a', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>Manual</span>Ingresado manualmente (sin valor)</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ background:'#e6f4ea', color:'#1e6e3b', fontWeight:700, padding:'1px 8px', borderRadius:4, fontSize:11 }}>$85.430</span>GC extraído del PDF o ingresado manualmente</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><AlertCircle size={12} color="#e65100"/>Correo con más de un PDF adjunto — verificar el valor (click para corregir)</span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:0, height:0, borderStyle:'solid', borderWidth:'0 7px 7px 0', borderColor:'transparent #f9a825 transparent transparent' }}/>Celda con comentario</span>
+      </div>
+
+      {sidebarCell && (
+        <GCDetailSidebar
+          propiedad={sidebarCell.propiedad}
+          mes={sidebarCell.mes}
+          logEntry={logMap[sidebarCell.propiedad]?.[sidebarCell.mes]}
+          comentarioDraft={comentarioDraft}
+          setComentarioDraft={setComentarioDraft}
+          onSaveComentario={saveComentario}
+          savingComentario={savingComentario}
+          onClose={closeSidebar}
+        />
+      )}
+      <style>{`
+        .gc-cell-btn { opacity: 0; transition: opacity 0.15s; }
+        .gc-cell-wrap:hover .gc-cell-btn { opacity: 1; }
+      `}</style>
+    </div>
+  );
+}
+
+// ── MAIN ──────────────────────────────────────────────────────
+export default function SaldosPage() {
+  const { profile } = useAuth();
+  const isOwner = profile?.isOwner;
+  const [tab, setTab] = useState('saldos');
+  const [rows, setRows] = useState([]);
+  const [attrsMap, setAttrsMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState('');
+  const [lastUploads, setLastUploads] = useState({});
+  const [showUpload, setShowUpload] = useState(false);
+  const [umbralConfig, setUmbralConfig] = useState({ multiplicador1: 1.9, multiplicador2: 2.8 });
+  const [showUmbralModal, setShowUmbralModal] = useState(false);
+  const [fichaPropiedad, setFichaPropiedad] = useState(null);
+
+  const fetchUmbralConfig = useCallback(async () => {
+    const { data } = await supabase.from('saldos_config').select('*').eq('id', 1).maybeSingle();
+    if (data) setUmbralConfig({ multiplicador1: Number(data.multiplicador1), multiplicador2: Number(data.multiplicador2) });
+  }, []);
+
+  useEffect(() => { fetchUmbralConfig(); }, [fetchUmbralConfig]);
+
+  const handleSaveUmbralConfig = async (newConfig) => {
+    await supabase.from('saldos_config').upsert({ id: 1, ...newConfig });
+    setUmbralConfig(newConfig);
+  };
+
+  const { exportToExcel } = useExcelExport();
+
+  const handleExport = async () => {
+    if (tab === 'saldos') {
+      exportToExcel(rows.filter(r => r.last_cuentas_ac || r.last_cuentas_an || r.last_arriendos), [
+        { key: 'propiedad',      label: 'Propiedad' },
+        { key: 'propietario',    label: 'Propietario' },
+        { key: 'e1',             label: 'E1' },
+        { key: 'e2',             label: 'E2' },
+        { key: 'agua_ac',        label: 'Agua Ac' },
+        { key: 'agua_an',        label: 'Agua An' },
+        { key: 'luz_ac',         label: 'Luz Ac' },
+        { key: 'luz_an',         label: 'Luz An' },
+        { key: 'gas_ac',         label: 'Gas Ac' },
+        { key: 'gas_an',         label: 'Gas An' },
+        { key: 'gc_ac',          label: 'GC Ac' },
+        { key: 'gc_an',          label: 'GC An' },
+        { key: 'deuda_arriendo', label: 'Deuda Arriendo' },
+      ], 'Saldos');
+    } else if (tab === 'consultas' || tab === 'reportabilidad') {
+      // Fetch fresco de config y logs para exportar todo, no solo el mes visible
+      const mesActual = currentMes();
+      const [{ data: cfg }, { data: allLogs }] = await Promise.all([
+        supabase.from('gc_consultas_config').select('*').order('propiedad'),
+        supabase.from('gc_consultas_log').select('*').order('mes', { ascending: false }),
+      ]);
+
+      if (tab === 'consultas') {
+        const logMapActual = {};
+        (allLogs || []).filter(l => l.mes === mesActual).forEach(l => { logMapActual[l.propiedad] = l; });
+        const consultasRows = (cfg || []).map(r => {
+          const logRow = logMapActual[r.propiedad] || {};
+          return {
+            propiedad:     r.propiedad,
+            cartera:       r.cartera || '',
+            mail_admin:    r.mail_admin || '',
+            status:        logRow.status || '',
+            gc_valor:      logRow.gc_valor || '',
+            enviado_at:    logRow.enviado_at ? new Date(logRow.enviado_at).toLocaleDateString('es-CL') : '',
+            respondido_at: logRow.respondido_at ? new Date(logRow.respondido_at).toLocaleDateString('es-CL') : '',
+          };
+        });
+        exportToExcel(consultasRows, [
+          { key: 'propiedad',     label: 'Propiedad' },
+          { key: 'cartera',       label: 'Cartera' },
+          { key: 'mail_admin',    label: 'Correo Admin' },
+          { key: 'status',        label: 'Estado' },
+          { key: 'gc_valor',      label: 'Valor GC' },
+          { key: 'enviado_at',    label: 'Enviado' },
+          { key: 'respondido_at', label: 'Respondido' },
+        ], 'ConsultasGC');
+      } else {
+        // Reportabilidad: historial completo
+        exportToExcel(allLogs || [], [
+          { key: 'propiedad',     label: 'Propiedad' },
+          { key: 'mes',           label: 'Mes' },
+          { key: 'status',        label: 'Estado' },
+          { key: 'gc_valor',      label: 'Valor GC' },
+          { key: 'enviado_at',    label: 'Enviado' },
+          { key: 'respondido_at', label: 'Respondido' },
+        ], 'Reportabilidad');
+      }
+    }
+  };
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const [{ data: saldos }, { data: uploads }, { data: attrData }] = await Promise.all([
+      supabase.from('saldos').select('*').order('propiedad'),
+      supabase.from('saldos_uploads').select('*').order('uploaded_at',{ascending:false}),
+      supabase.from('property_attributes').select('*'),
+    ]);
+    setRows(saldos||[]);
+    const aMap={};
+    (attrData||[]).forEach(a=>{ aMap[a.propiedad]=a; });
+    setAttrsMap(aMap);
+    const latest={};
+    (uploads||[]).forEach(u=>{ if(!latest[u.tipo]) latest[u.tipo]=u; });
+    setLastUploads(latest);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleUpload = async (tipo, file) => {
+    setUploading(tipo);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer,{type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws,{defval:''});
+      if (tipo==='cuentas_ac'||tipo==='cuentas_an') await processCuentas(data,tipo);
+      else await processArriendos(data);
+      await supabase.from('saldos_uploads').insert({tipo,filename:file.name,row_count:data.length});
+      await fetchData();
+    } catch(err) { alert('Error: '+err.message); }
+    setUploading('');
+  };
+
+  const processCuentas = async (data, tipo) => {
+    const isAc=tipo==='cuentas_ac';
+    const now=new Date().toISOString();
+    const {data:cartera}=await supabase.from('properties').select('propiedad,propietario,e1,e2');
+    const cm={};
+    (cartera||[]).forEach(c=>{cm[c.propiedad]=c;});
+    const batch=[];
+    for (const row of data) {
+      const p=(row['Propiedad']||'').trim();
+      if(!p) continue;
+      const match=cm[p];
+      batch.push({propiedad:p,...(match?{propietario:match.propietario,e1:match.e1,e2:match.e2}:{}),...(isAc?{agua_ac:String(row['Agua']||'').trim()||null,luz_ac:String(row['Luz']||'').trim()||null,gas_ac:String(row['Gas']||'').trim()||null,gc_ac:String(row['Gastos comunes']||'').trim()||null,alerta_agua:(parseFloat(row['Deuda anterior agua'])||0)>0,alerta_luz:(parseFloat(row['Deuda anterior luz'])||0)>0,alerta_gas:(parseFloat(row['Deuda anterior gas'])||0)>0,last_cuentas_ac:now}:{agua_an:String(row['Agua']||'').trim()||null,luz_an:String(row['Luz']||'').trim()||null,gas_an:String(row['Gas']||'').trim()||null,gc_an:String(row['Gastos comunes']||'').trim()||null,last_cuentas_an:now})});
+    }
+    for (let i=0;i<batch.length;i+=50) await supabase.from('saldos').upsert(batch.slice(i,i+50),{onConflict:'propiedad'});
+  };
+
+  const processArriendos = async (data) => {
+    const now=new Date().toISOString();
+    const {data:cartera}=await supabase.from('properties').select('propiedad,propietario,e1,e2');
+    const cm={};
+    (cartera||[]).forEach(c=>{cm[c.propiedad]=c;});
+    const batch=[];
+    for (const row of data) {
+      const p=(row['Propiedad']||'').trim();
+      if(!p) continue;
+      const n=parseArriendo(row['Deuda al día']);
+      const match=cm[p];
+      batch.push({propiedad:p,deuda_arriendo:n!==null?String(Math.round(n)):null,last_arriendos:now,...(match?{propietario:match.propietario,e1:match.e1,e2:match.e2}:{})});
+    }
+    for (let i=0;i<batch.length;i+=50) await supabase.from('saldos').upsert(batch.slice(i,i+50),{onConflict:'propiedad'});
+  };
+
+  // Carga los valores de GC extraídos en Consultas GC hacia la tabla Saldos.
+  // El cruce se hace por la columna "cartera" de gc_consultas_config, que
+  // usa la misma nomenclatura que "propiedad" en la tabla saldos.
+  const [loadingGC, setLoadingGC] = useState(false);
+  const [loadGCResult, setLoadGCResult] = useState(null);
+
+  const handleLoadGCValues = async () => {
+    setLoadingGC(true);
+    setLoadGCResult(null);
+    try {
+      const mesActual = currentMes();
+      const mesAnterior = prevMes();
+
+      const [{ data: cfg }, { data: logs }] = await Promise.all([
+        supabase.from('gc_consultas_config').select('propiedad, cartera'),
+        supabase.from('gc_consultas_log').select('propiedad, mes, gc_valor').in('mes', [mesActual, mesAnterior]),
+      ]);
+
+      // Mapa propiedad (Consultas GC) -> cartera (nomenclatura Saldos/Cartera)
+      const carteraMap = {};
+      (cfg || []).forEach(c => { if (c.cartera) carteraMap[c.propiedad] = c.cartera; });
+
+      // Mapas de valores por mes
+      const valoresActual = {};
+      const valoresAnterior = {};
+      (logs || []).forEach(l => {
+        if (!l.gc_valor) return;
+        if (l.mes === mesActual) valoresActual[l.propiedad] = l.gc_valor;
+        if (l.mes === mesAnterior) valoresAnterior[l.propiedad] = l.gc_valor;
+      });
+
+      let updated = 0, skipped = 0, notFound = 0;
+      const propiedadesConsulta = Object.keys(carteraMap);
+
+      for (const propConsulta of propiedadesConsulta) {
+        const propCartera = carteraMap[propConsulta];
+        const gcAc = valoresActual[propConsulta] || null;
+        const gcAn = valoresAnterior[propConsulta] || null;
+
+        if (!gcAc && !gcAn) { skipped++; continue; }
+
+        const updates = {};
+        if (gcAc) updates.gc_ac = gcAc;
+        if (gcAn) updates.gc_an = gcAn;
+
+        const { data: updatedRows, error } = await supabase
+          .from('saldos')
+          .update(updates)
+          .eq('propiedad', propCartera)
+          .select('id');
+
+        if (error) { console.error('Error actualizando', propCartera, error); skipped++; }
+        else if (!updatedRows || updatedRows.length === 0) { notFound++; }
+        else updated++;
+      }
+
+      setLoadGCResult({ updated, skipped, notFound, total: propiedadesConsulta.length });
+      await fetchData();
+    } catch (e) {
+      console.error('Error en handleLoadGCValues:', e);
+      setLoadGCResult({ error: e.message });
+    }
+    setLoadingGC(false);
+  };
+
+  const TABS = [
+    { id:'saldos',         label:'Saldos',         icon:<BarChart2 size={14}/> },
+    { id:'consultas',      label:'Consultas GC',    icon:<Mail size={14}/> },
+    { id:'reportabilidad', label:'Reportabilidad',  icon:<RefreshCw size={14}/> },
+  ];
+
+  return (
+    <div style={st.container}>
+      <div style={st.header}>
+        <div>
+          <h1 style={st.title}>Saldos</h1>
+          <p style={st.subtitle}>{rows.filter(r=>r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos).length} propiedades con datos</p>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {tab==='saldos'&&loadGCResult&&!loadGCResult.error&&(
+            <div style={{fontSize:12,color:'#2e7d32',background:'#e6f4ea',padding:'6px 12px',borderRadius:8}}>
+              ✓ {loadGCResult.updated} actualizadas
+              {loadGCResult.skipped>0?`, ${loadGCResult.skipped} sin valor`:''}
+              {loadGCResult.notFound>0?`, ${loadGCResult.notFound} sin match en Saldos`:''}
+            </div>
+          )}
+          {tab==='saldos'&&loadGCResult?.error&&(
+            <div style={{fontSize:12,color:'#c62828',background:'#fce8e6',padding:'6px 12px',borderRadius:8}}>
+              Error: {loadGCResult.error}
+            </div>
+          )}
+          {tab==='saldos'&&(
+            <button onClick={handleLoadGCValues} disabled={loadingGC} style={{...st.iconBtn,display:'flex',alignItems:'center',gap:6,padding:'8px 14px',width:'auto'}} title="Cargar valores GC desde Consultas">
+              <RefreshCw size={15} color="#5f6368" style={{animation:loadingGC?'spin 1s linear infinite':'none'}}/>
+              <span style={{fontSize:13,color:'#3c4043'}}>{loadingGC?'Cargando...':'Cargar GC'}</span>
+            </button>
+          )}
+          {tab==='saldos' && isOwner && (
+            <button onClick={handleExport} disabled={loading} title="Exportar a Excel"
+              style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1 }}>
+              <Download size={15} color="#34a853" />
+            </button>
+          )}
+          {(tab==='consultas'||tab==='reportabilidad') && (
+            <button onClick={handleExport} title="Exportar a Excel"
+              style={{ display:'flex', alignItems:'center', padding:'8px 10px', background:'#fff', border:'1px solid #dadce0', borderRadius:8, cursor:'pointer' }}>
+              <Download size={15} color="#34a853" />
+            </button>
+          )}
+          <button onClick={fetchData} style={st.iconBtn} title="Actualizar"><RefreshCw size={16} color="#5f6368"/></button>
+          {tab==='saldos'&&<button onClick={()=>setShowUmbralModal(true)} style={st.iconBtn} title="Editar multiplicadores de umbral"><SlidersHorizontal size={16} color="#5f6368"/></button>}
+          {tab==='saldos'&&<button onClick={()=>setShowUpload(!showUpload)} style={{...st.iconBtn,...(showUpload?{background:'#e8f0fe',borderColor:'#1a73e8'}:{})}}><Upload size={16} color={showUpload?'#1a73e8':'#5f6368'}/></button>}
+        </div>
+      </div>
+
+      <div style={{ display:'flex', gap:4, marginBottom:16, borderBottom:'2px solid #e8eaed', flexShrink:0 }}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            display:'flex',alignItems:'center',gap:6,padding:'8px 16px',
+            background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',
+            fontSize:13,fontWeight:tab===t.id?700:500,
+            color:tab===t.id?'#1a73e8':'#5f6368',
+            borderBottom:tab===t.id?'2px solid #1a73e8':'2px solid transparent',
+            marginBottom:-2,
+          }}>{t.icon}{t.label}</button>
+        ))}
+      </div>
+
+      {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload} mult1={umbralConfig.multiplicador1} mult2={umbralConfig.multiplicador2} onOpenFicha={setFichaPropiedad}/>}
+      {tab==='consultas'&&<ConsultasTab onOpenFicha={setFichaPropiedad}/>}
+      {tab==='reportabilidad'&&<ReportabilidadTab/>}
+      {showUmbralModal && <UmbralModal config={umbralConfig} onClose={()=>setShowUmbralModal(false)} onSave={handleSaveUmbralConfig}/>}
+      {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
+      <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
+const inlineInputStyle = {
+  border: '1px solid #dadce0', borderRadius: 5, padding: '4px 6px',
+  fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%',
+};
+
+const st = {
+  container:{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:"'Google Sans','Segoe UI',sans-serif" },
+  header:{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12, flexShrink:0 },
+  title:{ fontSize:24, fontWeight:700, color:'#202124', margin:'0 0 4px' },
+  subtitle:{ fontSize:14, color:'#5f6368', margin:0 },
+  iconBtn:{ background:'#fff', border:'1px solid #dadce0', borderRadius:8, padding:'8px 10px', cursor:'pointer', display:'flex', alignItems:'center' },
+  uploadPanel:{ display:'flex', gap:12, marginBottom:14, flexWrap:'wrap', flexShrink:0, padding:'14px 16px', background:'#f8f9fa', borderRadius:10, border:'1px solid #e8eaed', alignItems:'flex-start' },
+  uploadCard:{ background:'#fff', border:'1px solid #e8eaed', borderRadius:8, padding:'12px 14px', minWidth:200 },
+  uploadLabel:{ fontSize:13, fontWeight:600, color:'#202124', marginBottom:4 },
+  uploadMeta:{ fontSize:11, color:'#9aa0a6', marginBottom:8 },
+  uploadBtn:{ display:'flex', alignItems:'center', padding:'7px 12px', background:'#1a73e8', color:'#fff', border:'none', borderRadius:6, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:500 },
+  uploadingMsg:{ fontSize:13, color:'#1a73e8', alignSelf:'center', fontStyle:'italic' },
+  filtersRow:{ display:'flex', gap:12, marginBottom:12, alignItems:'center', flexWrap:'wrap', flexShrink:0 },
+  searchWrapper:{ position:'relative', flex:1, minWidth:200 },
+  searchIcon:{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' },
+  searchInput:{ width:'100%', padding:'8px 36px', border:'1px solid #dadce0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', background:'#fff' },
+  clearSearch:{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:2, display:'flex' },
+  encargadoFilters:{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' },
+  filterLabel:{ fontSize:12, color:'#5f6368', fontWeight:600 },
+  filterBtn:{ padding:'4px 12px', borderRadius:20, border:'1px solid #dadce0', background:'#fff', fontSize:12, cursor:'pointer', color:'#5f6368', fontFamily:'inherit' },
+  clearFilter:{ padding:'4px 10px', borderRadius:20, border:'none', background:'none', fontSize:12, cursor:'pointer', color:'#ea4335', fontFamily:'inherit' },
+  tableWrapper:{ flex:1, overflow:'auto', border:'1px solid #e8eaed', borderRadius:12, background:'#fff' },
+  table:{ width:'100%', borderCollapse:'collapse' },
+  th:{ padding:'10px 10px', background:'#f8f9fa', fontSize:10, fontWeight:700, color:'#5f6368', letterSpacing:0.5, borderBottom:'2px solid #e8eaed', borderRight:'1px solid #e8eaed', position:'sticky', top:0, zIndex:1, whiteSpace:'nowrap' },
+  td:{ padding:0, fontSize:13, color:'#202124', borderBottom:'1px solid #e8eaed', borderRight:'1px solid #e8eaed', verticalAlign:'middle' },
+  tdFixed:{ padding:'6px 10px', fontSize:13, color:'#202124', borderBottom:'1px solid #e8eaed', borderRight:'1px solid #e8eaed', verticalAlign:'middle' },
+  empty:{ padding:40, textAlign:'center', color:'#9aa0a6', fontSize:14 },
+  loading:{ padding:40, textAlign:'center', color:'#9aa0a6', fontSize:14 },
+  saveRowBtn:{ background:'none', border:'none', cursor:'pointer', padding:6, borderRadius:6, display:'inline-flex', alignItems:'center' },
+  badge:{ display:'inline-block', borderRadius:20, padding:'2px 9px', fontSize:11, fontWeight:700 },
+  actionBtn:{ background:'none', border:'none', cursor:'pointer', padding:'3px 4px', borderRadius:5, display:'inline-flex', alignItems:'center', color:'#5f6368' },
+  btnPrimary:{ padding:'8px 16px', background:'#1a73e8', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:'pointer', fontFamily:'inherit' },
+  btnSecondary:{ padding:'8px 14px', background:'#fff', color:'#3c4043', border:'1px solid #dadce0', borderRadius:8, fontSize:13, cursor:'pointer', fontFamily:'inherit' },
+  overlay:{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:3000 },
+  modal:{ background:'#fff', borderRadius:16, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', fontFamily:"'Google Sans','Segoe UI',sans-serif", overflow:'hidden' },
+  modalHeader:{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 20px', borderBottom:'1px solid #e8eaed' },
+  modalTitle:{ fontSize:16, fontWeight:700, color:'#202124' },
+  closeBtn:{ background:'none', border:'none', cursor:'pointer', padding:4, color:'#5f6368', borderRadius:6 },
+  totalsRow:{ display:'flex', alignItems:'center', gap:24, padding:'10px 16px', marginTop:8, background:'#fff', border:'1px solid #e8eaed', borderRadius:10, flexShrink:0 },
+  totalsLabel:{ fontSize:14, fontWeight:700, color:'#5f6368', letterSpacing:0.8 },
+  totalsItem:{ fontSize:17, color:'#3c4043' },
 };
