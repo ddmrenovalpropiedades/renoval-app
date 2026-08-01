@@ -662,7 +662,7 @@ export default function PagosPage() {
   // Helper compartido: aplica los mismos filtros (encargado, estado, antigüedad,
   // búsqueda) tanto para traer la página visible como para calcular los
   // totales de abajo sobre el conjunto filtrado completo.
-  const applyPagosFilters = (query, porFilter, estadoFilter, searchText, antiguedadFilter) => {
+  const applyPagosFilters = (query, porFilter, estadoFilter, searchText, antiguedadFilter, propietarioMap) => {
     if (porFilter.length === 1) query = query.eq('pagado_por', porFilter[0]);
     else if (porFilter.length > 1) query = query.in('pagado_por', porFilter);
     if (estadoFilter.length === 1) query = query.eq('estado', estadoFilter[0]);
@@ -676,15 +676,32 @@ export default function PagosPage() {
     if (searchText.trim()) {
       const words = normalize(searchText.trim()).split(/\s+/).filter(Boolean);
       const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo'];
-      for (const word of words) query = query.or(COLS.map(col => `${col}.ilike.%${word}%`).join(','));
+      for (const word of words) {
+        const orParts = COLS.map(col => `${col}.ilike.%${word}%`);
+        // PROPIETARIO no es una columna de la tabla pagos (se resuelve desde
+        // Cartera en el navegador), así que para incluirlo en la búsqueda se
+        // revisa acá si algún propietario matchea esta palabra, y de ser así
+        // se agregan esas direcciones como match adicional para esta palabra.
+        if (propietarioMap) {
+          const matchedAddresses = [];
+          propietarioMap.forEach((propietario, addr) => {
+            if (propietario && normalize(propietario).includes(word)) matchedAddresses.push(addr);
+          });
+          if (matchedAddresses.length > 0) {
+            const inList = matchedAddresses.map(a => `"${a.replace(/"/g, '\\"')}"`).join(',');
+            orParts.push(`propiedad.in.(${inList})`);
+          }
+        }
+        query = query.or(orParts.join(','));
+      }
     }
     return query;
   };
 
-  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter) => {
+  const fetchPagos = useCallback(async (currentPage, porFilter, estadoFilter, searchText, antiguedadFilter, propietarioMap) => {
     setLoading(true);
     let query = supabase.from('pagos').select('*', { count: 'exact' });
-    query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter);
+    query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter, propietarioMap);
     const from = currentPage * PAGE_SIZE;
     const { data, count } = await query.order('position', { ascending: false }).range(from, from + PAGE_SIZE - 1);
     setPagos(data || []);
@@ -696,12 +713,12 @@ export default function PagosPage() {
   // filtrado (no solo la página de 100 filas visible), respetando los
   // mismos filtros activos (encargado, estado, antigüedad, búsqueda).
   const [pagosTotals, setPagosTotals] = useState({ totalP: 0, totalPG: 0 });
-  const fetchTotals = useCallback(async (porFilter, estadoFilter, searchText, antiguedadFilter) => {
+  const fetchTotals = useCallback(async (porFilter, estadoFilter, searchText, antiguedadFilter, propietarioMap) => {
     let totalP = 0, totalPG = 0;
     let from = 0;
     while (true) {
       let query = supabase.from('pagos').select('cxc, estado');
-      query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter);
+      query = applyPagosFilters(query, porFilter, estadoFilter, searchText, antiguedadFilter, propietarioMap);
       const { data } = await query.range(from, from + 999);
       if (!data || data.length === 0) break;
       for (const p of data) {
@@ -714,8 +731,8 @@ export default function PagosPage() {
     setPagosTotals({ totalP, totalPG });
   }, []);
 
-  useEffect(() => { fetchPagos(page, filterPor, filterEstado, search, filterAntiguedad); }, [fetchPagos, page, filterPor, filterEstado, search, filterAntiguedad]);
-  useEffect(() => { fetchTotals(filterPor, filterEstado, search, filterAntiguedad); }, [fetchTotals, filterPor, filterEstado, search, filterAntiguedad]);
+  useEffect(() => { fetchPagos(page, filterPor, filterEstado, search, filterAntiguedad, carteraPropietarioMap); }, [fetchPagos, page, filterPor, filterEstado, search, filterAntiguedad, carteraPropietarioMap]);
+  useEffect(() => { fetchTotals(filterPor, filterEstado, search, filterAntiguedad, carteraPropietarioMap); }, [fetchTotals, filterPor, filterEstado, search, filterAntiguedad, carteraPropietarioMap]);
   useEffect(() => {
     const timer = setTimeout(() => { setSearch(searchInput); setPage(0); }, 300);
     return () => clearTimeout(timer);
