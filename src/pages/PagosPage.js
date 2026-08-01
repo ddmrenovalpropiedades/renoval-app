@@ -502,7 +502,7 @@ function MetricsView({ onClose }) {
   );
 }
 
-function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha }) {
+function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha, propietario }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -524,6 +524,9 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
         <FichaCellWrap propiedad={fichaPropiedadResuelta} onOpenFicha={onOpenFicha}>
           <InlineText value={pago.propiedad} onChange={v => update('propiedad', v.toUpperCase())} />
         </FichaCellWrap>
+      </td>
+      <td style={{ ...s.td, fontSize: 12, color: propietario ? '#3c4043' : '#dadce0' }} title="Se completa automáticamente según Cartera">
+        {propietario || '—'}
       </td>
       <td style={s.td}><InlineText value={pago.descripcion} onChange={v => update('descripcion', v.toUpperCase())} /></td>
       <td style={s.tdCenter}><MoneyInput value={pago.cxc} onChange={v => update('cxc', v)} /></td>
@@ -557,7 +560,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
   );
 }
 
-function NewPagoRow({ onSave, onCancel, maxPosition }) {
+function NewPagoRow({ onSave, onCancel, maxPosition, carteraPropietarioMap }) {
   const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), pagado_por: '', tipo: '', comision: '', fecha_caja: '', notas: '' });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const handleSave = async () => {
@@ -567,9 +570,11 @@ function NewPagoRow({ onSave, onCancel, maxPosition }) {
     if (data) onSave(data);
   };
   const previewCajaFuera = isCajaFuera({ estado: form.estado, fecha_caja: form.fecha_caja });
+  const previewPropietario = carteraPropietarioMap.get(form.propiedad) || '';
   return (
     <tr style={{ background: '#f0f7ff' }}>
       <td style={s.td}><PropertyAutocomplete value={form.propiedad} onChange={v => set('propiedad', v.toUpperCase())} placeholder="Propiedad *" hasError={false} /></td>
+      <td style={{ ...s.td, fontSize: 12, color: previewPropietario ? '#3c4043' : '#dadce0' }}>{previewPropietario || '—'}</td>
       <td style={s.td}><input value={form.descripcion} onChange={e => set('descripcion', e.target.value.toUpperCase())} placeholder="Descripción" style={inputStyle} /></td>
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} alwaysVisible /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
@@ -623,25 +628,33 @@ export default function PagosPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
+  const [carteraPropietarioMap, setCarteraPropietarioMap] = useState(new Map());
   const [fichaPropiedad, setFichaPropiedad] = useState(null);
   const { exportToExcel } = useExcelExport();
 
   // Mapa inverso: nomenclatura abreviada (la que guarda esta página, vía
   // PropertyAutocomplete) -> nombre canónico en Cartera. Ver misma nota en
-  // Pizarra Arriendo/Venta.
+  // Pizarra Arriendo/Venta. Se aprovecha la misma carga para armar también
+  // el mapa abreviada -> propietario, usado por la columna PROPIETARIO.
   useEffect(() => {
     const loadCartera = async () => {
       let all = [], from = 0;
       while (true) {
-        const { data, error } = await supabase.from('properties').select('propiedad').range(from, from + 999);
+        const { data, error } = await supabase.from('properties').select('propiedad, propietario').range(from, from + 999);
         if (error || !data || data.length === 0) break;
-        all = [...all, ...data.map(p => p.propiedad)];
+        all = [...all, ...data];
         if (data.length < 1000) break;
         from += 1000;
       }
       const map = new Map();
-      all.forEach(p => map.set(transformAddress(p), p));
+      const propietarioMap = new Map();
+      all.forEach(p => {
+        const key = transformAddress(p.propiedad);
+        map.set(key, p.propiedad);
+        propietarioMap.set(key, p.propietario || '');
+      });
       setCarteraReverseMap(map);
+      setCarteraPropietarioMap(propietarioMap);
     };
     loadCartera();
   }, []);
@@ -728,10 +741,16 @@ export default function PagosPage() {
       from += 1000;
     }
     // La columna Caja se calcula al momento de exportar (no se guarda en la
-    // base), para que el Excel siempre refleje el estado actual.
-    const withComputedCaja = all.map(p => ({ ...p, caja: isCajaFuera(p) ? 'FUERA' : '' }));
-    exportToExcel(withComputedCaja, [
+    // base), para que el Excel siempre refleje el estado actual. Lo mismo
+    // para Propietario: se resuelve desde Cartera al momento de exportar.
+    const withComputed = all.map(p => ({
+      ...p,
+      caja: isCajaFuera(p) ? 'FUERA' : '',
+      propietario: carteraPropietarioMap.get(p.propiedad) || '',
+    }));
+    exportToExcel(withComputed, [
       { key: 'propiedad',   label: 'Propiedad' },
+      { key: 'propietario', label: 'Propietario' },
       { key: 'descripcion', label: 'Descripción' },
       { key: 'cxc',         label: 'CxC' },
       { key: 'estado',      label: 'Estado' },
@@ -747,7 +766,7 @@ export default function PagosPage() {
   };
 
   const activeFilters = filterPor.length > 0 || filterEstado.length > 0 || filterAntiguedad || search.trim().length > 0;
-  const HEADERS = ['PROPIEDAD', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
+  const HEADERS = ['PROPIEDAD', 'PROPIETARIO', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
 
   return (
     <div style={s.container}>
@@ -778,15 +797,16 @@ export default function PagosPage() {
       <div id="pagos-table-wrapper" style={s.tableWrapper}>
         {loading ? <div style={s.loading}>Cargando pagos...</div> : (
           <table style={s.table}>
-            <thead><tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 2 ? 'left' : 'center' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 3 ? 'left' : 'center' }}>{h}</th>)}</tr></thead>
             <tbody>
-              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={maxPosition} />}
+              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={maxPosition} carteraPropietarioMap={carteraPropietarioMap} />}
               {pagos.length === 0 && !addingNew
-                ? <tr><td colSpan={13} style={s.empty}>No hay pagos registrados.</td></tr>
+                ? <tr><td colSpan={14} style={s.empty}>No hay pagos registrados.</td></tr>
                 : pagos.map(p => (
                   <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor}
                     fichaPropiedadResuelta={carteraReverseMap.get(p.propiedad) || null}
-                    onOpenFicha={setFichaPropiedad} />
+                    onOpenFicha={setFichaPropiedad}
+                    propietario={carteraPropietarioMap.get(p.propiedad) || ''} />
                 ))
               }
             </tbody>
