@@ -49,6 +49,13 @@ const prevMes = () => {
   const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 };
+// Mes antepasado (hace 2 meses) — usado tanto para "GC An 2" en Saldos como
+// para el traspaso vía "Cargar GC" desde Consultas GC.
+const prevMes2 = () => {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+};
 
 // ── Color logic ───────────────────────────────────────────────
 // Umbrales por defecto usados solo cuando la propiedad no tiene un valor de
@@ -73,7 +80,7 @@ const rowExceedsUmbral = (row, attrsMap, level, mult1 = 1.9, mult2 = 2.8) => {
     checkField(row.agua_ac,'agua')||checkField(row.agua_an,'agua')||
     checkField(row.luz_ac,'luz')||checkField(row.luz_an,'luz')||
     checkField(row.gas_ac,'gas')||checkField(row.gas_an,'gas')||
-    checkField(row.gc_ac,'gc')||checkField(row.gc_an,'gc')
+    checkField(row.gc_ac,'gc')||checkField(row.gc_an,'gc')||checkField(row.gc_an2,'gc')
   );
 };
 const getCellStyle = (val, tipo, attr, emptyWhite=false, mult1=1.9, mult2=2.8) => {
@@ -334,7 +341,8 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
     {key:'gas_ac', label:'GAS Ac', tipo:'gas', alerta:'alerta_gas',groupStart:true},
     {key:'gas_an', label:'GAS An', tipo:'gas', alerta:null,groupEnd:true},
     {key:'gc_ac',  label:'GC Ac',  tipo:'gc',  alerta:null,groupStart:true},
-    {key:'gc_an',  label:'GC An',  tipo:'gc',  alerta:null,groupEnd:true},
+    {key:'gc_an',  label:'GC An',  tipo:'gc',  alerta:null},
+    {key:'gc_an2', label:'GC An 2',tipo:'gc',  alerta:null,groupEnd:true},
     {key:'deuda_arriendo',label:'DEUDA ARR.',tipo:'arriendo',alerta:null,groupStart:true,groupEnd:true},
   ];
 
@@ -344,6 +352,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
         <div style={st.uploadPanel}>
           <UploadBtn label="📄 Cuentas actuales" tipo="cuentas_ac" onUpload={handleUpload} lastUpload={lastUploads['cuentas_ac']}/>
           <UploadBtn label="📄 Cuentas mes anterior" tipo="cuentas_an" onUpload={handleUpload} lastUpload={lastUploads['cuentas_an']}/>
+          <UploadBtn label="📄 Servicios hace 2 meses (solo GC)" tipo="cuentas_an2" onUpload={handleUpload} lastUpload={lastUploads['cuentas_an2']}/>
           <UploadBtn label="📄 Deuda de arriendo" tipo="arriendos" onUpload={handleUpload} lastUpload={lastUploads['arriendos']}/>
           {uploading&&<div style={st.uploadingMsg}>⏳ Procesando {uploading}...</div>}
         </div>
@@ -1214,6 +1223,7 @@ export default function SaldosPage() {
         { key: 'gas_an',         label: 'Gas An' },
         { key: 'gc_ac',          label: 'GC Ac' },
         { key: 'gc_an',          label: 'GC An' },
+        { key: 'gc_an2',         label: 'GC An 2' },
         { key: 'deuda_arriendo', label: 'Deuda Arriendo' },
       ], 'Saldos');
     } else if (tab === 'consultas' || tab === 'reportabilidad') {
@@ -1289,6 +1299,7 @@ export default function SaldosPage() {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws,{defval:''});
       if (tipo==='cuentas_ac'||tipo==='cuentas_an') await processCuentas(data,tipo);
+      else if (tipo==='cuentas_an2') await processGCAn2(data);
       else await processArriendos(data);
       await supabase.from('saldos_uploads').insert({tipo,filename:file.name,row_count:data.length});
       await fetchData();
@@ -1312,6 +1323,39 @@ export default function SaldosPage() {
     for (let i=0;i<batch.length;i+=50) await supabase.from('saldos').upsert(batch.slice(i,i+50),{onConflict:'propiedad'});
   };
 
+  // Extrae SOLO el valor de Gasto Común desde una planilla con la misma
+  // estructura que las de Cuentas (columna "Gastos comunes"), correspondiente
+  // al mes antepasado. A diferencia de processCuentas, esta NUNCA crea filas
+  // nuevas en `saldos` — si la propiedad de la planilla no tiene ya una fila
+  // en Saldos (definida por las 3 planillas base: cuentas_ac, cuentas_an,
+  // arriendos), se ignora, tal como se pidió.
+  const processGCAn2 = async (data) => {
+    // Set de propiedades que ya existen en la tabla Saldos actual (definidas
+    // por las 3 planillas base). Se consulta fresco acá en vez de depender
+    // del estado `rows` del componente, para no arrastrar datos obsoletos.
+    const { data: existing } = await supabase.from('saldos').select('propiedad');
+    const existingSet = new Set((existing || []).map(r => r.propiedad));
+
+    const updates = [];
+    for (const row of data) {
+      const p = (row['Propiedad'] || '').trim();
+      if (!p) continue;
+      if (!existingSet.has(p)) continue; // no crear filas nuevas
+      const gc = String(row['Gastos comunes'] || '').trim() || null;
+      updates.push({ propiedad: p, gc_an2: gc });
+    }
+
+    // Update fila por fila (no upsert): un upsert con onConflict insertaría
+    // filas nuevas para propiedades no encontradas, justo lo que no queremos.
+    const CONCURRENCY = 20;
+    for (let i = 0; i < updates.length; i += CONCURRENCY) {
+      const batch = updates.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(u =>
+        supabase.from('saldos').update({ gc_an2: u.gc_an2 }).eq('propiedad', u.propiedad)
+      ));
+    }
+  };
+
   const processArriendos = async (data) => {
     const now=new Date().toISOString();
     const {data:cartera}=await supabase.from('properties').select('propiedad,propietario,e1,e2');
@@ -1330,7 +1374,8 @@ export default function SaldosPage() {
 
   // Carga los valores de GC extraídos en Consultas GC hacia la tabla Saldos.
   // El cruce se hace por la columna "cartera" de gc_consultas_config, que
-  // usa la misma nomenclatura que "propiedad" en la tabla saldos.
+  // usa la misma nomenclatura que "propiedad" en la tabla saldos. Ahora
+  // también trae el valor de hace 2 meses hacia GC An 2.
   const [loadingGC, setLoadingGC] = useState(false);
   const [loadGCResult, setLoadGCResult] = useState(null);
 
@@ -1340,10 +1385,11 @@ export default function SaldosPage() {
     try {
       const mesActual = currentMes();
       const mesAnterior = prevMes();
+      const mesAntepasado = prevMes2();
 
       const [{ data: cfg }, { data: logs }] = await Promise.all([
         supabase.from('gc_consultas_config').select('propiedad, cartera'),
-        supabase.from('gc_consultas_log').select('propiedad, mes, gc_valor').in('mes', [mesActual, mesAnterior]),
+        supabase.from('gc_consultas_log').select('propiedad, mes, gc_valor').in('mes', [mesActual, mesAnterior, mesAntepasado]),
       ]);
 
       // Mapa propiedad (Consultas GC) -> cartera (nomenclatura Saldos/Cartera)
@@ -1353,10 +1399,12 @@ export default function SaldosPage() {
       // Mapas de valores por mes
       const valoresActual = {};
       const valoresAnterior = {};
+      const valoresAntepasado = {};
       (logs || []).forEach(l => {
         if (!l.gc_valor) return;
         if (l.mes === mesActual) valoresActual[l.propiedad] = l.gc_valor;
         if (l.mes === mesAnterior) valoresAnterior[l.propiedad] = l.gc_valor;
+        if (l.mes === mesAntepasado) valoresAntepasado[l.propiedad] = l.gc_valor;
       });
 
       let updated = 0, skipped = 0, notFound = 0;
@@ -1366,12 +1414,14 @@ export default function SaldosPage() {
         const propCartera = carteraMap[propConsulta];
         const gcAc = valoresActual[propConsulta] || null;
         const gcAn = valoresAnterior[propConsulta] || null;
+        const gcAn2 = valoresAntepasado[propConsulta] || null;
 
-        if (!gcAc && !gcAn) { skipped++; continue; }
+        if (!gcAc && !gcAn && !gcAn2) { skipped++; continue; }
 
         const updates = {};
         if (gcAc) updates.gc_ac = gcAc;
         if (gcAn) updates.gc_an = gcAn;
+        if (gcAn2) updates.gc_an2 = gcAn2;
 
         const { data: updatedRows, error } = await supabase
           .from('saldos')
