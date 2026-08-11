@@ -208,7 +208,7 @@ function DatePicker({ value, onChange, style = {} }) {
   );
 }
 
-function NotesPanel({ pago, onClose, onSave }) {
+function NotesPanel({ pago, onClose, onSave, onFilesChange }) {
   const { profile } = useAuth();
   const [text, setText] = useState(pago.notas || '');
 
@@ -227,6 +227,13 @@ function NotesPanel({ pago, onClose, onSave }) {
   }, [pago.id]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
+
+  // Notifica al padre cada vez que cambia la cantidad de archivos, para que
+  // el ícono de Notas en la fila se destaque también cuando hay archivos
+  // adjuntos (antes solo se destacaba si había texto en notas).
+  useEffect(() => {
+    if (onFilesChange) onFilesChange(pago.id, files.length > 0);
+  }, [files.length, pago.id, onFilesChange]);
 
   useEffect(() => {
     const channel = supabase
@@ -502,7 +509,7 @@ function MetricsView({ onClose }) {
   );
 }
 
-function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha, propietario }) {
+function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha, propietario, hasFiles }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -514,7 +521,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
 
   const ant = antiguedad(pago.fecha);
   const estadoStyle = ESTADO_COLORS[pago.estado] || {};
-  const hasNotes = !!(pago.notas && pago.notas.trim());
+  const hasNotesOrFiles = !!(pago.notas && pago.notas.trim()) || hasFiles;
   const cajaFuera = isCajaFuera(pago);
 
   return (
@@ -546,7 +553,7 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
         {cajaFuera ? 'FUERA' : '—'}
       </td>
       <td style={s.tdActions}>
-        <button onClick={() => onOpenNotes(pago)} style={{ ...s.actionBtn, background: hasNotes ? '#e8f0fe' : 'none', color: hasNotes ? '#1a73e8' : '#9aa0a6' }} title="Notas"><FileText size={13} /></button>
+        <button onClick={() => onOpenNotes(pago)} style={{ ...s.actionBtn, background: hasNotesOrFiles ? '#e8f0fe' : 'none', color: hasNotesOrFiles ? '#1a73e8' : '#9aa0a6' }} title="Notas"><FileText size={13} /></button>
         {confirmDelete ? (
           <>
             <button onClick={async () => { await supabase.from('pagos').delete().eq('id', pago.id); onDelete(pago.id); }} style={{ ...s.actionBtn, background: '#fce8e6', color: '#ea4335' }} title="Confirmar"><Trash2 size={13} /></button>
@@ -629,6 +636,7 @@ export default function PagosPage() {
   const [exporting, setExporting] = useState(false);
   const [carteraReverseMap, setCarteraReverseMap] = useState(new Map());
   const [carteraPropietarioMap, setCarteraPropietarioMap] = useState(new Map());
+  const [pagoIdsWithFiles, setPagoIdsWithFiles] = useState(new Set());
   const [fichaPropiedad, setFichaPropiedad] = useState(null);
   const { exportToExcel } = useExcelExport();
 
@@ -707,6 +715,17 @@ export default function PagosPage() {
     setPagos(data || []);
     setTotalCount(count || 0);
     setLoading(false);
+
+    // Consulta masiva (una sola llamada) para saber qué pagos de esta página
+    // tienen al menos un archivo adjunto, usado para destacar el ícono de
+    // Notas igual que cuando hay texto en notas.
+    const ids = (data || []).map(p => String(p.id));
+    if (ids.length > 0) {
+      const { data: filesData } = await supabase.from('pago_files').select('pago_id').in('pago_id', ids);
+      setPagoIdsWithFiles(new Set((filesData || []).map(f => f.pago_id)));
+    } else {
+      setPagoIdsWithFiles(new Set());
+    }
   }, []);
 
   // Totales "Total P" / "Total PG": suman CxC sobre TODO el conjunto
@@ -744,6 +763,16 @@ export default function PagosPage() {
   const handleSaveNew = (newPago) => { setPagos(prev => [newPago, ...prev]); setTotalCount(prev => prev + 1); setAddingNew(false); };
   const maxPosition = pagos.length > 0 ? Math.max(...pagos.map(p => p.position ?? 0)) : 0;
   const handleSaveNotes = async (id, notas) => { await supabase.from('pagos').update({ notas }).eq('id', id); setPagos(prev => prev.map(p => p.id === id ? { ...p, notas } : p)); };
+  const handleFilesChange = useCallback((pagoId, hasFiles) => {
+    setPagoIdsWithFiles(prev => {
+      const key = String(pagoId);
+      const already = prev.has(key);
+      if (hasFiles === already) return prev; // sin cambios, evita re-render innecesario
+      const next = new Set(prev);
+      if (hasFiles) next.add(key); else next.delete(key);
+      return next;
+    });
+  }, []);
   const handlePageChange = (newPage) => { setPage(newPage); const wrapper = document.getElementById('pagos-table-wrapper'); if (wrapper) wrapper.scrollTop = 0; };
 
   const handleExport = async () => {
@@ -823,7 +852,8 @@ export default function PagosPage() {
                   <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor}
                     fichaPropiedadResuelta={carteraReverseMap.get(p.propiedad) || null}
                     onOpenFicha={setFichaPropiedad}
-                    propietario={carteraPropietarioMap.get(p.propiedad) || ''} />
+                    propietario={carteraPropietarioMap.get(p.propiedad) || ''}
+                    hasFiles={pagoIdsWithFiles.has(String(p.id))} />
                 ))
               }
             </tbody>
@@ -837,7 +867,7 @@ export default function PagosPage() {
         <span style={s.totalsItem}>Total P: <strong style={{ color: '#c62828' }}>{formatCLP(pagosTotals.totalP)}</strong></span>
         <span style={s.totalsItem}>Total PG: <strong style={{ color: '#f57c00' }}>{formatCLP(pagosTotals.totalPG)}</strong></span>
       </div>
-      {notesFor && <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} />}
+      {notesFor && <NotesPanel pago={notesFor} onClose={() => setNotesFor(null)} onSave={handleSaveNotes} onFilesChange={handleFilesChange} />}
       {showMetrics && <MetricsView onClose={() => setShowMetrics(false)} />}
       {fichaPropiedad && <FichaSidebar propiedad={fichaPropiedad} onClose={() => setFichaPropiedad(null)} />}
     </div>
