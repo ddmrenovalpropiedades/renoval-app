@@ -68,6 +68,17 @@ const getThresholds = (attr, tipo, mult1, mult2) => {
   return DEFAULT_THRESHOLDS[tipo] || [Infinity, Infinity];
 };
 
+// Elige el primer valor no vacío de la lista, en orden de prioridad (mes
+// actual primero). Se usa para que los filtros ≥U1/≥U2 revisen por defecto
+// solo el mes actual, cayendo al mes anterior (y para GC, al mes antepasado)
+// únicamente cuando la celda del mes actual está vacía.
+const getEffectiveValue = (values) => {
+  for (const v of values) {
+    if (v && String(v).trim()) return v;
+  }
+  return null;
+};
+
 const rowExceedsUmbral = (row, attrsMap, level, mult1 = 1.9, mult2 = 2.8) => {
   const attr = attrsMap?.[row.propiedad];
   const checkField = (val, tipo) => {
@@ -76,11 +87,15 @@ const rowExceedsUmbral = (row, attrsMap, level, mult1 = 1.9, mult2 = 2.8) => {
     const [t1, t2] = getThresholds(attr, tipo, mult1, mult2);
     return level === 1 ? n >= t1 : n >= t2;
   };
+  const aguaVal = getEffectiveValue([row.agua_ac, row.agua_an]);
+  const luzVal  = getEffectiveValue([row.luz_ac, row.luz_an]);
+  const gasVal  = getEffectiveValue([row.gas_ac, row.gas_an]);
+  const gcVal   = getEffectiveValue([row.gc_ac, row.gc_an, row.gc_an2]);
   return (
-    checkField(row.agua_ac,'agua')||checkField(row.agua_an,'agua')||
-    checkField(row.luz_ac,'luz')||checkField(row.luz_an,'luz')||
-    checkField(row.gas_ac,'gas')||checkField(row.gas_an,'gas')||
-    checkField(row.gc_ac,'gc')||checkField(row.gc_an,'gc')||checkField(row.gc_an2,'gc')
+    checkField(aguaVal, 'agua') ||
+    checkField(luzVal, 'luz') ||
+    checkField(gasVal, 'gas') ||
+    checkField(gcVal, 'gc')
   );
 };
 const getCellStyle = (val, tipo, attr, emptyWhite=false, mult1=1.9, mult2=2.8) => {
