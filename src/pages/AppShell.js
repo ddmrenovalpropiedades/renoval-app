@@ -4,13 +4,14 @@ import {
   LayoutGrid, CheckSquare, FileText,
   Zap, Users, LogOut,
   Building2, MessageCircle, CreditCard, Calculator,
-  MoreHorizontal, X, MessageSquare,
+  MoreHorizontal, X, MessageSquare, Calendar,
 } from 'lucide-react';
 import { useMensajes } from '../hooks/useMensajes';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import UserManagement from '../components/UserManagement';
 import TasksPage from './TasksPage';
 import TasksPageMobile from './TasksPageMobile';
+import PlanningPage from './PlanningPage';
 import PropertiesPage from './PropertiesPage';
 import PizarraPage from './PizarraPage';
 import ArrendadasPage from './ArrendadasPage';
@@ -29,6 +30,7 @@ const NAV_ITEMS_TOP = [
   { id: 'servicios',  label: 'Saldos',     icon: Zap,           ownerOnly: false },
   { id: 'contratos',  label: 'Documentos', icon: FileText,      ownerOnly: false },
   { id: 'tareas',     label: 'Tareas',     icon: CheckSquare,   ownerOnly: false },
+  { id: 'planificacion', label: 'Planificación', icon: Calendar, ownerOnly: false },
 ];
 
 const NAV_ITEMS_BOTTOM = [
@@ -50,6 +52,7 @@ const NAV_MOBILE_BOTTOM = [
 
 // Menú "Más" móvil: todo lo que no está en el bottom nav
 const NAV_MOBILE_MORE = [
+  { id: 'planificacion', label: 'Planificación',    icon: Calendar,      ownerOnly: false },
   { id: 'arrendadas', label: 'Arrendadas',        icon: Building2,     ownerOnly: false },
   { id: 'servicios',  label: 'Saldos',            icon: Zap,           ownerOnly: false },
   { id: 'pagos',      label: 'Pagos',             icon: CreditCard,    ownerOnly: true  },
@@ -237,6 +240,7 @@ function ModuleRenderer({ module, profile, mensajesHook, isMobile }) {
     case 'cartera':      return <PropertiesPage />;
     case 'servicios':    return <SaldosPage />;
     case 'tareas':       return isMobile ? <TasksPageMobile /> : <TasksPage />;
+    case 'planificacion': return <PlanningPage isMobile={isMobile} />;
     case 'pagos':        return <PagosPage />;
     case 'mensajes':     return <MensajesPage currentUser={profile} mensajesHook={mensajesHook} />;
     case 'usuarios':     return <UserManagement />;
