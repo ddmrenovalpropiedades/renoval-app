@@ -16,8 +16,24 @@ function Badge({ value }) {
   );
 }
 
+// Badge para la columna ADMIN: solo se destaca visualmente cuando vale "No"
+// (el caso vacío por default se ve como celda en blanco, sin badge).
+function AdminBadge({ value }) {
+  if (!value) return null;
+  return (
+    <span style={{ display: 'inline-block', background: '#fce8e6', color: '#c5221f', border: '1px solid #c5221f44', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{value}</span>
+  );
+}
+
 function PropertyModal({ property, onClose, onSave }) {
-  const [form, setForm] = useState({ propiedad: property?.propiedad || '', propietario: property?.propietario || '', e1: property?.e1 || '', e2: property?.e2 || '' });
+  const [form, setForm] = useState({
+    propiedad: property?.propiedad || '',
+    propietario: property?.propietario || '',
+    mail_propietario: property?.mail_propietario || '',
+    e1: property?.e1 || '',
+    e2: property?.e2 || '',
+    admin: property?.admin || '',
+  });
   const [saving, setSaving] = useState(false);
   const handleSave = async () => {
     if (!form.propiedad.trim()) return;
@@ -36,9 +52,17 @@ function PropertyModal({ property, onClose, onSave }) {
         <div style={styles.modalBody}>
           <div style={styles.field}><label style={styles.label}>Propiedad *</label><input value={form.propiedad} onChange={e => setForm({...form, propiedad: e.target.value})} placeholder="Dirección completa" style={styles.input} autoFocus /></div>
           <div style={styles.field}><label style={styles.label}>Propietario</label><input value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} placeholder="Nombre del propietario" style={styles.input} /></div>
+          <div style={styles.field}><label style={styles.label}>Mail propietario</label><input type="email" value={form.mail_propietario} onChange={e => setForm({...form, mail_propietario: e.target.value})} placeholder="correo@ejemplo.com" style={styles.input} /></div>
           <div style={styles.fieldRow}>
             <div style={styles.fieldHalf}><label style={styles.label}>Encargado 1 (pagos/dueño)</label><select value={form.e1} onChange={e => setForm({...form, e1: e.target.value})} style={styles.select}><option value="">— Sin asignar —</option>{ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}</select></div>
             <div style={styles.fieldHalf}><label style={styles.label}>Encargado 2 (arriendo)</label><select value={form.e2} onChange={e => setForm({...form, e2: e.target.value})} style={styles.select}><option value="">— Sin asignar —</option>{ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}</select></div>
+          </div>
+          <div style={styles.field}>
+            <label style={styles.label}>Admin</label>
+            <select value={form.admin} onChange={e => setForm({...form, admin: e.target.value})} style={styles.select}>
+              <option value="">— (vacío) —</option>
+              <option value="No">No</option>
+            </select>
           </div>
         </div>
         <div style={styles.modalFooter}>
@@ -75,7 +99,7 @@ export default function PropertiesPage() {
 
   const filtered = useMemo(() => {
     let result = properties;
-    if (search.trim()) { const s = search.trim().toLowerCase(); result = result.filter(p => [p.propiedad, p.propietario, p.e1, p.e2].some(v => v && v.toLowerCase().includes(s))); }
+    if (search.trim()) { const s = search.trim().toLowerCase(); result = result.filter(p => [p.propiedad, p.propietario, p.mail_propietario, p.e1, p.e2].some(v => v && v.toLowerCase().includes(s))); }
     if (filterE.length > 0) result = result.filter(p => filterE.every(e => [p.e1, p.e2].filter(Boolean).includes(e)));
     return result;
   }, [properties, search, filterE]);
@@ -109,10 +133,12 @@ export default function PropertiesPage() {
   };
 
   const handleExportCartera = () => exportToExcel(filtered, [
-    { key: 'propiedad',   label: 'Propiedad' },
-    { key: 'propietario', label: 'Propietario' },
-    { key: 'e1',          label: 'E1' },
-    { key: 'e2',          label: 'E2' },
+    { key: 'propiedad',         label: 'Propiedad' },
+    { key: 'propietario',       label: 'Propietario' },
+    { key: 'mail_propietario',  label: 'Mail Propietario' },
+    { key: 'e1',                label: 'E1' },
+    { key: 'e2',                label: 'E2' },
+    { key: 'admin',             label: 'Admin' },
   ], 'Cartera');
 
   return (
@@ -171,16 +197,18 @@ export default function PropertiesPage() {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={{ ...styles.th, width: '45%' }}>PROPIEDAD</th>
-                <th style={{ ...styles.th, width: '25%' }}>PROPIETARIO</th>
-                <th style={{ ...styles.th, width: '8%', textAlign: 'center' }}>E1</th>
-                <th style={{ ...styles.th, width: '8%', textAlign: 'center' }}>E2</th>
+                <th style={{ ...styles.th, width: '28%' }}>PROPIEDAD</th>
+                <th style={{ ...styles.th, width: '16%' }}>PROPIETARIO</th>
+                <th style={{ ...styles.th, width: '18%' }}>MAIL PROP.</th>
+                <th style={{ ...styles.th, width: '7%', textAlign: 'center' }}>E1</th>
+                <th style={{ ...styles.th, width: '7%', textAlign: 'center' }}>E2</th>
+                <th style={{ ...styles.th, width: '7%', textAlign: 'center' }}>ADMIN</th>
                 {isOwner && <th style={{ ...styles.th, width: '6%', textAlign: 'center' }}>EDITAR</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={isOwner ? 5 : 4} style={styles.empty}>No se encontraron propiedades con ese criterio.</td></tr>
+                <tr><td colSpan={isOwner ? 7 : 6} style={styles.empty}>No se encontraron propiedades con ese criterio.</td></tr>
               ) : (
                 filtered.map((prop, i) => (
                   <tr key={prop.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}
@@ -192,8 +220,10 @@ export default function PropertiesPage() {
                       </FichaCellWrap>
                     </td>
                     <td style={{ ...styles.td, color: '#5f6368' }}>{prop.propietario}</td>
+                    <td style={{ ...styles.td, color: '#5f6368' }}>{prop.mail_propietario}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}><Badge value={prop.e1} /></td>
                     <td style={{ ...styles.td, textAlign: 'center' }}><Badge value={prop.e2} /></td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}><AdminBadge value={prop.admin} /></td>
                     {isOwner && (
                       <td style={{ ...styles.td, textAlign: 'center' }}>
                         <button onClick={() => handleEdit(prop)} style={styles.editBtn} title="Editar"><Edit2 size={14} color="#5f6368" /></button>
