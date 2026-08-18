@@ -53,6 +53,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   const userEmail = profile?.email;
   const userName = profile?.name;
   const isMobile = useIsMobileFallback(isMobileProp);
+  // DD y FD son los únicos administradores; el módulo de correos de
+  // propietarios se restringe a ellos. Se calcula acá arriba porque se usa
+  // en los estados iniciales de ese módulo, más abajo.
+  const inicialesPagador = PAGADO_POR[userEmail];
 
   // La planificación siempre muestra las tareas propias del usuario logueado
   // (no sigue el "ver como" de otros usuarios que sí tiene la página de Tareas).
@@ -72,7 +76,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   // ── Correos de propietarios (últimos 7 días) ──────────────────
   const [ownerEmailsList, setOwnerEmailsList] = useState([]);
   const [ownerEmailSummary, setOwnerEmailSummary] = useState(() => {
-    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return '';
+    if (!inicialesPagador) return '';
     return localStorage.getItem(STORAGE_KEY_OWNERS) || '';
   });
   const [loadingOwnerEmails, setLoadingOwnerEmails] = useState(false);
@@ -90,8 +94,6 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
     allTasks.filter(t => t.urgent && !t.completed && !t._dormant), [allTasks]);
   const importantTasks = useMemo(() =>
     allTasks.filter(t => t.proxima_vencer && !t.urgent && !t.completed && !t._dormant), [allTasks]);
-
-  const inicialesPagador = PAGADO_POR[userEmail];
 
   useEffect(() => {
     if (!inicialesPagador) return;
@@ -117,15 +119,22 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   // Lista de correos de propietarios, tomada de la columna "Mail Prop." en
   // Cartera. Se recarga cada vez que se entra a la página, así refleja
   // altas/bajas recientes de esa columna sin necesidad de recargar la app.
+  // Solo para DD/FD, y cada uno ve solo las propiedades donde él es el
+  // encargado en E1 (las que no tienen E1 asignado se muestran a ambos).
   useEffect(() => {
-    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
+    if (!inicialesPagador) { setOwnerEmailsList([]); return; }
     const loadOwnerEmails = async () => {
-      const { data } = await supabase.from('properties').select('mail_propietario').not('mail_propietario', 'is', null);
-      const emails = Array.from(new Set((data || []).map(p => (p.mail_propietario || '').trim()).filter(Boolean)));
+      const { data } = await supabase.from('properties').select('mail_propietario, e1').not('mail_propietario', 'is', null);
+      const emails = Array.from(new Set(
+        (data || [])
+          .filter(p => !p.e1 || p.e1 === inicialesPagador)
+          .map(p => (p.mail_propietario || '').trim())
+          .filter(Boolean)
+      ));
       setOwnerEmailsList(emails);
     };
     loadOwnerEmails();
-  }, [userEmail]);
+  }, [inicialesPagador]);
 
   const fetchEmails = useCallback(async () => {
     if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
@@ -152,7 +161,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   // Correos de propietarios: mismo patrón que fetchEmails, pero con
   // mode:'owners' y la lista de correos de Mail Prop. — 7 días en vez de 24h.
   const fetchOwnerEmails = useCallback(async () => {
-    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
+    if (!inicialesPagador) return;
     setLoadingOwnerEmails(true);
     try {
       const response = await fetch('/api/gmail-proxy', {
@@ -171,7 +180,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       setOwnerEmailSummary('Error al obtener correos: ' + e.message);
     }
     setLoadingOwnerEmails(false);
-  }, [userEmail, ownerEmailsList]);
+  }, [userEmail, inicialesPagador, ownerEmailsList]);
 
   // Auto-actualización a las 08:00 y 11:59 — ambos módulos de correos se
   // refrescan en el mismo momento.
@@ -297,6 +306,42 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
             </div>
           )}
 
+          {/* Correos de propietarios — últimos 7 días (Mail Prop. en Cartera). Solo DD/FD. */}
+          {inicialesPagador && (
+            <div style={{ ...styles.card, ...(isMobile ? {} : { gridColumn: '1 / -1' }) }}>
+              <div style={styles.cardHeader}>
+                <Mail size={16} color="#2e7d32" />
+                <span style={{ ...styles.cardTitle, color:'#2e7d32' }}>Correos de propietarios (últimos 7 días)</span>
+                {lastUpdatedOwners && (
+                  <span style={styles.lastUpdated}>
+                    Actualizado: {lastUpdatedOwners.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
+                  </span>
+                )}
+                <button onClick={fetchOwnerEmails} disabled={loadingOwnerEmails}
+                  style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, padding:'5px 12px', background:'#e6f4ea', color:'#2e7d32', border:'none', borderRadius:6, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
+                  <RefreshCw size={12} style={{ animation: loadingOwnerEmails ? 'spin 1s linear infinite' : 'none' }} />
+                  {loadingOwnerEmails ? 'Cargando...' : 'Actualizar'}
+                </button>
+              </div>
+              <div style={styles.cardBody}>
+                {!ownerEmailSummary && !loadingOwnerEmails && (
+                  <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes de propietarios.</p>
+                )}
+                {loadingOwnerEmails && (
+                  <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
+                    <RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }} />
+                    Consultando bandeja de entrada...
+                  </div>
+                )}
+                {ownerEmailSummary && !loadingOwnerEmails && (
+                  <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
+                    {ownerEmailSummary}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Correos últimas 24 horas */}
           {EMAILS_WITH_ACCESS.includes(userEmail) && (
             <div style={{ ...styles.card, ...(isMobile ? {} : { gridColumn: '1 / -1' }) }}>
@@ -327,42 +372,6 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
                 {emailSummary && !loadingEmails && (
                   <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
                     {emailSummary}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Correos de propietarios — últimos 7 días (Mail Prop. en Cartera) */}
-          {EMAILS_WITH_ACCESS.includes(userEmail) && (
-            <div style={{ ...styles.card, ...(isMobile ? {} : { gridColumn: '1 / -1' }) }}>
-              <div style={styles.cardHeader}>
-                <Mail size={16} color="#2e7d32" />
-                <span style={{ ...styles.cardTitle, color:'#2e7d32' }}>Correos de propietarios (últimos 7 días)</span>
-                {lastUpdatedOwners && (
-                  <span style={styles.lastUpdated}>
-                    Actualizado: {lastUpdatedOwners.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
-                  </span>
-                )}
-                <button onClick={fetchOwnerEmails} disabled={loadingOwnerEmails}
-                  style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, padding:'5px 12px', background:'#e6f4ea', color:'#2e7d32', border:'none', borderRadius:6, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
-                  <RefreshCw size={12} style={{ animation: loadingOwnerEmails ? 'spin 1s linear infinite' : 'none' }} />
-                  {loadingOwnerEmails ? 'Cargando...' : 'Actualizar'}
-                </button>
-              </div>
-              <div style={styles.cardBody}>
-                {!ownerEmailSummary && !loadingOwnerEmails && (
-                  <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes de propietarios.</p>
-                )}
-                {loadingOwnerEmails && (
-                  <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
-                    <RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }} />
-                    Consultando bandeja de entrada...
-                  </div>
-                )}
-                {ownerEmailSummary && !loadingOwnerEmails && (
-                  <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
-                    {ownerEmailSummary}
                   </div>
                 )}
               </div>
