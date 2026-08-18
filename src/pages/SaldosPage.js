@@ -297,7 +297,7 @@ function EmailPreviewModal({ propiedad, mailAdmin, onClose }) {
 }
 
 // ── TAB 1: SALDOS ─────────────────────────────────────────────
-function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUpload, uploading, showUpload, setShowUpload, mult1, mult2, onOpenFicha }) {
+function SaldosTab({ rows, attrsMap, adminMap, loading, fetchData, lastUploads, handleUpload, uploading, showUpload, setShowUpload, mult1, mult2, onOpenFicha }) {
   const [edits, setEdits] = useState({});
   const [search, setSearch] = useState('');
   const [filterE, setFilterE] = useState([]);
@@ -324,7 +324,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
   }, [attrsMap]);
 
   const filtered = useMemo(() => {
-    let result = rows.filter(r=>r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos);
+    let result = rows.filter(r=>(r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos) && adminMap[r.propiedad] !== 'No');
     if (search.trim()) {
       const words = normalize(search.trim()).split(/\s+/).filter(Boolean);
       result = result.filter(r => {
@@ -336,7 +336,7 @@ function SaldosTab({ rows, attrsMap, loading, fetchData, lastUploads, handleUplo
     if (filterUmbral>0) result = result.filter(r=>rowExceedsUmbral(r,attrsMap,filterUmbral,mult1,mult2));
     if (filterGCVacio) result = result.filter(isGCVacio);
     return result;
-  }, [rows,search,filterE,filterUmbral,filterGCVacio,attrsMap,mult1,mult2,isGCVacio]);
+  }, [rows,search,filterE,filterUmbral,filterGCVacio,attrsMap,adminMap,mult1,mult2,isGCVacio]);
 
   // ── Indicadores (respetan los filtros activos: búsqueda, encargado, umbral) ──
   const gcVaciosCount = useMemo(() => filtered.filter(isGCVacio).length, [filtered, isGCVacio]);
@@ -1201,6 +1201,7 @@ export default function SaldosPage() {
   const [tab, setTab] = useState('saldos');
   const [rows, setRows] = useState([]);
   const [attrsMap, setAttrsMap] = useState({});
+  const [adminMap, setAdminMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState('');
   const [lastUploads, setLastUploads] = useState({});
@@ -1225,7 +1226,7 @@ export default function SaldosPage() {
 
   const handleExport = async () => {
     if (tab === 'saldos') {
-      exportToExcel(rows.filter(r => r.last_cuentas_ac || r.last_cuentas_an || r.last_arriendos), [
+      exportToExcel(rows.filter(r => (r.last_cuentas_ac || r.last_cuentas_an || r.last_arriendos) && adminMap[r.propiedad] !== 'No'), [
         { key: 'propiedad',      label: 'Propiedad' },
         { key: 'propietario',    label: 'Propietario' },
         { key: 'e1',             label: 'E1' },
@@ -1289,15 +1290,19 @@ export default function SaldosPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [{ data: saldos }, { data: uploads }, { data: attrData }] = await Promise.all([
+    const [{ data: saldos }, { data: uploads }, { data: attrData }, { data: propsData }] = await Promise.all([
       supabase.from('saldos').select('*').order('propiedad'),
       supabase.from('saldos_uploads').select('*').order('uploaded_at',{ascending:false}),
       supabase.from('property_attributes').select('*'),
+      supabase.from('properties').select('propiedad, admin'),
     ]);
     setRows(saldos||[]);
     const aMap={};
     (attrData||[]).forEach(a=>{ aMap[a.propiedad]=a; });
     setAttrsMap(aMap);
+    const adminMapBuilt={};
+    (propsData||[]).forEach(p=>{ adminMapBuilt[p.propiedad]=p.admin; });
+    setAdminMap(adminMapBuilt);
     const latest={};
     (uploads||[]).forEach(u=>{ if(!latest[u.tipo]) latest[u.tipo]=u; });
     setLastUploads(latest);
@@ -1469,7 +1474,7 @@ export default function SaldosPage() {
       <div style={st.header}>
         <div>
           <h1 style={st.title}>Saldos</h1>
-          <p style={st.subtitle}>{rows.filter(r=>r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos).length} propiedades con datos</p>
+          <p style={st.subtitle}>{rows.filter(r=>(r.last_cuentas_ac||r.last_cuentas_an||r.last_arriendos) && adminMap[r.propiedad] !== 'No').length} propiedades con datos</p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           {tab==='saldos'&&loadGCResult&&!loadGCResult.error&&(
@@ -1521,7 +1526,7 @@ export default function SaldosPage() {
         ))}
       </div>
 
-      {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload} mult1={umbralConfig.multiplicador1} mult2={umbralConfig.multiplicador2} onOpenFicha={setFichaPropiedad}/>}
+      {tab==='saldos'&&<SaldosTab rows={rows} attrsMap={attrsMap} adminMap={adminMap} loading={loading} fetchData={fetchData} lastUploads={lastUploads} handleUpload={handleUpload} uploading={uploading} showUpload={showUpload} setShowUpload={setShowUpload} mult1={umbralConfig.multiplicador1} mult2={umbralConfig.multiplicador2} onOpenFicha={setFichaPropiedad}/>}
       {tab==='consultas'&&<ConsultasTab onOpenFicha={setFichaPropiedad}/>}
       {tab==='reportabilidad'&&<ReportabilidadTab/>}
       {showUmbralModal && <UmbralModal config={umbralConfig} onClose={()=>setShowUmbralModal(false)} onSave={handleSaveUmbralConfig}/>}
