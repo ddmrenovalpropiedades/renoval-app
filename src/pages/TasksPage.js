@@ -15,7 +15,6 @@ import TaskPanel from '../components/TaskPanel';
 import { useAuth } from '../context/AuthContext';
 import { ChevronDown, History, Plus, X, Settings, Clock, Download } from 'lucide-react';
 import GallerySidebar, { unlockNextGalleryImage } from '../components/GallerySidebar';
-import PlanningPage from './PlanningPage';
 import HistoryPanel from '../components/HistoryPanel';
 import TaskTemplatesPanel from '../components/TaskTemplatesPanel';
 import DevGarPanel from '../components/DevGarPanel';
@@ -133,7 +132,6 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [categories, setCategories] = useState(null);
   const [showNewCategory, setShowNewCategory] = useState(false);
-  const [activeTab, setActiveTab] = useState('tasks');
   const [showGallery, setShowGallery] = useState(false);
   const [galleryUnlockCounter, setGalleryUnlockCounter] = useState(0);
 
@@ -471,13 +469,7 @@ export default function TasksPage() {
     <div style={styles.container}>
       <div style={styles.header}>
         <div>
-          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-            <h1 style={styles.title}>Tareas Pendientes</h1>
-            <div style={{ display:'flex' }}>
-              <button onClick={() => setActiveTab('tasks')} style={{ padding:'4px 14px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:500, color: activeTab==='tasks' ? '#1a73e8' : '#5f6368', borderBottom: activeTab==='tasks' ? '2px solid #1a73e8' : '2px solid transparent', fontFamily:'inherit' }}>Tareas</button>
-              <button onClick={() => setActiveTab('planning')} style={{ padding:'4px 14px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:500, color: activeTab==='planning' ? '#1a73e8' : '#5f6368', borderBottom: activeTab==='planning' ? '2px solid #1a73e8' : '2px solid transparent', fontFamily:'inherit' }}>Planificación</button>
-            </div>
-          </div>
+          <h1 style={styles.title}>Tareas Pendientes</h1>
           <div style={styles.subtitleRow}>
             {profile?.isOwner ? (
               <div style={styles.userSelectorWrapper}>
@@ -551,11 +543,7 @@ export default function TasksPage() {
       ) : (
         <div style={styles.mainArea}>
           <div style={styles.columnsArea}>
-            {activeTab === 'planning' && (
-              <PlanningPage allTasks={Object.values(tasksByCategory).flat()} userEmail={profile?.email} userName={profile?.name} />
-            )}
-            {activeTab === 'tasks' && (
-              <DndContext
+            <DndContext
                 sensors={sensors}
                 collisionDetection={pointerWithin}
                 onDragStart={handleDragStart}
@@ -625,7 +613,6 @@ export default function TasksPage() {
                   )}
                 </DragOverlay>
               </DndContext>
-            )}
           </div>
 
           {selectedTask && (
