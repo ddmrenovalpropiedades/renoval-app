@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { userEmail } = req.body || {};
+  const { userEmail, mode = 'recent', ownerEmails = [] } = req.body || {};
 
   // Seleccionar el refresh token según el usuario
   const refreshTokenMap = {
@@ -16,6 +16,14 @@ export default async function handler(req, res) {
   const refreshToken = refreshTokenMap[userEmail];
   if (!refreshToken) {
     return res.status(200).json({ summary: 'No hay acceso configurado al correo para este usuario.' });
+  }
+
+  // 'owners': correos de propietarios (columna Mail Prop. de Cartera) de los
+  // últimos 7 días. 'recent' (default): comportamiento original, últimas 24h.
+  const isOwnersMode = mode === 'owners';
+
+  if (isOwnersMode && ownerEmails.length === 0) {
+    return res.status(200).json({ summary: 'No hay correos de propietarios configurados (columna Mail Prop. en Cartera).' });
   }
 
   try {
@@ -36,17 +44,28 @@ export default async function handler(req, res) {
     }
     const accessToken = tokenData.access_token;
 
-    // 2. Buscar correos de las últimas 24 horas en inbox
-    const since = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+    // 2. Armar la búsqueda: rango de tiempo + (si es modo 'owners') filtro por remitente
+    const rangeMs = isOwnersMode ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const since = Math.floor((Date.now() - rangeMs) / 1000);
+    let query = `in:inbox after:${since}`;
+    if (isOwnersMode) {
+      const fromClause = ownerEmails.map(e => `from:${e}`).join(' OR ');
+      query += ` (${fromClause})`;
+    }
+
     const searchRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox after:${since}&maxResults=20`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     const searchData = await searchRes.json();
     const messages = searchData.messages || [];
 
     if (messages.length === 0) {
-      return res.status(200).json({ summary: 'No hay correos nuevos en las últimas 24 horas.' });
+      return res.status(200).json({
+        summary: isOwnersMode
+          ? 'No hay correos nuevos de propietarios en los últimos 7 días.'
+          : 'No hay correos nuevos en las últimas 24 horas.',
+      });
     }
 
     // 3. Obtener detalles de cada mensaje
@@ -66,6 +85,10 @@ export default async function handler(req, res) {
     );
 
     // 4. Llamar a Claude para resumir
+    const promptIntro = isOwnersMode
+      ? `Resume estos ${details.length} correos recibidos de propietarios en los últimos 7 días:`
+      : `Resume estos ${details.length} correos recibidos en las últimas 24 horas:`;
+
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -79,7 +102,7 @@ export default async function handler(req, res) {
         system: 'Eres un asistente de planificación. Resume correos de forma concisa en español. Para cada correo indica remitente, asunto y un resumen de 1-2 líneas. Usa formato de lista con viñetas (•).',
         messages: [{
           role: 'user',
-          content: `Resume estos ${details.length} correos recibidos en las últimas 24 horas:\n\n${details.map((d, i) =>
+          content: `${promptIntro}\n\n${details.map((d, i) =>
             `${i + 1}. De: ${d.from}\nAsunto: ${d.subject}\nContenido: ${d.snippet}`
           ).join('\n\n')}`
         }]
