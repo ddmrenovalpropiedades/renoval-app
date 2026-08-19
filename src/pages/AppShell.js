@@ -74,7 +74,7 @@ function useIsMobile() {
 
 export default function AppShell() {
   const { profile, signOut } = useAuth();
-  const [activeModule, setActiveModule] = useState('mensajes');
+  const [activeModule, setActiveModule] = useState('planificacion');
   const [hovered, setHovered]           = useState(false);
   const [moreOpen, setMoreOpen]         = useState(false);
   const isMobile                        = useIsMobile();
