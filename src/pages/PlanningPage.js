@@ -218,10 +218,161 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   const visibleCxC = cxcExpanded ? cxcList : cxcList.slice(0, 9);
   const totalCxC = cxcList.reduce((s, p) => s + (p.cxc || 0), 0);
 
-  // Grid: 1 columna en móvil, 3 en desktop
+  // Layout especial de 2 columnas iguales, solo para DD/FD en desktop:
+  // izquierda = Urgentes → Importante → CxC, derecha = Propietarios (7d) →
+  // Últimas 24h. Para todos los demás casos (EA/FG, o cualquiera en móvil)
+  // se mantiene el grid/columna simple de siempre.
+  const useSplitLayout = !!inicialesPagador && !isMobile;
+
+  // Grid: 1 columna en móvil, 3 en desktop (para EA/FG o layout no-split)
   const gridStyle = isMobile
     ? { display: 'flex', flexDirection: 'column', gap: 12 }
     : { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, alignItems: 'start' };
+
+  // ── Cards individuales (se arman una sola vez y se ubican distinto según el layout) ──
+  const urgentesCard = (
+    <div style={styles.card}>
+      <div style={styles.cardHeader}>
+        <AlertCircle size={16} color="#ea4335" />
+        <span style={{ ...styles.cardTitle, color:'#ea4335' }}>Urgentes</span>
+        <span style={styles.badge}>{urgentTasks.length}</span>
+      </div>
+      <div style={styles.cardBody}>
+        {urgentTasks.length === 0
+          ? <p style={styles.empty}>Sin tareas urgentes ✓</p>
+          : urgentTasks.map(t => <TaskItem key={t.id} task={t} color="#ea4335" />)
+        }
+      </div>
+    </div>
+  );
+
+  const importanteCard = (
+    <div style={styles.card}>
+      <div style={styles.cardHeader}>
+        <Clock size={16} color="#f57c00" />
+        <span style={{ ...styles.cardTitle, color:'#f57c00' }}>Importante / Por vencer</span>
+        <span style={{ ...styles.badge, background:'#fff3e0', color:'#f57c00' }}>{importantTasks.length}</span>
+      </div>
+      <div style={styles.cardBody}>
+        {importantTasks.length === 0
+          ? <p style={styles.empty}>Sin tareas importantes por vencer ✓</p>
+          : importantTasks.map(t => <TaskItem key={t.id} task={t} color="#f57c00" />)
+        }
+      </div>
+    </div>
+  );
+
+  const cxcCard = inicialesPagador && (
+    <div style={styles.card}>
+      <div style={styles.cardHeader}>
+        <DollarSign size={16} color="#ea4335" />
+        <span style={{ ...styles.cardTitle, color:'#ea4335' }}>CxC +3 meses</span>
+        <span style={{ ...styles.badge, background:'#fce8e6', color:'#ea4335' }}>{cxcList.length}</span>
+        {totalCxC > 0 && (
+          <span style={{ marginLeft:'auto', fontSize:12, fontWeight:700, color:'#ea4335' }}>{formatCLP(totalCxC)}</span>
+        )}
+      </div>
+      <div style={styles.cardBody}>
+        {cxcList.length === 0
+          ? <p style={styles.empty}>Sin CxC antiguas ✓</p>
+          : <>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr auto', gap:'4px 8px', marginBottom:4 }}>
+                <span style={{ fontSize:10, fontWeight:700, color:'#9aa0a6', textTransform:'uppercase' }}>Propiedad</span>
+                <span style={{ fontSize:10, fontWeight:700, color:'#9aa0a6', textTransform:'uppercase' }}>Descripción</span>
+                <span style={{ fontSize:10, fontWeight:700, color:'#9aa0a6', textTransform:'uppercase', textAlign:'right' }}>CxC</span>
+              </div>
+              {visibleCxC.map((p, i) => (
+                <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr auto', gap:'4px 8px', padding:'7px 0', borderBottom:'1px solid #f1f3f4', alignItems:'center' }}>
+                  <span style={{ fontSize:12, fontWeight:600, color:'#202124', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.propiedad}</span>
+                  <span style={{ fontSize:12, color:'#5f6368', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.descripcion}</span>
+                  <span style={{ fontSize:12, fontWeight:600, color:'#ea4335', whiteSpace:'nowrap', textAlign:'right' }}>{formatCLP(p.cxc)}</span>
+                </div>
+              ))}
+              {cxcList.length > 9 && (
+                <button onClick={() => setCxcExpanded(e => !e)}
+                  style={{ display:'flex', alignItems:'center', gap:4, marginTop:8, marginBottom:4, background:'none', border:'none', cursor:'pointer', fontSize:12, color:'#1a73e8', fontFamily:'inherit', padding:'4px 0' }}>
+                  <ChevronDown size={14} style={{ transform: cxcExpanded ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }} />
+                  {cxcExpanded ? 'Ver menos' : `Ver ${cxcList.length - 9} más`}
+                </button>
+              )}
+            </>
+        }
+      </div>
+    </div>
+  );
+
+  // gridColumn:'1 / -1' solo tiene sentido dentro del grid de 3 columnas
+  // (gridStyle); en el layout de 2 columnas cada card ya es un hijo directo
+  // de su propia columna en flex, así que ese estilo se omite ahí.
+  const ownerEmailsCard = inicialesPagador && (
+    <div style={{ ...styles.card, ...(useSplitLayout || isMobile ? {} : { gridColumn: '1 / -1' }) }}>
+      <div style={styles.cardHeader}>
+        <Mail size={16} color="#2e7d32" />
+        <span style={{ ...styles.cardTitle, color:'#2e7d32' }}>Correos de propietarios (últimos 7 días)</span>
+        {lastUpdatedOwners && (
+          <span style={styles.lastUpdated}>
+            Actualizado: {lastUpdatedOwners.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
+          </span>
+        )}
+        <button onClick={fetchOwnerEmails} disabled={loadingOwnerEmails}
+          style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, padding:'5px 12px', background:'#e6f4ea', color:'#2e7d32', border:'none', borderRadius:6, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
+          <RefreshCw size={12} style={{ animation: loadingOwnerEmails ? 'spin 1s linear infinite' : 'none' }} />
+          {loadingOwnerEmails ? 'Cargando...' : 'Actualizar'}
+        </button>
+      </div>
+      <div style={styles.cardBody}>
+        {!ownerEmailSummary && !loadingOwnerEmails && (
+          <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes de propietarios.</p>
+        )}
+        {loadingOwnerEmails && (
+          <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
+            <RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }} />
+            Consultando bandeja de entrada...
+          </div>
+        )}
+        {ownerEmailSummary && !loadingOwnerEmails && (
+          <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
+            {ownerEmailSummary}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const recentEmailsCard = EMAILS_WITH_ACCESS.includes(userEmail) && (
+    <div style={{ ...styles.card, ...(useSplitLayout || isMobile ? {} : { gridColumn: '1 / -1' }) }}>
+      <div style={styles.cardHeader}>
+        <Mail size={16} color="#1a73e8" />
+        <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 24 horas</span>
+        {lastUpdated && (
+          <span style={styles.lastUpdated}>
+            Actualizado: {lastUpdated.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
+          </span>
+        )}
+        <button onClick={fetchEmails} disabled={loadingEmails}
+          style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, padding:'5px 12px', background:'#e8f0fe', color:'#1a73e8', border:'none', borderRadius:6, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
+          <RefreshCw size={12} style={{ animation: loadingEmails ? 'spin 1s linear infinite' : 'none' }} />
+          {loadingEmails ? 'Cargando...' : 'Actualizar'}
+        </button>
+      </div>
+      <div style={styles.cardBody}>
+        {!emailSummary && !loadingEmails && (
+          <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes.</p>
+        )}
+        {loadingEmails && (
+          <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
+            <RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }} />
+            Consultando bandeja de entrada...
+          </div>
+        )}
+        {emailSummary && !loadingEmails && (
+          <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
+            {emailSummary}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div style={styles.container}>
@@ -235,149 +386,27 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           <span style={styles.dateText}>{today.charAt(0).toUpperCase() + today.slice(1)}</span>
         </div>
 
-        <div style={gridStyle}>
-          {/* Urgentes */}
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <AlertCircle size={16} color="#ea4335" />
-              <span style={{ ...styles.cardTitle, color:'#ea4335' }}>Urgentes</span>
-              <span style={styles.badge}>{urgentTasks.length}</span>
+        {useSplitLayout ? (
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, alignItems:'start' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+              {urgentesCard}
+              {importanteCard}
+              {cxcCard}
             </div>
-            <div style={styles.cardBody}>
-              {urgentTasks.length === 0
-                ? <p style={styles.empty}>Sin tareas urgentes ✓</p>
-                : urgentTasks.map(t => <TaskItem key={t.id} task={t} color="#ea4335" />)
-              }
+            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+              {ownerEmailsCard}
+              {recentEmailsCard}
             </div>
           </div>
-
-          {/* Importante/por vencer */}
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <Clock size={16} color="#f57c00" />
-              <span style={{ ...styles.cardTitle, color:'#f57c00' }}>Importante / Por vencer</span>
-              <span style={{ ...styles.badge, background:'#fff3e0', color:'#f57c00' }}>{importantTasks.length}</span>
-            </div>
-            <div style={styles.cardBody}>
-              {importantTasks.length === 0
-                ? <p style={styles.empty}>Sin tareas importantes por vencer ✓</p>
-                : importantTasks.map(t => <TaskItem key={t.id} task={t} color="#f57c00" />)
-              }
-            </div>
+        ) : (
+          <div style={gridStyle}>
+            {urgentesCard}
+            {importanteCard}
+            {cxcCard}
+            {ownerEmailsCard}
+            {recentEmailsCard}
           </div>
-
-          {/* CxC antiguas — solo DD y FD */}
-          {inicialesPagador && (
-            <div style={styles.card}>
-              <div style={styles.cardHeader}>
-                <DollarSign size={16} color="#ea4335" />
-                <span style={{ ...styles.cardTitle, color:'#ea4335' }}>CxC +3 meses</span>
-                <span style={{ ...styles.badge, background:'#fce8e6', color:'#ea4335' }}>{cxcList.length}</span>
-                {totalCxC > 0 && (
-                  <span style={{ marginLeft:'auto', fontSize:12, fontWeight:700, color:'#ea4335' }}>{formatCLP(totalCxC)}</span>
-                )}
-              </div>
-              <div style={styles.cardBody}>
-                {cxcList.length === 0
-                  ? <p style={styles.empty}>Sin CxC antiguas ✓</p>
-                  : <>
-                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr auto', gap:'4px 8px', marginBottom:4 }}>
-                        <span style={{ fontSize:10, fontWeight:700, color:'#9aa0a6', textTransform:'uppercase' }}>Propiedad</span>
-                        <span style={{ fontSize:10, fontWeight:700, color:'#9aa0a6', textTransform:'uppercase' }}>Descripción</span>
-                        <span style={{ fontSize:10, fontWeight:700, color:'#9aa0a6', textTransform:'uppercase', textAlign:'right' }}>CxC</span>
-                      </div>
-                      {visibleCxC.map((p, i) => (
-                        <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr auto', gap:'4px 8px', padding:'7px 0', borderBottom:'1px solid #f1f3f4', alignItems:'center' }}>
-                          <span style={{ fontSize:12, fontWeight:600, color:'#202124', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.propiedad}</span>
-                          <span style={{ fontSize:12, color:'#5f6368', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.descripcion}</span>
-                          <span style={{ fontSize:12, fontWeight:600, color:'#ea4335', whiteSpace:'nowrap', textAlign:'right' }}>{formatCLP(p.cxc)}</span>
-                        </div>
-                      ))}
-                      {cxcList.length > 9 && (
-                        <button onClick={() => setCxcExpanded(e => !e)}
-                          style={{ display:'flex', alignItems:'center', gap:4, marginTop:8, marginBottom:4, background:'none', border:'none', cursor:'pointer', fontSize:12, color:'#1a73e8', fontFamily:'inherit', padding:'4px 0' }}>
-                          <ChevronDown size={14} style={{ transform: cxcExpanded ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }} />
-                          {cxcExpanded ? 'Ver menos' : `Ver ${cxcList.length - 9} más`}
-                        </button>
-                      )}
-                    </>
-                }
-              </div>
-            </div>
-          )}
-
-          {/* Correos de propietarios — últimos 7 días (Mail Prop. en Cartera). Solo DD/FD. */}
-          {inicialesPagador && (
-            <div style={{ ...styles.card, ...(isMobile ? {} : { gridColumn: '1 / -1' }) }}>
-              <div style={styles.cardHeader}>
-                <Mail size={16} color="#2e7d32" />
-                <span style={{ ...styles.cardTitle, color:'#2e7d32' }}>Correos de propietarios (últimos 7 días)</span>
-                {lastUpdatedOwners && (
-                  <span style={styles.lastUpdated}>
-                    Actualizado: {lastUpdatedOwners.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
-                  </span>
-                )}
-                <button onClick={fetchOwnerEmails} disabled={loadingOwnerEmails}
-                  style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, padding:'5px 12px', background:'#e6f4ea', color:'#2e7d32', border:'none', borderRadius:6, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
-                  <RefreshCw size={12} style={{ animation: loadingOwnerEmails ? 'spin 1s linear infinite' : 'none' }} />
-                  {loadingOwnerEmails ? 'Cargando...' : 'Actualizar'}
-                </button>
-              </div>
-              <div style={styles.cardBody}>
-                {!ownerEmailSummary && !loadingOwnerEmails && (
-                  <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes de propietarios.</p>
-                )}
-                {loadingOwnerEmails && (
-                  <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
-                    <RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }} />
-                    Consultando bandeja de entrada...
-                  </div>
-                )}
-                {ownerEmailSummary && !loadingOwnerEmails && (
-                  <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
-                    {ownerEmailSummary}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Correos últimas 24 horas */}
-          {EMAILS_WITH_ACCESS.includes(userEmail) && (
-            <div style={{ ...styles.card, ...(isMobile ? {} : { gridColumn: '1 / -1' }) }}>
-              <div style={styles.cardHeader}>
-                <Mail size={16} color="#1a73e8" />
-                <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 24 horas</span>
-                {lastUpdated && (
-                  <span style={styles.lastUpdated}>
-                    Actualizado: {lastUpdated.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
-                  </span>
-                )}
-                <button onClick={fetchEmails} disabled={loadingEmails}
-                  style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, padding:'5px 12px', background:'#e8f0fe', color:'#1a73e8', border:'none', borderRadius:6, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
-                  <RefreshCw size={12} style={{ animation: loadingEmails ? 'spin 1s linear infinite' : 'none' }} />
-                  {loadingEmails ? 'Cargando...' : 'Actualizar'}
-                </button>
-              </div>
-              <div style={styles.cardBody}>
-                {!emailSummary && !loadingEmails && (
-                  <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes.</p>
-                )}
-                {loadingEmails && (
-                  <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
-                    <RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }} />
-                    Consultando bandeja de entrada...
-                  </div>
-                )}
-                {emailSummary && !loadingEmails && (
-                  <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
-                    {emailSummary}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        )}
 
         <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
