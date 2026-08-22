@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Mail, AlertCircle, Clock, DollarSign, ChevronDown } from 'lucide-react';
+import { RefreshCw, Mail, AlertCircle, Clock, DollarSign, ChevronDown, Check } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { useTasks } from '../hooks/useTasks';
@@ -63,9 +63,12 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   const { tasksByCategory } = useTasks();
   const allTasks = useMemo(() => Object.values(tasksByCategory).flat(), [tasksByCategory]);
 
-  const [emailSummary, setEmailSummary] = useState(() => {
-    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return '';
-    return localStorage.getItem(STORAGE_KEY) || '';
+  // Listas de correos en bruto (ya no un resumen en texto de Claude — cada
+  // correo se muestra como un item individual con su propio botón de
+  // "gestionar", análogo a las tareas).
+  const [emailList, setEmailList] = useState(() => {
+    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return [];
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) { return []; }
   });
   const [loadingEmails, setLoadingEmails] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(() => {
@@ -75,15 +78,46 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
 
   // ── Correos de propietarios (últimos 7 días) ──────────────────
   const [ownerEmailsList, setOwnerEmailsList] = useState([]);
-  const [ownerEmailSummary, setOwnerEmailSummary] = useState(() => {
-    if (!inicialesPagador) return '';
-    return localStorage.getItem(STORAGE_KEY_OWNERS) || '';
+  const [ownerEmailList, setOwnerEmailList] = useState(() => {
+    if (!inicialesPagador) return [];
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY_OWNERS) || '[]'); } catch (e) { return []; }
   });
   const [loadingOwnerEmails, setLoadingOwnerEmails] = useState(false);
   const [lastUpdatedOwners, setLastUpdatedOwners] = useState(() => {
     const saved = localStorage.getItem(STORAGE_DATE_KEY_OWNERS);
     return saved ? new Date(saved) : null;
   });
+
+  // Correos ya "gestionados" por este usuario (por ID de mensaje de Gmail,
+  // no de la cadena — así un correo nuevo en la misma cadena reaparece).
+  // Persistido en Supabase para que se mantenga entre sesiones/dispositivos.
+  const [managedIds, setManagedIds] = useState(new Set());
+  useEffect(() => {
+    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
+    const loadManaged = async () => {
+      const { data } = await supabase.from('planning_email_managed').select('message_id').eq('user_email', userEmail);
+      setManagedIds(new Set((data || []).map(r => r.message_id)));
+    };
+    loadManaged();
+  }, [userEmail]);
+
+  const handleManageEmail = useCallback(async (messageId) => {
+    if (!userEmail) return;
+    setManagedIds(prev => new Set(prev).add(messageId)); // optimista
+    const { error } = await supabase.from('planning_email_managed')
+      .upsert({ user_email: userEmail, message_id: messageId }, { onConflict: 'user_email,message_id' });
+    if (error) {
+      console.error('Error marcando correo como gestionado:', error);
+      setManagedIds(prev => { const next = new Set(prev); next.delete(messageId); return next; }); // revertir
+    }
+  }, [userEmail]);
+
+  // Listas visibles: se recalculan solas cada vez que cambia managedIds o
+  // llega una lista nueva del servidor — así un refresh nunca vuelve a
+  // mostrar un correo ya gestionado, y un mensaje nuevo en la misma cadena
+  // (ID distinto) aparece sin ninguna lógica adicional.
+  const visibleEmailList = useMemo(() => emailList.filter(e => !managedIds.has(e.id)), [emailList, managedIds]);
+  const visibleOwnerEmailList = useMemo(() => ownerEmailList.filter(e => !managedIds.has(e.id)), [ownerEmailList, managedIds]);
 
   const [cxcList, setCxcList] = useState([]);
   const [cxcExpanded, setCxcExpanded] = useState(false);
@@ -146,14 +180,14 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         body: JSON.stringify({ userEmail }),
       });
       const data = await response.json();
-      const summary = data.error ? 'Error: ' + data.error : data.summary;
-      setEmailSummary(summary);
+      const emails = data.emails || [];
+      setEmailList(emails);
       const now = new Date();
       setLastUpdated(now);
-      localStorage.setItem(STORAGE_KEY, summary);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(emails));
       localStorage.setItem(STORAGE_DATE_KEY, now.toISOString());
     } catch(e) {
-      setEmailSummary('Error al obtener correos: ' + e.message);
+      console.error('Error al obtener correos:', e);
     }
     setLoadingEmails(false);
   }, [userEmail]);
@@ -170,14 +204,14 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         body: JSON.stringify({ userEmail, mode: 'owners', ownerEmails: ownerEmailsList }),
       });
       const data = await response.json();
-      const summary = data.error ? 'Error: ' + data.error : data.summary;
-      setOwnerEmailSummary(summary);
+      const emails = data.emails || [];
+      setOwnerEmailList(emails);
       const now = new Date();
       setLastUpdatedOwners(now);
-      localStorage.setItem(STORAGE_KEY_OWNERS, summary);
+      localStorage.setItem(STORAGE_KEY_OWNERS, JSON.stringify(emails));
       localStorage.setItem(STORAGE_DATE_KEY_OWNERS, now.toISOString());
     } catch(e) {
-      setOwnerEmailSummary('Error al obtener correos: ' + e.message);
+      console.error('Error al obtener correos de propietarios:', e);
     }
     setLoadingOwnerEmails(false);
   }, [userEmail, inicialesPagador, ownerEmailsList]);
@@ -213,6 +247,33 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       </div>
     </div>
   );
+
+  // Fila de correo individual — análoga a TaskItem, con botón para marcar
+  // como "gestionado" (desaparece de la lista al tocarlo).
+  const EmailRow = ({ email, color, onManage }) => {
+    const [managing, setManaging] = useState(false);
+    const handleClick = async () => {
+      setManaging(true);
+      await onManage(email.id);
+    };
+    const dateLabel = email.date ? new Date(email.date).toLocaleDateString('es-CL', { day:'2-digit', month:'2-digit' }) : '';
+    return (
+      <div style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f3f4', opacity: managing ? 0.4 : 1, transition:'opacity 0.15s' }}>
+        <button onClick={handleClick} disabled={managing} title="Marcar como gestionado"
+          style={{ width:18, height:18, borderRadius:'50%', border:`2px solid ${color}`, background:'none', cursor: managing ? 'default' : 'pointer', flexShrink:0, marginTop:2, padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          {managing && <Check size={11} color={color} />}
+        </button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:8 }}>
+            <span style={{ fontSize:13, fontWeight:600, color:'#202124', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{email.from}</span>
+            {dateLabel && <span style={{ fontSize:11, color:'#9aa0a6', flexShrink:0 }}>{dateLabel}</span>}
+          </div>
+          <div style={{ fontSize:12, fontWeight:500, color:'#3c4043', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{email.subject}</div>
+          <div style={{ fontSize:12, color:'#5f6368', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{email.snippet}</div>
+        </div>
+      </div>
+    );
+  };
 
   const firstName = userName ? userName.split(' ')[0] : '';
   const visibleCxC = cxcExpanded ? cxcList : cxcList.slice(0, 9);
@@ -309,6 +370,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       <div style={styles.cardHeader}>
         <Mail size={16} color="#2e7d32" />
         <span style={{ ...styles.cardTitle, color:'#2e7d32' }}>Correos de propietarios (últimos 7 días)</span>
+        <span style={{ ...styles.badge, background:'#e6f4ea', color:'#2e7d32' }}>{visibleOwnerEmailList.length}</span>
         {lastUpdatedOwners && (
           <span style={styles.lastUpdated}>
             Actualizado: {lastUpdatedOwners.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
@@ -321,8 +383,12 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         </button>
       </div>
       <div style={styles.cardBody}>
-        {!ownerEmailSummary && !loadingOwnerEmails && (
-          <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes de propietarios.</p>
+        {visibleOwnerEmailList.length === 0 && !loadingOwnerEmails && (
+          <p style={styles.empty}>
+            {ownerEmailList.length === 0
+              ? 'Presiona "Actualizar" para ver los correos recientes de propietarios.'
+              : 'Sin correos de propietarios pendientes ✓'}
+          </p>
         )}
         {loadingOwnerEmails && (
           <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
@@ -330,11 +396,9 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
             Consultando bandeja de entrada...
           </div>
         )}
-        {ownerEmailSummary && !loadingOwnerEmails && (
-          <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
-            {ownerEmailSummary}
-          </div>
-        )}
+        {!loadingOwnerEmails && visibleOwnerEmailList.map(email => (
+          <EmailRow key={email.id} email={email} color="#2e7d32" onManage={handleManageEmail} />
+        ))}
       </div>
     </div>
   );
@@ -344,6 +408,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       <div style={styles.cardHeader}>
         <Mail size={16} color="#1a73e8" />
         <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 24 horas</span>
+        <span style={{ ...styles.badge, background:'#e8f0fe', color:'#1a73e8' }}>{visibleEmailList.length}</span>
         {lastUpdated && (
           <span style={styles.lastUpdated}>
             Actualizado: {lastUpdated.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
@@ -356,8 +421,12 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         </button>
       </div>
       <div style={styles.cardBody}>
-        {!emailSummary && !loadingEmails && (
-          <p style={styles.empty}>Presiona "Actualizar" para ver los correos recientes.</p>
+        {visibleEmailList.length === 0 && !loadingEmails && (
+          <p style={styles.empty}>
+            {emailList.length === 0
+              ? 'Presiona "Actualizar" para ver los correos recientes.'
+              : 'Sin correos pendientes ✓'}
+          </p>
         )}
         {loadingEmails && (
           <div style={{ display:'flex', alignItems:'center', gap:10, color:'#5f6368', fontSize:13 }}>
@@ -365,11 +434,9 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
             Consultando bandeja de entrada...
           </div>
         )}
-        {emailSummary && !loadingEmails && (
-          <div style={{ fontSize:13, lineHeight:1.7, color:'#3c4043', whiteSpace:'pre-wrap' }}>
-            {emailSummary}
-          </div>
-        )}
+        {!loadingEmails && visibleEmailList.map(email => (
+          <EmailRow key={email.id} email={email} color="#1a73e8" onManage={handleManageEmail} />
+        ))}
       </div>
     </div>
   );
