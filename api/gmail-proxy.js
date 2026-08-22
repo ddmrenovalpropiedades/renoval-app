@@ -15,7 +15,7 @@ export default async function handler(req, res) {
 
   const refreshToken = refreshTokenMap[userEmail];
   if (!refreshToken) {
-    return res.status(200).json({ summary: 'No hay acceso configurado al correo para este usuario.' });
+    return res.status(200).json({ emails: [], error: 'No hay acceso configurado al correo para este usuario.' });
   }
 
   // 'owners': correos de propietarios (columna Mail Prop. de Cartera) de los
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   const isOwnersMode = mode === 'owners';
 
   if (isOwnersMode && ownerEmails.length === 0) {
-    return res.status(200).json({ summary: 'No hay correos de propietarios configurados (columna Mail Prop. en Cartera).' });
+    return res.status(200).json({ emails: [] });
   }
 
   try {
@@ -61,14 +61,13 @@ export default async function handler(req, res) {
     const messages = searchData.messages || [];
 
     if (messages.length === 0) {
-      return res.status(200).json({
-        summary: isOwnersMode
-          ? 'No hay correos nuevos de propietarios en los últimos 7 días.'
-          : 'No hay correos nuevos en las últimas 24 horas.',
-      });
+      return res.status(200).json({ emails: [] });
     }
 
-    // 3. Obtener detalles de cada mensaje
+    // 3. Obtener detalles de cada mensaje (incluyendo su ID único — se usa
+    // en el front para marcar un correo puntual como "gestionado". Un
+    // mensaje nuevo en la misma cadena tiene un ID distinto, así que
+    // reaparece solo cuando corresponde.)
     const details = await Promise.all(
       messages.slice(0, 15).map(async (msg) => {
         const msgRes = await fetch(
@@ -79,39 +78,16 @@ export default async function handler(req, res) {
         const headers = msgData.payload?.headers || [];
         const from = headers.find(h => h.name === 'From')?.value || 'Desconocido';
         const subject = headers.find(h => h.name === 'Subject')?.value || '(sin asunto)';
+        const date = headers.find(h => h.name === 'Date')?.value || null;
         const snippet = msgData.snippet || '';
-        return { from, subject, snippet };
+        return { id: msg.id, threadId: msg.threadId, from, subject, date, snippet };
       })
     );
 
-    // 4. Llamar a Claude para resumir
-    const promptIntro = isOwnersMode
-      ? `Resume estos ${details.length} correos recibidos de propietarios en los últimos 7 días:`
-      : `Resume estos ${details.length} correos recibidos en las últimas 24 horas:`;
+    // Más reciente primero
+    details.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: 'Eres un asistente de planificación. Resume correos de forma concisa en español. Para cada correo indica remitente, asunto y un resumen de 1-2 líneas. Usa formato de lista con viñetas (•).',
-        messages: [{
-          role: 'user',
-          content: `${promptIntro}\n\n${details.map((d, i) =>
-            `${i + 1}. De: ${d.from}\nAsunto: ${d.subject}\nContenido: ${d.snippet}`
-          ).join('\n\n')}`
-        }]
-      })
-    });
-
-    const claudeData = await claudeRes.json();
-    const summary = claudeData.content?.find(b => b.type === 'text')?.text || 'No se pudo generar el resumen.';
-    return res.status(200).json({ summary });
+    return res.status(200).json({ emails: details });
 
   } catch (e) {
     return res.status(500).json({ error: e.message });
