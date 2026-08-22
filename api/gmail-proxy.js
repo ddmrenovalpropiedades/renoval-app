@@ -87,7 +87,45 @@ export default async function handler(req, res) {
     // Más reciente primero
     details.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-    return res.status(200).json({ emails: details });
+    // 4. Pedir a Claude un resumen de 1-2 líneas POR correo (no un párrafo
+    // único) — necesario para mostrar el resumen dentro de cada item de la
+    // lista, en vez del extracto crudo de Gmail.
+    let summaries = [];
+    try {
+      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system: 'Devuelve SOLO un array JSON válido (sin texto adicional, sin backticks, sin markdown) con un resumen de 1 a 2 líneas en español para cada correo que se te entregue, en el mismo orden y con exactamente la misma cantidad de elementos que correos recibidos. Sé concreto sobre el contenido o la solicitud de cada correo. Formato exacto: ["resumen del correo 1", "resumen del correo 2"]',
+          messages: [{
+            role: 'user',
+            content: details.map((d, i) =>
+              `${i + 1}. De: ${d.from}\nAsunto: ${d.subject}\nContenido: ${d.snippet}`
+            ).join('\n\n')
+          }]
+        })
+      });
+      const claudeData = await claudeRes.json();
+      const text = claudeData.content?.find(b => b.type === 'text')?.text || '[]';
+      const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+      if (Array.isArray(parsed) && parsed.length === details.length) summaries = parsed;
+    } catch (e) {
+      console.error('Error generando resúmenes por correo:', e.message);
+      // sigue con summaries = [] → cada correo cae al fallback (su snippet)
+    }
+
+    const emailsWithSummary = details.map((d, i) => ({
+      ...d,
+      summary: summaries[i] || d.snippet,
+    }));
+
+    return res.status(200).json({ emails: emailsWithSummary });
 
   } catch (e) {
     return res.status(500).json({ error: e.message });
