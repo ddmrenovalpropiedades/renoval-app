@@ -269,7 +269,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
             {dateLabel && <span style={{ fontSize:11, color:'#9aa0a6', flexShrink:0 }}>{dateLabel}</span>}
           </div>
           <div style={{ fontSize:12, fontWeight:500, color:'#3c4043', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{email.subject}</div>
-          <div style={{ fontSize:12, color:'#5f6368', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{email.snippet}</div>
+          <div style={{ fontSize:12, color:'#5f6368', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{email.summary || email.snippet}</div>
         </div>
       </div>
     );
