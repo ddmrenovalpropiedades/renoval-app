@@ -394,7 +394,11 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
             <span style={{ fontSize:13, fontWeight:600, color:'#202124', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{email.from}</span>
             {dateLabel && <span style={{ fontSize:11, color:'#9aa0a6', flexShrink:0 }}>{dateLabel}</span>}
           </div>
-          <div style={{ fontSize:12, fontWeight:500, color:'#3c4043', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{email.subject}</div>
+          <a href={`https://mail.google.com/mail/u/0/#all/${email.threadId || email.id}`}
+            target="_blank" rel="noopener noreferrer" className="email-subject-link"
+            style={{ display:'block', fontSize:12, fontWeight:500, color:'#1a73e8', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration:'none' }}>
+            {email.subject}
+          </a>
           <div style={{ fontSize:12, color:'#5f6368', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{email.summary || email.snippet}</div>
         </div>
         <button onClick={() => onCreateTask(email)} disabled={managing} title="Generar tarea"
@@ -606,7 +610,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           </div>
         )}
 
-        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        <style>{`
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          .email-subject-link:hover { text-decoration: underline; }
+        `}</style>
       </div>
 
       {taskModalEmail && (
