@@ -55,6 +55,18 @@ function extractUrl(text) {
   return match ? match[0] : null;
 }
 
+// ─── ¿Estamos en horario laboral? (08:00–17:59, hora de Chile) ────────────────
+function esHorarioLaboral() {
+  const horaChile = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago',
+    hour:     'numeric',
+    hour12:   false,
+  }).format(new Date());
+  let hora = parseInt(horaChile, 10);
+  if (hora === 24) hora = 0; // algunos entornos devuelven "24" para medianoche
+  return hora >= 8 && hora < 18;
+}
+
 // ─── Buscar propiedad por URL ──────────────────────────────────────────────────
 async function findPropiedadByUrl(url) {
   if (!url) return null;
@@ -251,7 +263,8 @@ module.exports = async function handler(req, res) {
       }
 
       // ── Lógica del bot ────────────────────────────────────────────────────
-      const estado = conversacion.estado;
+      const estado        = conversacion.estado;
+      const dentroHorario = esHorarioLaboral();
       if (estado === 'con_agente') return res.status(200).end();
 
       if (estado === 'esperando_agente') {
@@ -268,9 +281,11 @@ module.exports = async function handler(req, res) {
       }
 
       if (selectedOption === 'AGENDAR_VISITA') {
-        const outText  = '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!';
+        const outText = dentroHorario
+          ? '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!'
+          : '📅 Pronto podrás agendar tu visita de manera automática aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo en horario laboral para coordinar. ¡Gracias por tu interés!';
         const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'agendar_visita_placeholder' });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: dentroHorario ? 'agendar_visita_placeholder' : 'agendar_visita_fuera_horario' });
         await updateEstadoConversacion(convId, 'esperando_agente');
       }
 
@@ -287,9 +302,11 @@ module.exports = async function handler(req, res) {
       }
 
       if (selectedOption === 'HABLAR_EJECUTIVO') {
-        const outText  = '👤 Perfecto, en breve uno de nuestros ejecutivos se comunicará contigo. ¡Gracias por contactarnos!';
+        const outText = dentroHorario
+          ? '👤 Perfecto, en breve uno de nuestros ejecutivos se comunicará contigo. ¡Gracias por contactarnos!'
+          : '👤 Perfecto, uno de nuestros ejecutivos se comunicará contigo en horario laboral para responder a tus consultas. ¡Gracias por contactarnos!';
         const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'escalar_agente' });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: dentroHorario ? 'escalar_agente' : 'escalar_agente_fuera_horario' });
         await updateEstadoConversacion(convId, 'esperando_agente');
       }
 
