@@ -112,7 +112,7 @@ async function sendMenuMessage(to) {
           action: {
             buttons: [
               { type: 'reply', reply: { id: 'AGENDAR_VISITA',   title: 'Agendar visita'   } },
-              { type: 'reply', reply: { id: 'MAS_INFORMACION',  title: 'Más información'  } },
+              { type: 'reply', reply: { id: 'REQUISITOS',       title: 'Requisitos'       } },
               { type: 'reply', reply: { id: 'HABLAR_EJECUTIVO', title: 'Hablar ejecutivo' } },
             ],
           },
@@ -274,10 +274,15 @@ module.exports = async function handler(req, res) {
         await updateEstadoConversacion(convId, 'esperando_agente');
       }
 
-      if (selectedOption === 'MAS_INFORMACION') {
-        const outText  = 'ℹ️ Con gusto te enviamos más información sobre la propiedad. Un ejecutivo te contactará en breve con todos los detalles. 🏠';
+      if (selectedOption === 'REQUISITOS') {
+        const outText  = '📋 *Requisitos:* (no es necesario enviar documentación previo a una visita)\n' +
+          '- Ganar 3 veces el valor de arriendo (se puede complementar renta con más de una persona)\n' +
+          '- No tener morosidad en Dicom\n' +
+          '- Tener contrato de trabajo indefinido o emitir boleta de honorarios\n' +
+          '- Se solicita mes de garantía y medio mes de corretaje + IVA\n\n' +
+          'En caso de cumplir requisitos (basta con decirme que los cumples) se puede coordinar visita. Si posterior a la visita se desea arrendar, se solicita la documentación.';
         const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'mas_informacion' });
+        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'requisitos' });
         await updateEstadoConversacion(convId, 'esperando_agente');
       }
 
