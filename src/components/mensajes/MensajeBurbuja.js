@@ -1,8 +1,12 @@
 import React from 'react';
 
 export default function MensajeBurbuja({ mensaje }) {
-  const esEntrante = mensaje.direction === 'inbound';
-  const hora = new Date(mensaje.created_at).toLocaleTimeString('es-CL', {
+  const esEntrante   = mensaje.direction === 'inbound';
+  const fechaMensaje = new Date(mensaje.created_at);
+  const fecha = fechaMensaje.toLocaleDateString('es-CL', {
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
+  const hora = fechaMensaje.toLocaleTimeString('es-CL', {
     hour: '2-digit', minute: '2-digit'
   });
 
@@ -24,8 +28,8 @@ export default function MensajeBurbuja({ mensaje }) {
         <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {mensaje.message_text}
         </div>
-        <div style={{ fontSize: '11px', color: '#888', textAlign: 'right', marginTop: '4px' }}>
-          {hora}
+        <div style={{ fontSize: '11px', color: '#888', textAlign: 'right', marginTop: '4px', whiteSpace: 'nowrap' }}>
+          {fecha} {hora}
           {!esEntrante && <span style={{ marginLeft: '4px' }}>✓✓</span>}
         </div>
       </div>
