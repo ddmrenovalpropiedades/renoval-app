@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Mail, AlertCircle, Clock, DollarSign, ChevronDown, Check } from 'lucide-react';
+import { RefreshCw, Mail, AlertCircle, Clock, DollarSign, ChevronDown, Check, ListPlus, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { useTasks } from '../hooks/useTasks';
@@ -20,6 +20,10 @@ const PAGADO_POR = {
   'ddm@renovalpropiedades.com': 'DD',
   'fdm@renovalpropiedades.com': 'FD',
 };
+
+// Fallback si el usuario todavía no tiene filas en task_categories — mismo
+// set que usa TasksPage.js (DEFAULT_CATEGORIES) para mantener consistencia.
+const DEFAULT_TASK_CATEGORIES = ['Llegada arrendatario', 'Publicar/Arrendar', 'Equipo', 'Solicitudes', 'Misceláneo', 'PAGOS'];
 
 const antiguedad = (fechaStr) => {
   if (!fechaStr) return '+ 3 meses';
@@ -48,6 +52,89 @@ function useIsMobileFallback(explicit) {
   return isMobile;
 }
 
+// ── Modal: crear tarea a partir de un correo ──────────────────────────────
+// Análogo a PublicarFechaModal (TaskColumn.js / TaskPanel.js): overlay +
+// caja centrada. La lista de "categories" ya viene resuelta (default +
+// propias del usuario) desde el componente padre.
+function CreateTaskModal({ email, categories, onConfirm, onCancel }) {
+  const [category, setCategory] = useState(categories[0]?.name || '');
+  const [title, setTitle] = useState(email?.subject || '');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleConfirm = async () => {
+    if (!title.trim() || !category || saving) return;
+    setSaving(true);
+    await onConfirm({ category, title: title.trim(), notes: notes.trim() });
+    setSaving(false);
+  };
+
+  const disabled = !title.trim() || !category || saving;
+
+  return (
+    <div style={taskModalStyles.overlay} onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div style={taskModalStyles.modal}>
+        <div style={taskModalStyles.header}>
+          <span style={taskModalStyles.title}>Nueva tarea desde correo</span>
+          <button onClick={onCancel} style={taskModalStyles.closeBtn}><X size={18} /></button>
+        </div>
+
+        {email && (
+          <p style={taskModalStyles.emailRef}>
+            {email.from}{email.subject ? ` · ${email.subject}` : ''}
+          </p>
+        )}
+
+        <div style={{ padding: '0 20px 4px' }}>
+          <label style={taskModalStyles.label}>Lista</label>
+          <select value={category} onChange={e => setCategory(e.target.value)} style={taskModalStyles.select}>
+            {categories.map(c => (
+              <option key={c.name} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ padding: '14px 20px 4px' }}>
+          <label style={taskModalStyles.label}>Nombre de la tarea</label>
+          <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="Título de la tarea..." style={taskModalStyles.input}
+            onKeyDown={e => e.key === 'Escape' && onCancel()} />
+        </div>
+
+        <div style={{ padding: '14px 20px 4px' }}>
+          <label style={taskModalStyles.label}>Notas</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)}
+            placeholder="Notas de la tarea (opcional)..." rows={3} style={taskModalStyles.textarea} />
+        </div>
+
+        <div style={taskModalStyles.actions}>
+          <button onClick={handleConfirm} disabled={disabled}
+            style={{ ...taskModalStyles.confirmBtn, ...(disabled ? { background: '#e8eaed', color: '#9aa0a6', cursor: 'not-allowed' } : {}) }}>
+            {saving ? 'Creando...' : 'Crear tarea'}
+          </button>
+          <button onClick={onCancel} style={taskModalStyles.cancelBtn}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const taskModalStyles = {
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 },
+  modal: { background: '#fff', borderRadius: 16, width: 400, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', fontFamily: "'Google Sans', 'Segoe UI', sans-serif", overflow: 'hidden' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 20px 6px' },
+  title: { fontSize: 18, fontWeight: 700, color: '#202124' },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#5f6368', borderRadius: 6 },
+  emailRef: { fontSize: 12, color: '#5f6368', margin: '0 20px 12px', padding: '8px 12px', background: '#f8f9fa', borderRadius: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  label: { fontSize: 12, fontWeight: 600, color: '#5f6368', display: 'block', marginBottom: 6 },
+  select: { width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit', background: '#fff' },
+  input: { width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit' },
+  textarea: { width: '100%', border: '1px solid #dadce0', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit', resize: 'vertical' },
+  actions: { display: 'flex', gap: 8, padding: '20px' },
+  confirmBtn: { flex: 1, padding: '10px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelBtn: { padding: '10px 16px', background: 'none', border: '1px solid #dadce0', borderRadius: 8, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#5f6368' },
+};
+
 export default function PlanningPage({ isMobile: isMobileProp }) {
   const { profile } = useAuth();
   const userEmail = profile?.email;
@@ -60,7 +147,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
 
   // La planificación siempre muestra las tareas propias del usuario logueado
   // (no sigue el "ver como" de otros usuarios que sí tiene la página de Tareas).
-  const { tasksByCategory } = useTasks();
+  const { tasksByCategory, createTask } = useTasks();
   const allTasks = useMemo(() => Object.values(tasksByCategory).flat(), [tasksByCategory]);
 
   // Listas de correos en bruto (ya no un resumen en texto de Claude — cada
@@ -111,6 +198,44 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       setManagedIds(prev => { const next = new Set(prev); next.delete(messageId); return next; }); // revertir
     }
   }, [userEmail]);
+
+  // ── Listas de tareas del usuario, para el dropdown del modal "Generar tarea" ──
+  // Mismo criterio de carga/migración de nombres que TasksPage.js: se
+  // combinan las categorías por defecto (is_default) con las propias del
+  // usuario (user_email), y se migran los nombres viejos Entrada/Salida.
+  const [taskCategories, setTaskCategories] = useState([]);
+  useEffect(() => {
+    if (!userEmail) return;
+    const loadTaskCategories = async () => {
+      const { data, error } = await supabase.from('task_categories').select('*').order('position', { ascending: true });
+      if (error) { console.error('Error cargando listas de tareas:', error); return; }
+      if (data && data.length > 0) {
+        const filtered = data.filter(c => c.is_default || c.user_email === userEmail);
+        const migrated = filtered.map(c => {
+          if (c.name === 'Entrada') return { ...c, name: 'Llegada arrendatario' };
+          if (c.name === 'Salida') return { ...c, name: 'Publicar/Arrendar' };
+          return c;
+        });
+        setTaskCategories(migrated);
+      } else {
+        setTaskCategories(DEFAULT_TASK_CATEGORIES.map((name, i) => ({ name, position: i })));
+      }
+    };
+    loadTaskCategories();
+  }, [userEmail]);
+
+  // Correo sobre el cual está abierto el modal de "Generar tarea" (null = cerrado)
+  const [taskModalEmail, setTaskModalEmail] = useState(null);
+
+  const handleConfirmCreateTask = useCallback(async ({ category, title, notes }) => {
+    const { error } = await createTask({ title, category, notes });
+    if (error) {
+      console.error('Error creando tarea desde correo:', error);
+      alert('No se pudo crear la tarea: ' + error.message);
+      return;
+    }
+    setTaskModalEmail(null);
+  }, [createTask]);
 
   // Listas visibles: se recalculan solas cada vez que cambia managedIds o
   // llega una lista nueva del servidor — así un refresh nunca vuelve a
@@ -249,8 +374,9 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   );
 
   // Fila de correo individual — análoga a TaskItem, con botón para marcar
-  // como "gestionado" (desaparece de la lista al tocarlo).
-  const EmailRow = ({ email, color, onManage }) => {
+  // como "gestionado" (desaparece de la lista al tocarlo) y otro para
+  // generar una tarea a partir del correo (abre CreateTaskModal).
+  const EmailRow = ({ email, color, onManage, onCreateTask }) => {
     const [managing, setManaging] = useState(false);
     const handleClick = async () => {
       setManaging(true);
@@ -271,6 +397,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           <div style={{ fontSize:12, fontWeight:500, color:'#3c4043', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{email.subject}</div>
           <div style={{ fontSize:12, color:'#5f6368', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{email.summary || email.snippet}</div>
         </div>
+        <button onClick={() => onCreateTask(email)} disabled={managing} title="Generar tarea"
+          style={{ background:'none', border:'none', cursor: managing ? 'default' : 'pointer', padding:3, borderRadius:6, flexShrink:0, marginTop:1, display:'flex', alignItems:'center', color, opacity: managing ? 0.4 : 1 }}>
+          <ListPlus size={16} />
+        </button>
       </div>
     );
   };
@@ -279,10 +409,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   const visibleCxC = cxcExpanded ? cxcList : cxcList.slice(0, 9);
   const totalCxC = cxcList.reduce((s, p) => s + (p.cxc || 0), 0);
 
-  // Layout especial de 2 columnas iguales, solo para DD/FD en desktop:
-  // izquierda = Urgentes → Importante → CxC, derecha = Propietarios (7d) →
-  // Últimas 24h. Para todos los demás casos (EA/FG, o cualquiera en móvil)
-  // se mantiene el grid/columna simple de siempre.
+  // Layout especial de 2 columnas (33% / 67%), solo para DD/FD en desktop:
+  // izquierda = Urgentes → Importante → CxC, derecha (más ancha) =
+  // Propietarios (7d) → Últimas 36h. Para todos los demás casos (EA/FG, o
+  // cualquiera en móvil) se mantiene el grid/columna simple de siempre.
   const useSplitLayout = !!inicialesPagador && !isMobile;
 
   // Grid: 1 columna en móvil, 3 en desktop (para EA/FG o layout no-split)
@@ -397,7 +527,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           </div>
         )}
         {!loadingOwnerEmails && visibleOwnerEmailList.map(email => (
-          <EmailRow key={email.id} email={email} color="#2e7d32" onManage={handleManageEmail} />
+          <EmailRow key={email.id} email={email} color="#2e7d32" onManage={handleManageEmail} onCreateTask={setTaskModalEmail} />
         ))}
       </div>
     </div>
@@ -407,7 +537,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
     <div style={{ ...styles.card, ...(useSplitLayout || isMobile ? {} : { gridColumn: '1 / -1' }) }}>
       <div style={styles.cardHeader}>
         <Mail size={16} color="#1a73e8" />
-        <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 24 horas</span>
+        <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 36 horas</span>
         <span style={{ ...styles.badge, background:'#e8f0fe', color:'#1a73e8' }}>{visibleEmailList.length}</span>
         {lastUpdated && (
           <span style={styles.lastUpdated}>
@@ -435,7 +565,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           </div>
         )}
         {!loadingEmails && visibleEmailList.map(email => (
-          <EmailRow key={email.id} email={email} color="#1a73e8" onManage={handleManageEmail} />
+          <EmailRow key={email.id} email={email} color="#1a73e8" onManage={handleManageEmail} onCreateTask={setTaskModalEmail} />
         ))}
       </div>
     </div>
@@ -454,7 +584,8 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         </div>
 
         {useSplitLayout ? (
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, alignItems:'start' }}>
+          // 33% tareas / 67% correos (antes 50/50)
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:16, alignItems:'start' }}>
             <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
               {urgentesCard}
               {importanteCard}
@@ -477,6 +608,15 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
 
         <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
+
+      {taskModalEmail && (
+        <CreateTaskModal
+          email={taskModalEmail}
+          categories={taskCategories}
+          onCancel={() => setTaskModalEmail(null)}
+          onConfirm={handleConfirmCreateTask}
+        />
+      )}
     </div>
   );
 }
