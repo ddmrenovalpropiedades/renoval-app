@@ -158,6 +158,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) { return []; }
   });
   const [loadingEmails, setLoadingEmails] = useState(false);
+  // Mensaje de error crudo devuelto por /api/gmail-proxy (o de red), para
+  // mostrarlo en la card en vez de dejarla en blanco sin explicación —
+  // ej. token de Gmail vencido/no configurado para ese usuario.
+  const [emailFetchError, setEmailFetchError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(() => {
     const saved = localStorage.getItem(STORAGE_DATE_KEY);
     return saved ? new Date(saved) : null;
@@ -170,6 +174,8 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY_OWNERS) || '[]'); } catch (e) { return []; }
   });
   const [loadingOwnerEmails, setLoadingOwnerEmails] = useState(false);
+  // Mismo propósito que emailFetchError, para la card de correos de propietarios.
+  const [ownerEmailFetchError, setOwnerEmailFetchError] = useState(null);
   const [lastUpdatedOwners, setLastUpdatedOwners] = useState(() => {
     const saved = localStorage.getItem(STORAGE_DATE_KEY_OWNERS);
     return saved ? new Date(saved) : null;
@@ -298,6 +304,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   const fetchEmails = useCallback(async () => {
     if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
     setLoadingEmails(true);
+    setEmailFetchError(null);
     try {
       const response = await fetch('/api/gmail-proxy', {
         method: 'POST',
@@ -305,6 +312,13 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         body: JSON.stringify({ userEmail }),
       });
       const data = await response.json();
+      // gmail-proxy responde 200 con emails:[] tanto cuando no hay correos
+      // nuevos como cuando falla (token no configurado/vencido, etc.) — sin
+      // esto, ambos casos se veían igual de "en blanco" en la UI.
+      if (data.error) {
+        console.error('Error de gmail-proxy (recientes) para', userEmail, ':', data.error, data.detail || '');
+        setEmailFetchError(data.error);
+      }
       const emails = data.emails || [];
       setEmailList(emails);
       const now = new Date();
@@ -313,6 +327,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       localStorage.setItem(STORAGE_DATE_KEY, now.toISOString());
     } catch(e) {
       console.error('Error al obtener correos:', e);
+      setEmailFetchError(e.message);
     }
     setLoadingEmails(false);
   }, [userEmail]);
@@ -322,6 +337,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   const fetchOwnerEmails = useCallback(async () => {
     if (!inicialesPagador) return;
     setLoadingOwnerEmails(true);
+    setOwnerEmailFetchError(null);
     try {
       const response = await fetch('/api/gmail-proxy', {
         method: 'POST',
@@ -329,6 +345,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         body: JSON.stringify({ userEmail, mode: 'owners', ownerEmails: ownerEmailsList }),
       });
       const data = await response.json();
+      if (data.error) {
+        console.error('Error de gmail-proxy (propietarios) para', userEmail, ':', data.error, data.detail || '');
+        setOwnerEmailFetchError(data.error);
+      }
       const emails = data.emails || [];
       setOwnerEmailList(emails);
       const now = new Date();
@@ -337,6 +357,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       localStorage.setItem(STORAGE_DATE_KEY_OWNERS, now.toISOString());
     } catch(e) {
       console.error('Error al obtener correos de propietarios:', e);
+      setOwnerEmailFetchError(e.message);
     }
     setLoadingOwnerEmails(false);
   }, [userEmail, inicialesPagador, ownerEmailsList]);
@@ -517,7 +538,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         </button>
       </div>
       <div style={styles.cardBody}>
-        {visibleOwnerEmailList.length === 0 && !loadingOwnerEmails && (
+        {ownerEmailFetchError && !loadingOwnerEmails && (
+          <p style={{ ...styles.empty, color: '#ea4335' }}>⚠ Error al consultar el correo: {ownerEmailFetchError}</p>
+        )}
+        {visibleOwnerEmailList.length === 0 && !loadingOwnerEmails && !ownerEmailFetchError && (
           <p style={styles.empty}>
             {ownerEmailList.length === 0
               ? 'Presiona "Actualizar" para ver los correos recientes de propietarios.'
@@ -555,7 +579,10 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         </button>
       </div>
       <div style={styles.cardBody}>
-        {visibleEmailList.length === 0 && !loadingEmails && (
+        {emailFetchError && !loadingEmails && (
+          <p style={{ ...styles.empty, color: '#ea4335' }}>⚠ Error al consultar el correo: {emailFetchError}</p>
+        )}
+        {visibleEmailList.length === 0 && !loadingEmails && !emailFetchError && (
           <p style={styles.empty}>
             {emailList.length === 0
               ? 'Presiona "Actualizar" para ver los correos recientes.'
