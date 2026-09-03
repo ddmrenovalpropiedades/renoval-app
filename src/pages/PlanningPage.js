@@ -436,7 +436,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
 
   // Layout especial de 2 columnas (33% / 67%), solo para DD/FD en desktop:
   // izquierda = Urgentes → Importante → CxC, derecha (más ancha) =
-  // Propietarios (7d) → Últimas 36h. Para todos los demás casos (EA/FG, o
+  // Propietarios (7d) → Últimas 72h. Para todos los demás casos (EA/FG, o
   // cualquiera en móvil) se mantiene el grid/columna simple de siempre.
   const useSplitLayout = !!inicialesPagador && !isMobile;
 
@@ -565,7 +565,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
     <div style={{ ...styles.card, ...(useSplitLayout || isMobile ? {} : { gridColumn: '1 / -1' }) }}>
       <div style={styles.cardHeader}>
         <Mail size={16} color="#1a73e8" />
-        <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 36 horas</span>
+        <span style={{ ...styles.cardTitle, color:'#1a73e8' }}>Correos últimas 72 horas</span>
         <span style={{ ...styles.badge, background:'#e8f0fe', color:'#1a73e8' }}>{visibleEmailList.length}</span>
         {lastUpdated && (
           <span style={styles.lastUpdated}>
