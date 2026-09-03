@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Mail, AlertCircle, Clock, DollarSign, ChevronDown, Check, ListPlus, X } from 'lucide-react';
+import { RefreshCw, Mail, AlertCircle, Clock, DollarSign, ChevronDown, Check, ListPlus, X, Pin } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { useTasks } from '../hooks/useTasks';
@@ -194,6 +194,22 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
     loadManaged();
   }, [userEmail]);
 
+  // Correos "fijados" por este usuario — igual patrón que managedIds (mismo
+  // tipo de ID, misma persistencia en Supabase por user_email+message_id).
+  // Un correo fijado no se cae del listado cuando queda fuera de la ventana
+  // de tiempo que devuelve gmail-proxy (72h / 7 días); ver merge en
+  // fetchEmails/fetchOwnerEmails. Solo desaparece al marcarlo gestionado.
+  // (Declarado antes de handleManageEmail porque este último la referencia.)
+  const [pinnedIds, setPinnedIds] = useState(new Set());
+  useEffect(() => {
+    if (!EMAILS_WITH_ACCESS.includes(userEmail)) return;
+    const loadPinned = async () => {
+      const { data } = await supabase.from('planning_email_pinned').select('message_id').eq('user_email', userEmail);
+      setPinnedIds(new Set((data || []).map(r => r.message_id)));
+    };
+    loadPinned();
+  }, [userEmail]);
+
   const handleManageEmail = useCallback(async (messageId) => {
     if (!userEmail) return;
     setManagedIds(prev => new Set(prev).add(messageId)); // optimista
@@ -202,8 +218,37 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
     if (error) {
       console.error('Error marcando correo como gestionado:', error);
       setManagedIds(prev => { const next = new Set(prev); next.delete(messageId); return next; }); // revertir
+      return;
     }
-  }, [userEmail]);
+    // Si el correo estaba fijado, deja de tener sentido mantenerlo fijado
+    // una vez gestionado — se limpia para no acumular filas muertas.
+    if (pinnedIds.has(messageId)) {
+      setPinnedIds(prev => { const next = new Set(prev); next.delete(messageId); return next; });
+      await supabase.from('planning_email_pinned').delete().eq('user_email', userEmail).eq('message_id', messageId);
+    }
+  }, [userEmail, pinnedIds]);
+
+  const handleTogglePin = useCallback(async (messageId) => {
+    if (!userEmail) return;
+    const wasPinned = pinnedIds.has(messageId);
+    if (wasPinned) {
+      setPinnedIds(prev => { const next = new Set(prev); next.delete(messageId); return next; }); // optimista
+      const { error } = await supabase.from('planning_email_pinned')
+        .delete().eq('user_email', userEmail).eq('message_id', messageId);
+      if (error) {
+        console.error('Error al desfijar correo:', error);
+        setPinnedIds(prev => new Set(prev).add(messageId)); // revertir
+      }
+    } else {
+      setPinnedIds(prev => new Set(prev).add(messageId)); // optimista
+      const { error } = await supabase.from('planning_email_pinned')
+        .upsert({ user_email: userEmail, message_id: messageId }, { onConflict: 'user_email,message_id' });
+      if (error) {
+        console.error('Error al fijar correo:', error);
+        setPinnedIds(prev => { const next = new Set(prev); next.delete(messageId); return next; }); // revertir
+      }
+    }
+  }, [userEmail, pinnedIds]);
 
   // ── Listas de tareas del usuario, para el dropdown del modal "Generar tarea" ──
   // Mismo criterio de carga/migración de nombres que TasksPage.js: se
@@ -319,18 +364,26 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         console.error('Error de gmail-proxy (recientes) para', userEmail, ':', data.error, data.detail || '');
         setEmailFetchError(data.error);
       }
-      const emails = data.emails || [];
-      setEmailList(emails);
+      const fetched = data.emails || [];
+      // Los correos "fijados" no deben desaparecer aunque el fetch nuevo ya
+      // no los traiga (por haber salido de la ventana de 72h) — se
+      // reinsertan a partir de la lista previa. Solo se van al gestionarlos.
+      setEmailList(prev => {
+        const fetchedIds = new Set(fetched.map(e => e.id));
+        const keptPinned = prev.filter(e => pinnedIds.has(e.id) && !fetchedIds.has(e.id));
+        const merged = [...fetched, ...keptPinned];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        return merged;
+      });
       const now = new Date();
       setLastUpdated(now);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(emails));
       localStorage.setItem(STORAGE_DATE_KEY, now.toISOString());
     } catch(e) {
       console.error('Error al obtener correos:', e);
       setEmailFetchError(e.message);
     }
     setLoadingEmails(false);
-  }, [userEmail]);
+  }, [userEmail, pinnedIds]);
 
   // Correos de propietarios: mismo patrón que fetchEmails, pero con
   // mode:'owners' y la lista de correos de Mail Prop. — 7 días en vez de 24h.
@@ -349,18 +402,25 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
         console.error('Error de gmail-proxy (propietarios) para', userEmail, ':', data.error, data.detail || '');
         setOwnerEmailFetchError(data.error);
       }
-      const emails = data.emails || [];
-      setOwnerEmailList(emails);
+      const fetched = data.emails || [];
+      // Mismo criterio que en fetchEmails: los fijados no se pierden aunque
+      // salgan de la ventana de 7 días de este modo.
+      setOwnerEmailList(prev => {
+        const fetchedIds = new Set(fetched.map(e => e.id));
+        const keptPinned = prev.filter(e => pinnedIds.has(e.id) && !fetchedIds.has(e.id));
+        const merged = [...fetched, ...keptPinned];
+        localStorage.setItem(STORAGE_KEY_OWNERS, JSON.stringify(merged));
+        return merged;
+      });
       const now = new Date();
       setLastUpdatedOwners(now);
-      localStorage.setItem(STORAGE_KEY_OWNERS, JSON.stringify(emails));
       localStorage.setItem(STORAGE_DATE_KEY_OWNERS, now.toISOString());
     } catch(e) {
       console.error('Error al obtener correos de propietarios:', e);
       setOwnerEmailFetchError(e.message);
     }
     setLoadingOwnerEmails(false);
-  }, [userEmail, inicialesPagador, ownerEmailsList]);
+  }, [userEmail, inicialesPagador, ownerEmailsList, pinnedIds]);
 
   // Auto-actualización a las 08:00 y 11:59 — ambos módulos de correos se
   // refrescan en el mismo momento.
@@ -397,7 +457,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
   // Fila de correo individual — análoga a TaskItem, con botón para marcar
   // como "gestionado" (desaparece de la lista al tocarlo) y otro para
   // generar una tarea a partir del correo (abre CreateTaskModal).
-  const EmailRow = ({ email, color, onManage, onCreateTask }) => {
+  const EmailRow = ({ email, color, onManage, onCreateTask, pinned, onTogglePin }) => {
     const [managing, setManaging] = useState(false);
     const handleClick = async () => {
       setManaging(true);
@@ -422,6 +482,11 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           </a>
           <div style={{ fontSize:12, color:'#5f6368', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{email.summary || email.snippet}</div>
         </div>
+        <button onClick={() => onTogglePin(email.id)} disabled={managing}
+          title={pinned ? 'Desfijar (volverá a expirar con el plazo normal)' : 'Fijar (no desaparece aunque venza el plazo, hasta gestionarlo)'}
+          style={{ background:'none', border:'none', cursor: managing ? 'default' : 'pointer', padding:3, borderRadius:6, flexShrink:0, marginTop:1, display:'flex', alignItems:'center', color: pinned ? '#f9a825' : color, opacity: managing ? 0.4 : 1 }}>
+          <Pin size={16} fill={pinned ? 'currentColor' : 'none'} />
+        </button>
         <button onClick={() => onCreateTask(email)} disabled={managing} title="Generar tarea"
           style={{ background:'none', border:'none', cursor: managing ? 'default' : 'pointer', padding:3, borderRadius:6, flexShrink:0, marginTop:1, display:'flex', alignItems:'center', color, opacity: managing ? 0.4 : 1 }}>
           <ListPlus size={16} />
@@ -555,7 +620,8 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           </div>
         )}
         {!loadingOwnerEmails && visibleOwnerEmailList.map(email => (
-          <EmailRow key={email.id} email={email} color="#2e7d32" onManage={handleManageEmail} onCreateTask={setTaskModalEmail} />
+          <EmailRow key={email.id} email={email} color="#2e7d32" onManage={handleManageEmail} onCreateTask={setTaskModalEmail}
+            pinned={pinnedIds.has(email.id)} onTogglePin={handleTogglePin} />
         ))}
       </div>
     </div>
@@ -596,7 +662,8 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
           </div>
         )}
         {!loadingEmails && visibleEmailList.map(email => (
-          <EmailRow key={email.id} email={email} color="#1a73e8" onManage={handleManageEmail} onCreateTask={setTaskModalEmail} />
+          <EmailRow key={email.id} email={email} color="#1a73e8" onManage={handleManageEmail} onCreateTask={setTaskModalEmail}
+            pinned={pinnedIds.has(email.id)} onTogglePin={handleTogglePin} />
         ))}
       </div>
     </div>
