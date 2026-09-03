@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ emails: [], error: 'No hay acceso configurado al correo para este usuario.' });
   }
   // 'owners': correos de propietarios (columna Mail Prop. de Cartera) de los
-  // últimos 7 días. 'recent' (default): últimas 36 horas.
+  // últimos 7 días. 'recent' (default): últimas 72 horas.
   const isOwnersMode = mode === 'owners';
   if (isOwnersMode && ownerEmails.length === 0) {
     return res.status(200).json({ emails: [] });
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     }
     const accessToken = tokenData.access_token;
     // 2. Armar la búsqueda: rango de tiempo + (si es modo 'owners') filtro por remitente
-    const rangeMs = isOwnersMode ? 7 * 24 * 60 * 60 * 1000 : 36 * 60 * 60 * 1000;
+    const rangeMs = isOwnersMode ? 7 * 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000;
     const since = Math.floor((Date.now() - rangeMs) / 1000);
     let query = `in:inbox after:${since}`;
     if (isOwnersMode) {
