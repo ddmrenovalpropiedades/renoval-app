@@ -55,16 +55,25 @@ function extractUrl(text) {
   return match ? match[0] : null;
 }
 
-// ─── ¿Estamos en horario laboral? (08:00–17:59, hora de Chile) ────────────────
+// ─── ¿Estamos en horario laboral? (lunes a viernes, 08:00–17:59 hora de Chile) ─
 function esHorarioLaboral() {
+  const ahora = new Date();
+
   const horaChile = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Santiago',
     hour:     'numeric',
     hour12:   false,
-  }).format(new Date());
+  }).format(ahora);
   let hora = parseInt(horaChile, 10);
   if (hora === 24) hora = 0; // algunos entornos devuelven "24" para medianoche
-  return hora >= 8 && hora < 18;
+
+  const diaChile = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago',
+    weekday:  'short',
+  }).format(ahora);
+  const esFinDeSemana = diaChile === 'Sat' || diaChile === 'Sun';
+
+  return !esFinDeSemana && hora >= 8 && hora < 18;
 }
 
 // ─── Buscar propiedad por URL ──────────────────────────────────────────────────
