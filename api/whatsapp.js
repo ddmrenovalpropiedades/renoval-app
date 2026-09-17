@@ -55,8 +55,36 @@ function extractUrl(text) {
   return match ? match[0] : null;
 }
 
-// ─── ¿Estamos en horario laboral? (lunes a viernes, 08:00–17:59 hora de Chile) ─
-function esHorarioLaboral() {
+// ─── Feriados de Chile (API pública Boostr, con cache en memoria 24h) ─────────
+let feriadosCache   = null; // Set de fechas 'YYYY-MM-DD'
+let feriadosCacheTs = 0;
+
+async function obtenerFeriadosChile() {
+  const unDiaMs = 24 * 60 * 60 * 1000;
+  if (feriadosCache && (Date.now() - feriadosCacheTs) < unDiaMs) {
+    return feriadosCache;
+  }
+  try {
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch('https://api.boostr.cl/holidays.json', { signal: controller.signal });
+    clearTimeout(timeoutId);
+    const json = await res.json();
+    const fechas = new Set((json.data || []).map(f => f.date));
+    feriadosCache   = fechas;
+    feriadosCacheTs = Date.now();
+    return fechas;
+  } catch (err) {
+    console.error('Error obteniendo feriados de Chile:', err.message);
+    // Si falla, se usa el cache anterior si existe; si no hay, no se bloquea el bot
+    // por esto — simplemente no se detectan feriados hasta que la API vuelva a responder.
+    return feriadosCache || new Set();
+  }
+}
+
+// ─── ¿Estamos en horario laboral? (lunes a viernes, 08:00–17:59 hora de Chile,
+//     excluyendo feriados) ─────────────────────────────────────────────────────
+async function esHorarioLaboral() {
   const ahora = new Date();
 
   const horaChile = new Intl.DateTimeFormat('en-US', {
@@ -73,7 +101,15 @@ function esHorarioLaboral() {
   }).format(ahora);
   const esFinDeSemana = diaChile === 'Sat' || diaChile === 'Sun';
 
-  return !esFinDeSemana && hora >= 8 && hora < 18;
+  const fechaChile = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(ahora); // en-CA da directamente 'YYYY-MM-DD'
+
+  const feriados  = await obtenerFeriadosChile();
+  const esFeriado = feriados.has(fechaChile);
+
+  return !esFinDeSemana && !esFeriado && hora >= 8 && hora < 18;
 }
 
 // ─── Buscar propiedad por URL ──────────────────────────────────────────────────
@@ -273,7 +309,7 @@ module.exports = async function handler(req, res) {
 
       // ── Lógica del bot ────────────────────────────────────────────────────
       const estado        = conversacion.estado;
-      const dentroHorario = esHorarioLaboral();
+      const dentroHorario = await esHorarioLaboral();
       if (estado === 'con_agente') return res.status(200).end();
 
       if (estado === 'esperando_agente') {
