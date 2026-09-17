@@ -205,9 +205,7 @@ function ComponerTab({ profile }) {
   }, [appUsers]);
 
   // ── Placeholders ──
-  const direccionDeshabilitada = destino === 'propietarios';
   const insertPlaceholder = (token) => {
-    if (token === '{{direccion}}' && direccionDeshabilitada) return;
     const ref = focusedField === 'asunto' ? asuntoRef : cuerpoRef;
     const current = focusedField === 'asunto' ? asunto : cuerpo;
     const setter = focusedField === 'asunto' ? setAsunto : setCuerpo;
@@ -263,13 +261,18 @@ function ComponerTab({ profile }) {
         grupos.get(key).propiedades.push(p.propiedad);
       });
       grupos.forEach(g => {
+        const vars = {
+          nombre: toTitleCase(firstName(g.propietario)),
+          nombre_completo: toTitleCase(g.propietario),
+          direccion: g.propiedades.map(dir => toTitleCase(firstAddressSegment(dir))).join(', '),
+        };
         jobs.push({
           to: [g.to],
           from: g.from,
           propietario: g.propietario,
           propiedad: g.propiedades.join(' / '),
-          subject: renderTemplate(asunto, { propietario: g.propietario, direccion: '' }),
-          text: renderTemplate(cuerpo, { propietario: g.propietario, direccion: '' }),
+          subject: renderTemplate(asunto, vars),
+          text: renderTemplate(cuerpo, vars),
         });
       });
     } else {
@@ -290,13 +293,18 @@ function ComponerTab({ profile }) {
           excluidos.push({ propiedad: p.propiedad, motivo: `Remitente ${remitenteModo.toUpperCase()} sin cuenta configurada (${codigo || 'vacío'})` });
           return;
         }
+        const vars = {
+          nombre: toTitleCase(firstName(p.propietario)),
+          nombre_completo: toTitleCase(p.propietario),
+          direccion: toTitleCase(firstAddressSegment(p.propiedad)),
+        };
         jobs.push({
           to,
           from: codigo,
           propietario: p.propietario,
           propiedad: p.propiedad,
-          subject: renderTemplate(asunto, { propietario: p.propietario, direccion: p.propiedad }),
-          text: renderTemplate(cuerpo, { propietario: p.propietario, direccion: p.propiedad }),
+          subject: renderTemplate(asunto, vars),
+          text: renderTemplate(cuerpo, vars),
         });
       });
     }
@@ -304,8 +312,7 @@ function ComponerTab({ profile }) {
     return { jobs, excluidos };
   }, [propiedadesAdministradas, incluidos, destino, remitenteModo, remitenteFijo, asunto, cuerpo]);
 
-  const direccionEnTemplate = containsDireccionToken(asunto) || containsDireccionToken(cuerpo);
-  const puedeRevisar = asunto.trim() && cuerpo.trim() && selectedCount > 0 && !(direccionDeshabilitada && direccionEnTemplate);
+  const puedeRevisar = asunto.trim() && cuerpo.trim() && selectedCount > 0;
 
   const resetComposer = () => {
     setAsunto('');
@@ -404,7 +411,7 @@ function ComponerTab({ profile }) {
               ))}
             </div>
             {destino === 'propietarios' && (
-              <p style={styles.helperText}>Se envía una sola vez por propietario, aunque tenga varias propiedades. No se puede insertar la dirección.</p>
+              <p style={styles.helperText}>Se envía una sola vez por propietario. Si tiene varias propiedades, {'{{direccion}}'} muestra todas (abreviadas hasta la primera coma), separadas por coma.</p>
             )}
           </div>
         </div>
@@ -441,10 +448,9 @@ function ComponerTab({ profile }) {
           <div style={styles.labelWithActions}>
             <label style={styles.label}>Asunto</label>
             <div style={styles.placeholderBtns}>
-              <button onClick={() => insertPlaceholder('{{propietario}}')} style={styles.placeholderBtn}>+ Propietario</button>
-              <button onClick={() => insertPlaceholder('{{direccion}}')} disabled={direccionDeshabilitada}
-                title={direccionDeshabilitada ? 'No disponible cuando el destino es solo Propietarios' : ''}
-                style={{ ...styles.placeholderBtn, ...(direccionDeshabilitada ? styles.placeholderBtnDisabled : {}) }}>+ Dirección</button>
+              <button onClick={() => insertPlaceholder('{{nombre}}')} style={styles.placeholderBtn}>+ Nombre</button>
+              <button onClick={() => insertPlaceholder('{{nombre_completo}}')} style={styles.placeholderBtn}>+ Nombre completo</button>
+              <button onClick={() => insertPlaceholder('{{direccion}}')} style={styles.placeholderBtn}>+ Dirección</button>
             </div>
           </div>
           <input ref={asuntoRef} value={asunto} onChange={e => setAsunto(e.target.value)}
