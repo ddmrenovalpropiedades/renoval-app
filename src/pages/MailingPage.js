@@ -20,12 +20,29 @@ const DESTINO_OPTIONS = [
   { value: 'ambos',            label: 'Ambos' },
 ];
 
-function renderTemplate(template, vars) {
-  return (template || '').replace(/\{\{\s*(propietario|direccion)\s*\}\}/gi, (_, key) => vars[key.toLowerCase()] || '');
+// Convierte "JUAN PEREZ GONZALEZ" (o cualquier combinación de
+// mayúsculas/minúsculas) en "Juan Perez Gonzalez".
+function toTitleCase(str) {
+  return (str || '')
+    .toLowerCase()
+    .replace(/(^|[\s-])([a-záéíóúñü])/g, (m, sep, ch) => sep + ch.toUpperCase());
 }
 
-function containsDireccionToken(text) {
-  return /\{\{\s*direccion\s*\}\}/i.test(text || '');
+// Primer nombre a partir del nombre completo del propietario.
+function firstName(fullName) {
+  const trimmed = (fullName || '').trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/)[0];
+}
+
+// Solo el texto antes de la primera coma de una dirección
+// (ej. "AV LAS CONDES 123, DEPTO 45, LAS CONDES" → "AV LAS CONDES 123").
+function firstAddressSegment(direccion) {
+  return (direccion || '').split(',')[0].trim();
+}
+
+function renderTemplate(template, vars) {
+  return (template || '').replace(/\{\{\s*(nombre_completo|nombre|direccion)\s*\}\}/gi, (_, key) => vars[key.toLowerCase()] || '');
 }
 
 // ── Toggle "Incluir / No Incluir" ─────────────────────────────
