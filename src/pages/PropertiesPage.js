@@ -30,6 +30,7 @@ function PropertyModal({ property, onClose, onSave }) {
     propiedad: property?.propiedad || '',
     propietario: property?.propietario || '',
     mail_propietario: property?.mail_propietario || '',
+    mail_administracion: property?.mail_administracion || '',
     e1: property?.e1 || '',
     e2: property?.e2 || '',
     admin: property?.admin || '',
@@ -53,6 +54,7 @@ function PropertyModal({ property, onClose, onSave }) {
           <div style={styles.field}><label style={styles.label}>Propiedad *</label><input value={form.propiedad} onChange={e => setForm({...form, propiedad: e.target.value})} placeholder="Dirección completa" style={styles.input} autoFocus /></div>
           <div style={styles.field}><label style={styles.label}>Propietario</label><input value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} placeholder="Nombre del propietario" style={styles.input} /></div>
           <div style={styles.field}><label style={styles.label}>Mail propietario</label><input type="email" value={form.mail_propietario} onChange={e => setForm({...form, mail_propietario: e.target.value})} placeholder="correo@ejemplo.com" style={styles.input} /></div>
+          <div style={styles.field}><label style={styles.label}>Mail administración</label><input type="email" value={form.mail_administracion} onChange={e => setForm({...form, mail_administracion: e.target.value})} placeholder="administracion@ejemplo.com" style={styles.input} /></div>
           <div style={styles.fieldRow}>
             <div style={styles.fieldHalf}><label style={styles.label}>Encargado 1 (pagos/dueño)</label><select value={form.e1} onChange={e => setForm({...form, e1: e.target.value})} style={styles.select}><option value="">— Sin asignar —</option>{ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}</select></div>
             <div style={styles.fieldHalf}><label style={styles.label}>Encargado 2 (arriendo)</label><select value={form.e2} onChange={e => setForm({...form, e2: e.target.value})} style={styles.select}><option value="">— Sin asignar —</option>{ENCARGADOS.map(e => <option key={e} value={e}>{e}</option>)}</select></div>
@@ -99,7 +101,7 @@ export default function PropertiesPage() {
 
   const filtered = useMemo(() => {
     let result = properties;
-    if (search.trim()) { const s = search.trim().toLowerCase(); result = result.filter(p => [p.propiedad, p.propietario, p.mail_propietario, p.e1, p.e2].some(v => v && v.toLowerCase().includes(s))); }
+    if (search.trim()) { const s = search.trim().toLowerCase(); result = result.filter(p => [p.propiedad, p.propietario, p.mail_propietario, p.mail_administracion, p.e1, p.e2].some(v => v && v.toLowerCase().includes(s))); }
     if (filterE.length > 0) result = result.filter(p => filterE.every(e => [p.e1, p.e2].filter(Boolean).includes(e)));
     return result;
   }, [properties, search, filterE]);
@@ -133,12 +135,13 @@ export default function PropertiesPage() {
   };
 
   const handleExportCartera = () => exportToExcel(filtered, [
-    { key: 'propiedad',         label: 'Propiedad' },
-    { key: 'propietario',       label: 'Propietario' },
-    { key: 'mail_propietario',  label: 'Mail Propietario' },
-    { key: 'e1',                label: 'E1' },
-    { key: 'e2',                label: 'E2' },
-    { key: 'admin',             label: 'Admin' },
+    { key: 'propiedad',            label: 'Propiedad' },
+    { key: 'propietario',          label: 'Propietario' },
+    { key: 'mail_propietario',     label: 'Mail Propietario' },
+    { key: 'mail_administracion',  label: 'Mail Administración' },
+    { key: 'e1',                   label: 'E1' },
+    { key: 'e2',                   label: 'E2' },
+    { key: 'admin',                label: 'Admin' },
   ], 'Cartera');
 
   return (
@@ -197,18 +200,19 @@ export default function PropertiesPage() {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={{ ...styles.th, width: '28%' }}>PROPIEDAD</th>
-                <th style={{ ...styles.th, width: '16%' }}>PROPIETARIO</th>
-                <th style={{ ...styles.th, width: '18%' }}>MAIL PROP.</th>
-                <th style={{ ...styles.th, width: '7%', textAlign: 'center' }}>E1</th>
-                <th style={{ ...styles.th, width: '7%', textAlign: 'center' }}>E2</th>
-                <th style={{ ...styles.th, width: '7%', textAlign: 'center' }}>ADMIN</th>
+                <th style={{ ...styles.th, width: '20%' }}>PROPIEDAD</th>
+                <th style={{ ...styles.th, width: '13%' }}>PROPIETARIO</th>
+                <th style={{ ...styles.th, width: '15%' }}>MAIL PROP.</th>
+                <th style={{ ...styles.th, width: '15%' }}>MAIL ADMIN.</th>
+                <th style={{ ...styles.th, width: '6%', textAlign: 'center' }}>E1</th>
+                <th style={{ ...styles.th, width: '6%', textAlign: 'center' }}>E2</th>
+                <th style={{ ...styles.th, width: '6%', textAlign: 'center' }}>ADMIN</th>
                 {isOwner && <th style={{ ...styles.th, width: '6%', textAlign: 'center' }}>EDITAR</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={isOwner ? 7 : 6} style={styles.empty}>No se encontraron propiedades con ese criterio.</td></tr>
+                <tr><td colSpan={isOwner ? 8 : 7} style={styles.empty}>No se encontraron propiedades con ese criterio.</td></tr>
               ) : (
                 filtered.map((prop, i) => (
                   <tr key={prop.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}
@@ -221,6 +225,7 @@ export default function PropertiesPage() {
                     </td>
                     <td style={{ ...styles.td, color: '#5f6368' }}>{prop.propietario}</td>
                     <td style={{ ...styles.td, color: '#5f6368' }}>{prop.mail_propietario}</td>
+                    <td style={{ ...styles.td, color: '#5f6368' }}>{prop.mail_administracion}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}><Badge value={prop.e1} /></td>
                     <td style={{ ...styles.td, textAlign: 'center' }}><Badge value={prop.e2} /></td>
                     <td style={{ ...styles.td, textAlign: 'center' }}><AdminBadge value={prop.admin} /></td>
