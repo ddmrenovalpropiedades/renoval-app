@@ -4,7 +4,7 @@ import {
   LayoutGrid, CheckSquare, FileText,
   Zap, Users, LogOut,
   Building2, MessageCircle, CreditCard, Calculator,
-  MoreHorizontal, X, MessageSquare, Calendar,
+  MoreHorizontal, X, MessageSquare, Calendar, Mail,
 } from 'lucide-react';
 import { useMensajes } from '../hooks/useMensajes';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -21,6 +21,7 @@ import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
 import CalculadoraPage from './CalculadoraPage';
 import RespuestasRapidasPage from './RespuestasRapidasPage';
+import MailingPage from './MailingPage';
 
 // ── Nav desktop (sidebar) ─────────────────────────────────────
 const NAV_ITEMS_TOP = [
@@ -31,6 +32,7 @@ const NAV_ITEMS_TOP = [
   { id: 'contratos',  label: 'Documentos', icon: FileText,      ownerOnly: false },
   { id: 'tareas',     label: 'Tareas',     icon: CheckSquare,   ownerOnly: false },
   { id: 'planificacion', label: 'Planificación', icon: Calendar, ownerOnly: false },
+  { id: 'mailing',    label: 'Mailing',    icon: Mail,          ownerOnly: true  },
 ];
 
 const NAV_ITEMS_BOTTOM = [
@@ -53,6 +55,7 @@ const NAV_MOBILE_BOTTOM = [
 // Menú "Más" móvil: todo lo que no está en el bottom nav
 const NAV_MOBILE_MORE = [
   { id: 'planificacion', label: 'Planificación',    icon: Calendar,      ownerOnly: false },
+  { id: 'mailing',    label: 'Mailing',           icon: Mail,          ownerOnly: true  },
   { id: 'arrendadas', label: 'Arrendadas',        icon: Building2,     ownerOnly: false },
   { id: 'servicios',  label: 'Saldos',            icon: Zap,           ownerOnly: false },
   { id: 'pagos',      label: 'Pagos',             icon: CreditCard,    ownerOnly: true  },
@@ -241,6 +244,7 @@ function ModuleRenderer({ module, profile, mensajesHook, isMobile }) {
     case 'servicios':    return <SaldosPage />;
     case 'tareas':       return isMobile ? <TasksPageMobile /> : <TasksPage />;
     case 'planificacion': return <PlanningPage isMobile={isMobile} />;
+    case 'mailing':      return <MailingPage profile={profile} />;
     case 'pagos':        return <PagosPage />;
     case 'mensajes':     return <MensajesPage currentUser={profile} mensajesHook={mensajesHook} />;
     case 'usuarios':     return <UserManagement />;
