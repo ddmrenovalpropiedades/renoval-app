@@ -461,22 +461,14 @@ function ComponerTab({ profile }) {
           <div style={styles.labelWithActions}>
             <label style={styles.label}>Cuerpo del correo</label>
             <div style={styles.placeholderBtns}>
-              <button onClick={() => insertPlaceholder('{{propietario}}')} style={styles.placeholderBtn}>+ Propietario</button>
-              <button onClick={() => insertPlaceholder('{{direccion}}')} disabled={direccionDeshabilitada}
-                title={direccionDeshabilitada ? 'No disponible cuando el destino es solo Propietarios' : ''}
-                style={{ ...styles.placeholderBtn, ...(direccionDeshabilitada ? styles.placeholderBtnDisabled : {}) }}>+ Dirección</button>
+              <button onClick={() => insertPlaceholder('{{nombre}}')} style={styles.placeholderBtn}>+ Nombre</button>
+              <button onClick={() => insertPlaceholder('{{nombre_completo}}')} style={styles.placeholderBtn}>+ Nombre completo</button>
+              <button onClick={() => insertPlaceholder('{{direccion}}')} style={styles.placeholderBtn}>+ Dirección</button>
             </div>
           </div>
           <textarea ref={cuerpoRef} value={cuerpo} onChange={e => setCuerpo(e.target.value)}
             onFocus={() => setFocusedField('cuerpo')} placeholder="Redacta el comunicado..." rows={8} style={styles.textarea} />
         </div>
-
-        {direccionDeshabilitada && direccionEnTemplate && (
-          <div style={styles.warningBanner}>
-            <AlertTriangle size={14} color="#c5221f" />
-            <span>El asunto o el cuerpo contiene {'{{direccion}}'}, pero el destino es solo Propietarios. Quítalo antes de enviar.</span>
-          </div>
-        )}
 
         {preview.jobs.length > 0 && (asunto || cuerpo) && (
           <div style={styles.previewBox}>
