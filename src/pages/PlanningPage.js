@@ -463,7 +463,7 @@ export default function PlanningPage({ isMobile: isMobileProp }) {
       setManaging(true);
       await onManage(email.id);
     };
-    const dateLabel = email.date ? new Date(email.date).toLocaleDateString('es-CL', { day:'2-digit', month:'2-digit' }) : '';
+    const dateLabel = email.date ? new Date(email.date).toLocaleDateString('es-CL', { day:'2-digit', month:'2-digit', year:'numeric' }) : '';
     return (
       <div style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f3f4', opacity: managing ? 0.4 : 1, transition:'opacity 0.15s' }}>
         <button onClick={handleClick} disabled={managing} title="Marcar como gestionado"
