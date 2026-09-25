@@ -79,7 +79,7 @@ function WorkerPanel({ user, onClose }) {
   const [saving, setSaving] = useState(false);
 
   // Formularios
-  const [wForm, setWForm] = useState({ fecha_inicio: '', tipo_contrato: '', fecha_vencimiento_contrato: '', notas: '' });
+  const [wForm, setWForm] = useState({ fecha_inicio: '', tipo_contrato: '', fecha_vencimiento_contrato: '', telefono_personal: '', notas: '' });
   const [newVac, setNewVac] = useState({ fecha_inicio: '', fecha_fin: '', dias_habiles: '', anio: new Date().getFullYear(), notas: '' });
   const [newLic, setNewLic] = useState({ fecha_inicio: '', fecha_fin: '', dias: '', notas: '' });
   const [addingVac, setAddingVac] = useState(false);
@@ -96,6 +96,7 @@ function WorkerPanel({ user, onClose }) {
       fecha_inicio: w?.fecha_inicio || '',
       tipo_contrato: w?.tipo_contrato || '',
       fecha_vencimiento_contrato: w?.fecha_vencimiento_contrato || '',
+      telefono_personal: w?.telefono_personal || '',
       notas: w?.notas || '',
     });
     setVacaciones(v || []);
@@ -216,6 +217,14 @@ function WorkerPanel({ user, onClose }) {
                 <DatePicker value={wForm.fecha_vencimiento_contrato} onChange={v => setWForm(p => ({ ...p, fecha_vencimiento_contrato: v }))} />
               </div>
             )}
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Teléfono personal (WhatsApp)</label>
+              <input value={wForm.telefono_personal} onChange={e => setWForm(p => ({ ...p, telefono_personal: e.target.value }))}
+                style={inputStyle} placeholder="+56 9 1234 5678" />
+              <div style={{ fontSize: 11, color: '#9aa0a6', marginTop: 4 }}>
+                Usado por el bot de WhatsApp para notificar leads derivados desde el módulo de Mensajes.
+              </div>
+            </div>
             <div style={fieldStyle}>
               <label style={labelStyle}>Notas</label>
               <textarea value={wForm.notas} onChange={e => setWForm(p => ({ ...p, notas: e.target.value }))}
