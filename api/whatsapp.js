@@ -404,6 +404,19 @@ module.exports = async function handler(req, res) {
       const entry    = body.entry?.[0];
       const changes  = entry?.changes?.[0];
       const value    = changes?.value;
+      // Los webhooks de "statuses" (sent/delivered/read/failed) llegan aparte de los de
+      // mensajes entrantes. Se loguean para poder diagnosticar fallos de entrega (ej.
+      // mensajes de texto libre rechazados por estar fuera de la ventana de 24h), que de
+      // otra forma son invisibles porque Meta igual devuelve un wamid al enviarlos.
+      const statuses = value?.statuses;
+      if (statuses && statuses.length > 0) {
+        statuses.forEach(s => {
+          console.log('META STATUS UPDATE:', JSON.stringify({
+            id: s.id, status: s.status, recipient_id: s.recipient_id, errors: s.errors || null,
+          }));
+        });
+      }
+
       const messages = value?.messages;
       if (!messages || messages.length === 0) return res.status(200).end();
 
