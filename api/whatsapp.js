@@ -55,6 +55,11 @@ function extractUrl(text) {
   return match ? match[0] : null;
 }
 
+// ─── Dejar solo dígitos de un número de teléfono ──────────────────────────────
+function soloDigitos(str) {
+  return (str || '').replace(/\D/g, '');
+}
+
 // ─── Feriados de Chile (API pública Boostr, con cache en memoria 24h) ─────────
 let feriadosCache   = null; // Set de fechas 'YYYY-MM-DD'
 let feriadosCacheTs = 0;
@@ -152,7 +157,7 @@ async function sendTextMessage(to, text) {
   return data?.messages?.[0]?.id ?? null;
 }
 
-// ─── Enviar menú interactivo ───────────────────────────────────────────────────
+// ─── Enviar menú interactivo principal ─────────────────────────────────────────
 async function sendMenuMessage(to) {
   const res = await fetch(
     `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
@@ -179,6 +184,35 @@ async function sendMenuMessage(to) {
   );
   const data = await res.json();
   console.log('META sendMenuMessage RESPONSE:', JSON.stringify(data));
+  return data?.messages?.[0]?.id ?? null;
+}
+
+// ─── Enviar submenú tras Requisitos (2 opciones restantes) ────────────────────
+async function sendSubmenuRequisitos(to) {
+  const res = await fetch(
+    `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: '¿Cómo te gustaría proceder?' },
+          action: {
+            buttons: [
+              { type: 'reply', reply: { id: 'AGENDAR_VISITA',   title: 'Agendar visita'   } },
+              { type: 'reply', reply: { id: 'HABLAR_EJECUTIVO', title: 'Hablar ejecutivo' } },
+            ],
+          },
+        },
+      }),
+    }
+  );
+  const data = await res.json();
+  console.log('META sendSubmenuRequisitos RESPONSE:', JSON.stringify(data));
   return data?.messages?.[0]?.id ?? null;
 }
 
@@ -224,6 +258,131 @@ async function saveMessage({ conversacionId, wamid, direction, messageType, mess
 // ─── Actualizar estado ────────────────────────────────────────────────────────
 async function updateEstadoConversacion(conversacionId, estado) {
   await supabase.from('wa_conversaciones').update({ estado }).eq('id', conversacionId);
+}
+
+// ─── Obtener el bot_action del último mensaje saliente de una conversación ────
+async function obtenerUltimoBotAction(conversacionId) {
+  const { data } = await supabase
+    .from('wa_mensajes')
+    .select('bot_action')
+    .eq('conversacion_id', conversacionId)
+    .eq('direction', 'outbound')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.bot_action || null;
+}
+
+// ─── Generar resumen de la conversación con Claude ─────────────────────────────
+async function generarResumenConversacion(conversacionId) {
+  try {
+    const { data: mensajes } = await supabase
+      .from('wa_mensajes')
+      .select('direction, message_text, created_at')
+      .eq('conversacion_id', conversacionId)
+      .order('created_at', { ascending: true });
+
+    const transcripcion = (mensajes || [])
+      .filter(m => m.message_text)
+      .map(m => `${m.direction === 'inbound' ? 'Interesado' : 'Bot'}: ${m.message_text}`)
+      .join('\n');
+
+    if (!transcripcion) return 'Sin conversación previa registrada.';
+
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type':      'application/json',
+        'x-api-key':          process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model:      'claude-sonnet-4-5-20250929',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: 'Resume en máximo 3 líneas, en español y en tono directo, la siguiente conversación de ' +
+            'WhatsApp entre un interesado en arrendar una propiedad y un bot de Renoval Propiedades. Incluye ' +
+            'si mencionó su nombre, qué preguntó, y cualquier horario de visita propuesto. No agregues ' +
+            'encabezados ni texto introductorio, solo el resumen.\n\n' + transcripcion,
+        }],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const json    = await res.json();
+    const resumen = json?.content?.[0]?.text?.trim();
+    return resumen || 'No se pudo generar el resumen automático.';
+  } catch (err) {
+    console.error('Error generando resumen con Claude:', err.message);
+    return 'No se pudo generar el resumen automático (revisar conversación completa en el módulo de Mensajes).';
+  }
+}
+
+// ─── Notificar al ejecutivo asignado, con resumen y link para iniciar chat ─────
+async function notificarEjecutivo({ conversacionId, conversacion, from }) {
+  try {
+    if (!conversacion.agent_id) {
+      console.log('Sin ejecutivo asignado, no se envía notificación de derivación. conversacionId:', conversacionId);
+      return;
+    }
+
+    const { data: agente } = await supabase
+      .from('app_users')
+      .select('email, full_name')
+      .eq('id', conversacion.agent_id)
+      .single();
+    if (!agente?.email) return;
+
+    const { data: worker } = await supabase
+      .from('workers')
+      .select('telefono_personal')
+      .eq('user_email', agente.email)
+      .maybeSingle();
+    const telefonoEjecutivo = soloDigitos(worker?.telefono_personal);
+    if (!telefonoEjecutivo) {
+      console.log('Ejecutivo sin teléfono personal registrado, no se envía notificación. email:', agente.email);
+      return;
+    }
+
+    let nombrePropiedad = null;
+    if (conversacion.propiedad_id) {
+      const { data: prop } = await supabase.from('pizarra').select('propiedad').eq('id', conversacion.propiedad_id).single();
+      nombrePropiedad = prop?.propiedad || null;
+    }
+
+    const resumen = await generarResumenConversacion(conversacionId);
+
+    const nombreEjecutivo  = (agente.full_name || '').split(' ')[0] || 'Equipo Renoval';
+    const nombreInteresado = conversacion.contact_name || null;
+    const saludoInicial    = nombreInteresado
+      ? `Hola ${nombreInteresado}! Soy ${nombreEjecutivo} de Renoval Propiedades, te contacto por tu interés en la propiedad que consultaste.`
+      : `Hola! Soy ${nombreEjecutivo} de Renoval Propiedades, te contacto por tu interés en la propiedad que consultaste.`;
+    const linkWa = `https://wa.me/${from}?text=${encodeURIComponent(saludoInicial)}`;
+
+    const textoNotificacion =
+      '🔔 *Nuevo lead derivado*\n\n' +
+      (nombrePropiedad ? `*Propiedad:* ${nombrePropiedad}\n` : '') +
+      (nombreInteresado ? `*Contacto:* ${nombreInteresado} (${from})\n` : `*Contacto:* ${from}\n`) +
+      `\n*Resumen de la conversación:*\n${resumen}\n\n` +
+      `Iniciar conversación: ${linkWa}`;
+
+    await sendTextMessage(telefonoEjecutivo, textoNotificacion);
+  } catch (err) {
+    console.error('Error notificando a ejecutivo:', err.message);
+    // Fail-open: un error aquí no debe afectar la respuesta al interesado.
+  }
+}
+
+// ─── Derivar a ejecutivo: mensaje final al interesado + notificación interna ───
+async function derivarAEjecutivo({ conversacionId, from, conversacion, dentroHorario, textoDentro, textoFuera, botActionDentro, botActionFuera }) {
+  const outText  = dentroHorario ? textoDentro : textoFuera;
+  const outWamid = await sendTextMessage(from, outText);
+  await saveMessage({ conversacionId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: dentroHorario ? botActionDentro : botActionFuera });
+  await updateEstadoConversacion(conversacionId, 'esperando_agente');
+  await notificarEjecutivo({ conversacionId, conversacion, from });
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
@@ -310,6 +469,7 @@ module.exports = async function handler(req, res) {
       // ── Lógica del bot ────────────────────────────────────────────────────
       const estado        = conversacion.estado;
       const dentroHorario = await esHorarioLaboral();
+
       if (estado === 'con_agente') return res.status(200).end();
 
       if (estado === 'esperando_agente') {
@@ -319,42 +479,80 @@ module.exports = async function handler(req, res) {
         return res.status(200).end();
       }
 
-      if (!selectedOption) {
+      // Mensajes de derivación final reutilizados en más de un punto del flujo
+      const MSG_HABLAR_EJECUTIVO_DENTRO = '👤 Perfecto, en breve uno de nuestros ejecutivos se comunicará contigo. ¡Gracias por contactarnos!';
+      const MSG_HABLAR_EJECUTIVO_FUERA  = '👤 Perfecto, uno de nuestros ejecutivos se comunicará contigo en horario laboral para responder a tus consultas. ¡Gracias por contactarnos!';
+      const MSG_AGENDAR_VISITA_DENTRO   = '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!';
+      const MSG_AGENDAR_VISITA_FUERA    = '📅 Pronto podrás agendar tu visita de manera automática aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo en horario laboral para coordinar. ¡Gracias por tu interés!';
+
+      const lastBotAction = await obtenerUltimoBotAction(convId);
+
+      // 1) Primer contacto: aún no se envió ningún menú → enviar menú principal
+      if (!lastBotAction) {
         const outWamid = await sendMenuMessage(from);
         await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'interactive', messageText: 'Menú principal enviado', botAction: 'menu_principal' });
         return res.status(200).end();
       }
 
-      if (selectedOption === 'AGENDAR_VISITA') {
-        const outText = dentroHorario
-          ? '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!'
-          : '📅 Pronto podrás agendar tu visita de manera automática aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo en horario laboral para coordinar. ¡Gracias por tu interés!';
-        const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: dentroHorario ? 'agendar_visita_placeholder' : 'agendar_visita_fuera_horario' });
-        await updateEstadoConversacion(convId, 'esperando_agente');
+      // 2) Se preguntó por horarios de visita → cualquier respuesta deriva
+      if (lastBotAction === 'agendar_visita_horarios_pregunta') {
+        await derivarAEjecutivo({
+          conversacionId: convId, from, conversacion, dentroHorario,
+          textoDentro: MSG_AGENDAR_VISITA_DENTRO, textoFuera: MSG_AGENDAR_VISITA_FUERA,
+          botActionDentro: 'agendar_visita_placeholder', botActionFuera: 'agendar_visita_fuera_horario',
+        });
+        return res.status(200).end();
       }
 
-      if (selectedOption === 'REQUISITOS') {
-        const outText  = '📋 *Requisitos:* (no es necesario enviar documentación previo a una visita)\n' +
-          '- Ganar 3 veces el valor de arriendo (se puede complementar renta con más de una persona)\n' +
-          '- No tener morosidad en Dicom\n' +
-          '- Tener contrato de trabajo indefinido o emitir boleta de honorarios\n' +
-          '- Se solicita mes de garantía y medio mes de corretaje + IVA\n\n' +
-          'En caso de cumplir requisitos (basta con decirme que los cumples) se puede coordinar visita. Si posterior a la visita se desea arrendar, se solicita la documentación.';
-        const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'requisitos' });
-        await updateEstadoConversacion(convId, 'esperando_agente');
+      // 3) Se está esperando selección de un menú (principal o submenú tras Requisitos)
+      const esperandoMenu = lastBotAction === 'menu_principal' || lastBotAction === 'submenu_requisitos';
+
+      if (esperandoMenu) {
+        // Respondió con texto libre en vez de tocar un botón → deriva de inmediato
+        if (!selectedOption) {
+          await derivarAEjecutivo({
+            conversacionId: convId, from, conversacion, dentroHorario,
+            textoDentro: MSG_HABLAR_EJECUTIVO_DENTRO, textoFuera: MSG_HABLAR_EJECUTIVO_FUERA,
+            botActionDentro: 'escalar_agente', botActionFuera: 'escalar_agente_fuera_horario',
+          });
+          return res.status(200).end();
+        }
+
+        if (selectedOption === 'AGENDAR_VISITA') {
+          const outText  = 'Perfecto. ¿Me puedes dar 3 opciones de horario en las que puedas ir a ver la propiedad en los siguientes 7 días?';
+          const outWamid = await sendTextMessage(from, outText);
+          await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: 'agendar_visita_horarios_pregunta' });
+          return res.status(200).end();
+        }
+
+        if (selectedOption === 'REQUISITOS') {
+          const outTextRequisitos  = '📋 *Requisitos:* (no es necesario enviar documentación previo a una visita)\n' +
+            '- Ganar 3 veces el valor de arriendo (se puede complementar renta con más de una persona)\n' +
+            '- No tener morosidad en Dicom\n' +
+            '- Tener contrato de trabajo indefinido o emitir boleta de honorarios\n' +
+            '- Se solicita mes de garantía y medio mes de corretaje + IVA\n\n' +
+            'En caso de cumplir requisitos (basta con decirme que los cumples) se puede coordinar visita. Si posterior a la visita se desea arrendar, se solicita la documentación.';
+          const outWamidRequisitos = await sendTextMessage(from, outTextRequisitos);
+          await saveMessage({ conversacionId: convId, wamid: outWamidRequisitos, direction: 'outbound', messageType: 'text', messageText: outTextRequisitos, botAction: 'requisitos' });
+
+          const outWamidSubmenu = await sendSubmenuRequisitos(from);
+          await saveMessage({ conversacionId: convId, wamid: outWamidSubmenu, direction: 'outbound', messageType: 'interactive', messageText: 'Submenú requisitos enviado', botAction: 'submenu_requisitos' });
+          return res.status(200).end();
+        }
+
+        if (selectedOption === 'HABLAR_EJECUTIVO') {
+          await derivarAEjecutivo({
+            conversacionId: convId, from, conversacion, dentroHorario,
+            textoDentro: MSG_HABLAR_EJECUTIVO_DENTRO, textoFuera: MSG_HABLAR_EJECUTIVO_FUERA,
+            botActionDentro: 'escalar_agente', botActionFuera: 'escalar_agente_fuera_horario',
+          });
+          return res.status(200).end();
+        }
       }
 
-      if (selectedOption === 'HABLAR_EJECUTIVO') {
-        const outText = dentroHorario
-          ? '👤 Perfecto, en breve uno de nuestros ejecutivos se comunicará contigo. ¡Gracias por contactarnos!'
-          : '👤 Perfecto, uno de nuestros ejecutivos se comunicará contigo en horario laboral para responder a tus consultas. ¡Gracias por contactarnos!';
-        const outWamid = await sendTextMessage(from, outText);
-        await saveMessage({ conversacionId: convId, wamid: outWamid, direction: 'outbound', messageType: 'text', messageText: outText, botAction: dentroHorario ? 'escalar_agente' : 'escalar_agente_fuera_horario' });
-        await updateEstadoConversacion(convId, 'esperando_agente');
-      }
-
+      // 4) Cualquier otro caso no contemplado (defensivo): reenviar el menú principal
+      const outWamidFallback = await sendMenuMessage(from);
+      await saveMessage({ conversacionId: convId, wamid: outWamidFallback, direction: 'outbound', messageType: 'interactive', messageText: 'Menú principal enviado', botAction: 'menu_principal' });
       return res.status(200).end();
 
     } catch (err) {
