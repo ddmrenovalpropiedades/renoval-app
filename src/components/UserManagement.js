@@ -107,10 +107,20 @@ function WorkerPanel({ user, onClose }) {
 
   const saveWorker = async () => {
     setSaving(true);
-    if (worker) {
-      await supabase.from('workers').update(wForm).eq('user_email', email);
-    } else {
-      await supabase.from('workers').insert({ user_email: email, ...wForm });
+    // Los campos de fecha vacíos deben ir como null, no como '' (columna tipo date en Postgres)
+    const payload = {
+      ...wForm,
+      fecha_inicio: wForm.fecha_inicio || null,
+      fecha_vencimiento_contrato: wForm.fecha_vencimiento_contrato || null,
+    };
+    const { error } = worker
+      ? await supabase.from('workers').update(payload).eq('user_email', email)
+      : await supabase.from('workers').insert({ user_email: email, ...payload });
+    if (error) {
+      console.error('Error guardando worker:', error.message);
+      alert(`No se pudo guardar: ${error.message}`);
+      setSaving(false);
+      return;
     }
     await load();
     setSaving(false);
