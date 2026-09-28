@@ -216,6 +216,44 @@ async function sendSubmenuRequisitos(to) {
   return data?.messages?.[0]?.id ?? null;
 }
 
+// ─── Enviar plantilla aprobada "notificacion_lead_derivado" (mensaje de negocio,
+//     funciona fuera de la ventana de 24h) ─────────────────────────────────────
+async function sendTemplateNotificacionLead(to, { propiedad, contacto, resumen, link }) {
+  // Las plantillas de WhatsApp no admiten saltos de línea ni espacios múltiples en
+  // los parámetros — se colapsan a un solo espacio para evitar que Meta la rechace.
+  const limpiar = (str) => (str || '').replace(/\s+/g, ' ').trim();
+  const res = await fetch(
+    `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: {
+          name: 'notificacion_lead_derivado',
+          language: { code: 'es' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: limpiar(propiedad) },
+                { type: 'text', text: limpiar(contacto) },
+                { type: 'text', text: limpiar(resumen) },
+                { type: 'text', text: limpiar(link) },
+              ],
+            },
+          ],
+        },
+      }),
+    }
+  );
+  const data = await res.json();
+  console.log('META sendTemplateNotificacionLead RESPONSE:', JSON.stringify(data));
+  return data?.messages?.[0]?.id ?? null;
+}
+
 // ─── Obtener o crear conversación ─────────────────────────────────────────────
 async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch) {
   const { data: existing } = await supabase
@@ -362,14 +400,12 @@ async function notificarEjecutivo({ conversacionId, conversacion, from }) {
       : `Hola! Soy ${nombreEjecutivo} de Renoval Propiedades, te contacto por tu interés en la propiedad que consultaste.`;
     const linkWa = `https://wa.me/${from}?text=${encodeURIComponent(saludoInicial)}`;
 
-    const textoNotificacion =
-      '🔔 *Nuevo lead derivado*\n\n' +
-      (nombrePropiedad ? `*Propiedad:* ${nombrePropiedad}\n` : '') +
-      (nombreInteresado ? `*Contacto:* ${nombreInteresado} (${from})\n` : `*Contacto:* ${from}\n`) +
-      `\n*Resumen de la conversación:*\n${resumen}\n\n` +
-      `Iniciar conversación: ${linkWa}`;
-
-    await sendTextMessage(telefonoEjecutivo, textoNotificacion);
+    await sendTemplateNotificacionLead(telefonoEjecutivo, {
+      propiedad: nombrePropiedad || 'No identificada',
+      contacto:  nombreInteresado ? `${nombreInteresado} (${from})` : from,
+      resumen,
+      link:      linkWa,
+    });
   } catch (err) {
     console.error('Error notificando a ejecutivo:', err.message);
     // Fail-open: un error aquí no debe afectar la respuesta al interesado.
