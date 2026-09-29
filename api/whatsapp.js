@@ -1,6 +1,7 @@
 // api/whatsapp.js
 const { createClient } = require('@supabase/supabase-js');
 const webpush = require('web-push');
+const crypto = require('crypto');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -34,11 +35,16 @@ async function sendPushImmediate(subs, payload) {
   );
 }
 
-// ─── Disparar cálculo de badge real en background ─────────────────────────────
-function triggerBadgeUpdate(agentEmail, agentId, payload, sendToAll) {
-  const baseUrl = process.env.VERCEL_URL
+// ─── URL base del deployment (para links propios, ej. redirectores cortos) ─────
+function getBaseUrl() {
+  return process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : 'https://renoval-app.vercel.app';
+}
+
+// ─── Disparar cálculo de badge real en background ─────────────────────────────
+function triggerBadgeUpdate(agentEmail, agentId, payload, sendToAll) {
+  const baseUrl = getBaseUrl();
 
   fetch(`${baseUrl}/api/send-push-badge`, {
     method:  'POST',
@@ -58,6 +64,17 @@ function extractUrl(text) {
 // ─── Dejar solo dígitos de un número de teléfono ──────────────────────────────
 function soloDigitos(str) {
   return (str || '').replace(/\D/g, '');
+}
+
+// ─── Generar un código corto (sin caracteres ambiguos) para links propios ─────
+const ALFABETO_CODIGO_CORTO = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+function generarCodigoCorto(longitud = 7) {
+  const bytes = crypto.randomBytes(longitud);
+  let codigo = '';
+  for (let i = 0; i < longitud; i++) {
+    codigo += ALFABETO_CODIGO_CORTO[bytes[i] % ALFABETO_CODIGO_CORTO.length];
+  }
+  return codigo;
 }
 
 // ─── Feriados de Chile (API pública Boostr, con cache en memoria 24h) ─────────
@@ -117,21 +134,34 @@ async function esHorarioLaboral() {
   return !esFinDeSemana && !esFeriado && hora >= 8 && hora < 18;
 }
 
-// ─── Buscar propiedad por URL ──────────────────────────────────────────────────
+// ─── Buscar propiedad por URL (revisa Pizarra Arriendo y Pizarra Venta) ────────
 async function findPropiedadByUrl(url) {
   if (!url) return null;
   const urlNorm = url.split('?')[0].replace(/\/$/, '').toLowerCase();
-  const { data: propiedades } = await supabase
-    .from('pizarra')
-    .select('id, propiedad, e1, e2, url_publicacion, conv_asignar_a')
-    .not('url_publicacion', 'is', null);
-  if (!propiedades || propiedades.length === 0) return null;
-  const match = propiedades.find(p => {
-    if (!p.url_publicacion) return false;
-    const pNorm = p.url_publicacion.split('?')[0].replace(/\/$/, '').toLowerCase();
-    return pNorm === urlNorm;
-  });
+
+  const buscarEnTabla = async (tabla) => {
+    const { data: propiedades } = await supabase
+      .from(tabla)
+      .select('id, propiedad, e1, e2, url_publicacion, conv_asignar_a')
+      .not('url_publicacion', 'is', null);
+    if (!propiedades || propiedades.length === 0) return null;
+    return propiedades.find(p => {
+      if (!p.url_publicacion) return false;
+      const pNorm = p.url_publicacion.split('?')[0].replace(/\/$/, '').toLowerCase();
+      return pNorm === urlNorm;
+    }) || null;
+  };
+
+  // Se busca primero en Pizarra Arriendo y, si no hay match, en Pizarra Venta —
+  // ambas tablas asignan ejecutivo (e1/e2) y link de publicación de la misma forma.
+  let match = await buscarEnTabla('pizarra');
+  let tabla = 'pizarra';
+  if (!match) {
+    match = await buscarEnTabla('pizarra_ventas');
+    tabla = 'pizarra_ventas';
+  }
   if (!match) return null;
+
   const asignarA  = match.conv_asignar_a || 'e2';
   const iniciales = asignarA === 'e1' ? match.e1 : match.e2;
   let agentId = null;
@@ -139,7 +169,7 @@ async function findPropiedadByUrl(url) {
     const { data: agente } = await supabase.from('app_users').select('id').eq('iniciales', iniciales).single();
     agentId = agente?.id || null;
   }
-  return { propiedadId: match.id, propiedad: match.propiedad, iniciales, agentId };
+  return { propiedadId: match.id, propiedad: match.propiedad, iniciales, agentId, tabla };
 }
 
 // ─── Enviar mensaje de texto ───────────────────────────────────────────────────
@@ -268,11 +298,12 @@ async function getOrCreateConversacion(phoneNumber, contactName, propiedadMatch)
   const { data: nueva, error } = await supabase
     .from('wa_conversaciones')
     .insert({
-      phone_number:  phoneNumber,
-      contact_name:  contactName || null,
-      estado:        'bot_activo',
-      propiedad_id:  propiedadMatch?.propiedadId || null,
-      agent_id:      propiedadMatch?.agentId     || null,
+      phone_number:    phoneNumber,
+      contact_name:    contactName || null,
+      estado:          'bot_activo',
+      propiedad_id:    propiedadMatch?.propiedadId || null,
+      agent_id:        propiedadMatch?.agentId     || null,
+      propiedad_tabla: propiedadMatch?.tabla       || null,
     })
     .select().single();
   if (error) throw new Error(`Error creando conversación: ${error.message}`);
@@ -342,8 +373,13 @@ async function generarResumenConversacion(conversacionId) {
         messages: [{
           role: 'user',
           content: 'Resume en máximo 3 líneas, en español y en tono directo, la siguiente conversación de ' +
-            'WhatsApp entre un interesado en arrendar una propiedad y un bot de Renoval Propiedades. Incluye ' +
-            'si mencionó su nombre, qué preguntó, y cualquier horario de visita propuesto. No agregues ' +
+            'WhatsApp entre un interesado en una propiedad y el bot de atención de Renoval Propiedades. ' +
+            'El resumen debe indicar qué opciones del menú fue seleccionando el interesado (por ejemplo: ' +
+            'Agendar visita, Requisitos, Hablar con ejecutivo), cualquier pregunta específica que haya hecho, ' +
+            'y cualquier horario de visita que haya propuesto. NO menciones el nombre del interesado (ya ' +
+            'aparece por separado en la notificación). NO menciones detalles de la propiedad ni del ' +
+            'departamento (dormitorios, estacionamiento, bodega, portal, dirección, etc.), ya que el ejecutivo ' +
+            'ya conoce la propiedad y esa información ya aparece en otra parte del mensaje. No agregues ' +
             'encabezados ni texto introductorio, solo el resumen.\n\n' + transcripcion,
         }],
       }),
@@ -357,6 +393,13 @@ async function generarResumenConversacion(conversacionId) {
     console.error('Error generando resumen con Claude:', err.message);
     return 'No se pudo generar el resumen automático (revisar conversación completa en el módulo de Mensajes).';
   }
+}
+
+// ─── Obtener el primer nombre del ejecutivo asignado a una conversación ───────
+async function obtenerNombreEjecutivo(agentId) {
+  if (!agentId) return null;
+  const { data: agente } = await supabase.from('app_users').select('full_name').eq('id', agentId).single();
+  return (agente?.full_name || '').split(' ')[0] || null;
 }
 
 // ─── Notificar al ejecutivo asignado, con resumen y link para iniciar chat ─────
@@ -387,7 +430,8 @@ async function notificarEjecutivo({ conversacionId, conversacion, from }) {
 
     let nombrePropiedad = null;
     if (conversacion.propiedad_id) {
-      const { data: prop } = await supabase.from('pizarra').select('propiedad').eq('id', conversacion.propiedad_id).single();
+      const tablaPropiedad = conversacion.propiedad_tabla === 'pizarra_ventas' ? 'pizarra_ventas' : 'pizarra';
+      const { data: prop } = await supabase.from(tablaPropiedad).select('propiedad').eq('id', conversacion.propiedad_id).single();
       nombrePropiedad = prop?.propiedad || null;
     }
 
@@ -398,7 +442,20 @@ async function notificarEjecutivo({ conversacionId, conversacion, from }) {
     const saludoInicial    = nombreInteresado
       ? `Hola ${nombreInteresado}! Soy ${nombreEjecutivo} de Renoval Propiedades, te contacto por tu interés en la propiedad que consultaste.`
       : `Hola! Soy ${nombreEjecutivo} de Renoval Propiedades, te contacto por tu interés en la propiedad que consultaste.`;
-    const linkWa = `https://wa.me/${from}?text=${encodeURIComponent(saludoInicial)}`;
+
+    // Link corto propio (en vez del wa.me largo): además de acortar el texto de la
+    // plantilla, permite registrar cuándo el ejecutivo lo abre (wa_links.clicked_at),
+    // que es la señal que se usa para medir tiempo de respuesta en Métricas.
+    const codigoLink = generarCodigoCorto();
+    const { error: linkError } = await supabase.from('wa_links').insert({
+      id:               codigoLink,
+      conversacion_id:  conversacionId,
+      agent_id:         conversacion.agent_id,
+      telefono_destino: from,
+      mensaje:          saludoInicial,
+    });
+    if (linkError) console.error('Error creando wa_links:', linkError.message);
+    const linkWa = `${getBaseUrl()}/l/${codigoLink}`;
 
     await sendTemplateNotificacionLead(telefonoEjecutivo, {
       propiedad: nombrePropiedad || 'No identificada',
@@ -489,8 +546,14 @@ module.exports = async function handler(req, res) {
 
       if (propiedadMatch && !conversacion.propiedad_id) {
         await supabase.from('wa_conversaciones')
-          .update({ propiedad_id: propiedadMatch.propiedadId, agent_id: propiedadMatch.agentId || conversacion.agent_id })
+          .update({
+            propiedad_id:    propiedadMatch.propiedadId,
+            agent_id:        propiedadMatch.agentId || conversacion.agent_id,
+            propiedad_tabla: propiedadMatch.tabla,
+          })
           .eq('id', convId);
+        // Se mantiene en memoria para el resto de este request (ej. notificarEjecutivo).
+        conversacion.propiedad_tabla = propiedadMatch.tabla;
       }
 
       await saveMessage({ conversacionId: convId, wamid, direction: 'inbound', messageType: inboundType, messageText: inboundText });
@@ -531,8 +594,6 @@ module.exports = async function handler(req, res) {
       // Mensajes de derivación final reutilizados en más de un punto del flujo
       const MSG_HABLAR_EJECUTIVO_DENTRO = '👤 Perfecto, en breve uno de nuestros ejecutivos se comunicará contigo. ¡Gracias por contactarnos!';
       const MSG_HABLAR_EJECUTIVO_FUERA  = '👤 Perfecto, uno de nuestros ejecutivos se comunicará contigo en horario laboral para responder a tus consultas. ¡Gracias por contactarnos!';
-      const MSG_AGENDAR_VISITA_DENTRO   = '📅 Pronto podrás agendar tu visita directamente aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo para coordinar. ¡Gracias por tu interés!';
-      const MSG_AGENDAR_VISITA_FUERA    = '📅 Pronto podrás agendar tu visita de manera automática aquí.\nPor ahora, un ejecutivo se pondrá en contacto contigo en horario laboral para coordinar. ¡Gracias por tu interés!';
 
       const lastBotAction = await obtenerUltimoBotAction(convId);
 
@@ -545,9 +606,12 @@ module.exports = async function handler(req, res) {
 
       // 2) Se preguntó por horarios de visita → cualquier respuesta deriva
       if (lastBotAction === 'agendar_visita_horarios_pregunta') {
+        const nombreEjecutivo    = (await obtenerNombreEjecutivo(conversacion.agent_id)) || 'Un ejecutivo';
+        const textoAgendarDentro = `📅  ${nombreEjecutivo} se pondrá en contacto contigo en breve para coordinar la visita. ¡Gracias por tu interés!`;
+        const textoAgendarFuera  = `📅  ${nombreEjecutivo} se pondrá en contacto contigo en horario laboral para coordinar la visita. ¡Gracias por tu interés!`;
         await derivarAEjecutivo({
           conversacionId: convId, from, conversacion, dentroHorario,
-          textoDentro: MSG_AGENDAR_VISITA_DENTRO, textoFuera: MSG_AGENDAR_VISITA_FUERA,
+          textoDentro: textoAgendarDentro, textoFuera: textoAgendarFuera,
           botActionDentro: 'agendar_visita_placeholder', botActionFuera: 'agendar_visita_fuera_horario',
         });
         return res.status(200).end();
