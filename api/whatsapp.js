@@ -455,7 +455,7 @@ async function notificarEjecutivo({ conversacionId, conversacion, from }) {
       mensaje:          saludoInicial,
     });
     if (linkError) console.error('Error creando wa_links:', linkError.message);
-    const linkWa = `${getBaseUrl()}/l/${codigoLink}`;
+    const linkWa = `${getBaseUrl()}/api/whatsapp?l=${codigoLink}`;
 
     await sendTemplateNotificacionLead(telefonoEjecutivo, {
       propiedad: nombrePropiedad || 'No identificada',
@@ -482,6 +482,25 @@ async function derivarAEjecutivo({ conversacionId, from, conversacion, dentroHor
 module.exports = async function handler(req, res) {
 
   if (req.method === 'GET') {
+    // Redirección del link corto de derivación (ver wa_links / notificarEjecutivo).
+    // Se resuelve acá mismo, reutilizando esta función, para no sumar una Serverless
+    // Function nueva en Vercel (el plan Hobby tiene tope de 12 por deployment).
+    const codigoLink = req.query.l;
+    if (codigoLink) {
+      const { data: link } = await supabase
+        .from('wa_links')
+        .select('telefono_destino, mensaje, clicked_at')
+        .eq('id', codigoLink)
+        .maybeSingle();
+      if (!link) return res.status(404).send('Link no encontrado o expirado');
+      if (!link.clicked_at) {
+        await supabase.from('wa_links').update({ clicked_at: new Date().toISOString() }).eq('id', codigoLink);
+      }
+      const urlDestino = `https://wa.me/${link.telefono_destino}${link.mensaje ? `?text=${encodeURIComponent(link.mensaje)}` : ''}`;
+      res.writeHead(302, { Location: urlDestino });
+      return res.end();
+    }
+
     const mode      = req.query['hub.mode'];
     const token     = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
