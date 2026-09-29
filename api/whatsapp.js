@@ -35,11 +35,21 @@ async function sendPushImmediate(subs, payload) {
   );
 }
 
-// ─── URL base del deployment (para links propios, ej. redirectores cortos) ─────
+// ─── URL base del deployment (para llamadas internas servidor-a-servidor) ─────
 function getBaseUrl() {
   return process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : 'https://renoval-app.vercel.app';
+}
+
+// ─── URL pública y estable de la app (para links que abre gente fuera de
+//     Vercel, ej. el link corto de derivación al ejecutivo). A propósito NO usa
+//     VERCEL_URL: esa variable apunta a la URL única de CADA deployment, que en
+//     Vercel puede quedar detrás de "Deployment Protection" y pedir login antes
+//     de dejar pasar — por eso el link terminaba en vercel.com/login. Acá se usa
+//     siempre el dominio público fijo (el mismo con el que se entra a la app).
+function getPublicBaseUrl() {
+  return process.env.PUBLIC_APP_URL || 'https://renoval-app.vercel.app';
 }
 
 // ─── Disparar cálculo de badge real en background ─────────────────────────────
@@ -455,7 +465,18 @@ async function notificarEjecutivo({ conversacionId, conversacion, from }) {
       mensaje:          saludoInicial,
     });
     if (linkError) console.error('Error creando wa_links:', linkError.message);
-    const linkWa = `${getBaseUrl()}/api/whatsapp?l=${codigoLink}`;
+    // El proyecto tiene "Deployment Protection: Standard Protection" activo en
+    // Vercel, que exige login a cualquiera sin sesión — por eso el link terminaba
+    // en vercel.com/login. En vez de desactivar la protección para todo el
+    // proyecto, se agrega el secreto de "Protection Bypass for Automation" en la
+    // URL para que este link puntual la salte (ver instrucciones de Vercel).
+    const bypassParam = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      ? `&x-vercel-protection-bypass=${process.env.VERCEL_AUTOMATION_BYPASS_SECRET}&x-vercel-set-bypass-cookie=true`
+      : '';
+    // Log temporal de diagnóstico — quitar una vez confirmado que el link funciona.
+    console.log('VERCEL_AUTOMATION_BYPASS_SECRET presente:', !!process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
+    const linkWa = `${getPublicBaseUrl()}/api/whatsapp?l=${codigoLink}${bypassParam}`;
+    console.log('Link de derivación generado:', linkWa);
 
     await sendTemplateNotificacionLead(telefonoEjecutivo, {
       propiedad: nombrePropiedad || 'No identificada',
