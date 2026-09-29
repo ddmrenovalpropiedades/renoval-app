@@ -52,6 +52,15 @@ function getPublicBaseUrl() {
   return process.env.PUBLIC_APP_URL || 'https://renoval-app.vercel.app';
 }
 
+// ─── Dominio del mini-proyecto separado que resuelve el link corto de
+//     derivación (renoval-links). Vive fuera del dominio de renoval-app a
+//     propósito: renoval-app está instalada como PWA en los teléfonos de los
+//     ejecutivos, y Android intercepta cualquier link a ese dominio abriéndolo
+//     dentro de la PWA en vez del navegador, lo que rompe el salto a WhatsApp.
+function getLinksBaseUrl() {
+  return process.env.LINKS_APP_URL || 'https://renoval-links.vercel.app';
+}
+
 // ─── Disparar cálculo de badge real en background ─────────────────────────────
 function triggerBadgeUpdate(agentEmail, agentId, payload, sendToAll) {
   const baseUrl = getBaseUrl();
@@ -465,18 +474,18 @@ async function notificarEjecutivo({ conversacionId, conversacion, from }) {
       mensaje:          saludoInicial,
     });
     if (linkError) console.error('Error creando wa_links:', linkError.message);
-    // El proyecto tiene "Deployment Protection: Standard Protection" activo en
-    // Vercel, que exige login a cualquiera sin sesión — por eso el link terminaba
-    // en vercel.com/login. En vez de desactivar la protección para todo el
-    // proyecto, se agrega el secreto de "Protection Bypass for Automation" en la
-    // URL para que este link puntual la salte (ver instrucciones de Vercel).
-    const bypassParam = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-      ? `&x-vercel-protection-bypass=${process.env.VERCEL_AUTOMATION_BYPASS_SECRET}&x-vercel-set-bypass-cookie=true`
+    // El link corto se resuelve en el proyecto separado "renoval-links" (fuera
+    // de la PWA de renoval-app, ver getLinksBaseUrl). Ese proyecto también tiene
+    // "Deployment Protection: Standard Protection" activo, así que se agrega su
+    // secreto de "Protection Bypass for Automation" en la URL para saltarla.
+    // OJO: es el secreto DEL PROYECTO renoval-links, no el de este proyecto —
+    // por eso se lee de LINKS_BYPASS_SECRET (variable propia, agregada a mano
+    // acá en renoval-app con el valor copiado desde el otro proyecto), y no de
+    // VERCEL_AUTOMATION_BYPASS_SECRET (que aquí sería el de renoval-app).
+    const bypassParam = process.env.LINKS_BYPASS_SECRET
+      ? `&x-vercel-protection-bypass=${process.env.LINKS_BYPASS_SECRET}&x-vercel-set-bypass-cookie=true`
       : '';
-    // Log temporal de diagnóstico — quitar una vez confirmado que el link funciona.
-    console.log('VERCEL_AUTOMATION_BYPASS_SECRET presente:', !!process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
-    const linkWa = `${getPublicBaseUrl()}/api/whatsapp?l=${codigoLink}${bypassParam}`;
-    console.log('Link de derivación generado:', linkWa);
+    const linkWa = `${getLinksBaseUrl()}/api?l=${codigoLink}${bypassParam}`;
 
     await sendTemplateNotificacionLead(telefonoEjecutivo, {
       propiedad: nombrePropiedad || 'No identificada',
