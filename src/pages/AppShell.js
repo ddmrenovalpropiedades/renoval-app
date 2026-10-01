@@ -4,7 +4,7 @@ import {
   LayoutGrid, CheckSquare, FileText,
   Zap, Users, LogOut,
   Building2, MessageCircle, CreditCard, Calculator,
-  MoreHorizontal, X, MessageSquare, Calendar, Mail,
+  MoreHorizontal, X, Calendar, Mail, Wrench,
 } from 'lucide-react';
 import { useMensajes } from '../hooks/useMensajes';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -20,7 +20,7 @@ import SaldosPage from './SaldosPage';
 import PagosPage from './PagosPage';
 import MensajesPage from './MensajesPage';
 import CalculadoraPage from './CalculadoraPage';
-import RespuestasRapidasPage from './RespuestasRapidasPage';
+import ProveedoresPage from './ProveedoresPage';
 import MailingPage from './MailingPage';
 
 // ── Nav desktop (sidebar) ─────────────────────────────────────
@@ -39,7 +39,7 @@ const NAV_ITEMS_BOTTOM = [
   { id: 'pagos',       label: 'Pagos',             icon: CreditCard,    ownerOnly: true  },
   { id: 'calculadora', label: 'Calculadora',        icon: Calculator,    ownerOnly: false },
   { id: 'cartera',     label: 'Cartera',            icon: Building2,     ownerOnly: false },
-  { id: 'respuestas',  label: 'Respuestas Rápidas', icon: MessageSquare, ownerOnly: true  },
+  { id: 'proveedores', label: 'Proveedores',        icon: Wrench,        ownerOnly: false },
   { id: 'usuarios',    label: 'Usuarios',           icon: Users,         ownerOnly: true  },
 ];
 
@@ -61,7 +61,7 @@ const NAV_MOBILE_MORE = [
   { id: 'pagos',      label: 'Pagos',             icon: CreditCard,    ownerOnly: true  },
   { id: 'calculadora',label: 'Calculadora',       icon: Calculator,    ownerOnly: false },
   { id: 'cartera',    label: 'Cartera',           icon: Building2,     ownerOnly: false },
-  { id: 'respuestas', label: 'Respuestas Rápidas',icon: MessageSquare, ownerOnly: true  },
+  { id: 'proveedores',label: 'Proveedores',       icon: Wrench,        ownerOnly: false },
   { id: 'usuarios',   label: 'Usuarios',          icon: Users,         ownerOnly: true  },
 ];
 
@@ -249,7 +249,7 @@ function ModuleRenderer({ module, profile, mensajesHook, isMobile }) {
     case 'mensajes':     return <MensajesPage currentUser={profile} mensajesHook={mensajesHook} />;
     case 'usuarios':     return <UserManagement />;
     case 'calculadora':  return <CalculadoraPage />;
-    case 'respuestas':   return <RespuestasRapidasPage />;
+    case 'proveedores':  return <ProveedoresPage />;
     default:             return <ComingSoon module={module} />;
   }
 }
