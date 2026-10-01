@@ -1,21 +1,26 @@
 import { useState } from 'react';
-import { FileText, Shield } from 'lucide-react';
+import { FileText, Shield, FlaskConical } from 'lucide-react';
 import ContratoGeneratorPage from './ContratoGeneratorPage';
 import GarantiaPage from './GarantiaPage';
+import ContratosV2Page from './ContratosV2Page';
+import useEsAdminDocs from '../lib/plantillas/useEsAdminDocs';
 
 const TABS = [
   { id: 'contratos', label: 'Contratos de arriendo',   icon: FileText },
   { id: 'garantia',  label: 'Liquidación de garantía', icon: Shield },
+  { id: 'v2',        label: 'Contratos v2 (beta)',     icon: FlaskConical, soloAdmin: true },
 ];
 
 export default function ContratosPage() {
   const [activeTab, setActiveTab] = useState('contratos');
+  const esAdmin = useEsAdminDocs();
+  const tabs = TABS.filter(tab => !tab.soloAdmin || esAdmin);
 
   return (
     <div style={styles.wrapper}>
       {/* Tab bar */}
       <div style={styles.tabBar}>
-        {TABS.map(tab => {
+        {tabs.map(tab => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
           return (
@@ -38,6 +43,7 @@ export default function ContratosPage() {
       <div style={styles.content}>
         {activeTab === 'contratos' && <ContratoGeneratorPage />}
         {activeTab === 'garantia'  && <GarantiaPage />}
+        {activeTab === 'v2' && esAdmin && <ContratosV2Page />}
       </div>
     </div>
   );
