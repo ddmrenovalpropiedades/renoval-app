@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ConversacionesList from '../components/mensajes/ConversacionesList';
 import HiloConversacion from '../components/mensajes/HiloConversacion';
 import MetricasPage from './MetricasPage';
+import RespuestasRapidasPage from './RespuestasRapidasPage';
 import { exportMensajes } from '../hooks/exportMensajes';
 import { Download, ArrowLeft } from 'lucide-react';
 
@@ -15,8 +16,8 @@ function useIsMobile() {
   return isMobile;
 }
 
-// ─── Pestañas Mensajes / Métricas, reutilizadas en el header móvil y PC ───────
-function TabsMensajeria({ vista, onChange, dark }) {
+// ─── Pestañas Mensajes / Métricas / Respuestas, reutilizadas en móvil y PC ────
+function TabsMensajeria({ vista, onChange, dark, mostrarRespuestas }) {
   const base = {
     padding: '6px 14px',
     borderRadius: 8,
@@ -39,9 +40,12 @@ function TabsMensajeria({ vista, onChange, dark }) {
   });
 
   return (
-    <div style={{ display: 'flex', gap: 6 }}>
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       <button style={estiloTab('mensajes')} onClick={() => onChange('mensajes')}>Mensajes</button>
       <button style={estiloTab('metricas')} onClick={() => onChange('metricas')}>Métricas</button>
+      {mostrarRespuestas && (
+        <button style={estiloTab('respuestas')} onClick={() => onChange('respuestas')}>Respuestas rápidas</button>
+      )}
     </div>
   );
 }
@@ -68,8 +72,10 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
   } = mensajesHook;
 
   const [exporting, setExporting] = useState(false);
-  const [vista, setVista] = useState('mensajes'); // 'mensajes' | 'metricas'
+  const [vista, setVista] = useState('mensajes'); // 'mensajes' | 'metricas' | 'respuestas'
   const isMobile = useIsMobile();
+  // Respuestas rápidas: solo owners (mismo permiso que tenía en el menú principal)
+  const puedeEditarRespuestas = !!currentUser?.isOwner;
 
   const handleExport = async () => {
     setExporting(true);
@@ -129,7 +135,7 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
             </div>
           </div>
         ) : (
-          // ── Lista de conversaciones o Métricas, en móvil ─────────────────
+          // ── Lista de conversaciones, Métricas o Respuestas, en móvil ─────
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {/* Header */}
             <div style={{
@@ -139,7 +145,7 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
               flexShrink: 0,
               flexWrap: 'wrap',
             }}>
-              <TabsMensajeria vista={vista} onChange={setVista} dark />
+              <TabsMensajeria vista={vista} onChange={setVista} dark mostrarRespuestas={puedeEditarRespuestas} />
               {vista === 'mensajes' && (
                 <button
                   onClick={handleExport}
@@ -162,6 +168,8 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
             <div style={{ flex: 1, overflow: 'auto' }}>
               {vista === 'metricas' ? (
                 <MetricasPage />
+              ) : vista === 'respuestas' && puedeEditarRespuestas ? (
+                <RespuestasRapidasPage />
               ) : (
                 <ConversacionesList
                   conversaciones={conversaciones}
@@ -195,7 +203,7 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ fontWeight: 700, fontSize: 16, color: '#202124' }}>Mensajería</span>
-          <TabsMensajeria vista={vista} onChange={setVista} />
+          <TabsMensajeria vista={vista} onChange={setVista} mostrarRespuestas={puedeEditarRespuestas} />
         </div>
         {vista === 'mensajes' && (
           <button
@@ -221,6 +229,10 @@ export default function MensajesPage({ currentUser, mensajesHook }) {
       {vista === 'metricas' ? (
         <div style={{ flex: 1, overflow: 'auto' }}>
           <MetricasPage />
+        </div>
+      ) : vista === 'respuestas' && puedeEditarRespuestas ? (
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <RespuestasRapidasPage />
         </div>
       ) : (
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
