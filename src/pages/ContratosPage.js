@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { FileText, Shield, FlaskConical } from 'lucide-react';
 import ContratoGeneratorPage from './ContratoGeneratorPage';
 import GarantiaPage from './GarantiaPage';
-import ContratosV2Page from './ContratosV2Page';
 import useEsAdminDocs from '../lib/plantillas/useEsAdminDocs';
+
+// Carga diferida: el editor (TipTap) solo se descarga al abrir la tab v2
+const ContratosV2Page = lazy(() => import('./ContratosV2Page'));
 
 const TABS = [
   { id: 'contratos', label: 'Contratos de arriendo',   icon: FileText },
@@ -43,7 +45,11 @@ export default function ContratosPage() {
       <div style={styles.content}>
         {activeTab === 'contratos' && <ContratoGeneratorPage />}
         {activeTab === 'garantia'  && <GarantiaPage />}
-        {activeTab === 'v2' && esAdmin && <ContratosV2Page />}
+        {activeTab === 'v2' && esAdmin && (
+          <Suspense fallback={<div style={styles.cargando}>Cargando…</div>}>
+            <ContratosV2Page />
+          </Suspense>
+        )}
       </div>
     </div>
   );
@@ -86,6 +92,11 @@ const styles = {
     background: '#f0f4ff',
   },
   tabBtnInactive: {
+    color: '#5f6368',
+  },
+  cargando: {
+    padding: 24,
+    fontSize: 13,
     color: '#5f6368',
   },
   content: {
