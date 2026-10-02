@@ -185,6 +185,89 @@ function InlineSelect({ value, options, onChange }) {
   );
 }
 
+// ── Proveedor: texto libre con lista de proveedores registrados ──
+// Filtra por nombre o actividad mientras se escribe; cada opción muestra el
+// nombre y, debajo en gris, la actividad. Se guarda el nombre como texto.
+function ProveedorInput({ value, proveedores, onCommit, bordered = false, autoFocus = false }) {
+  const [editing, setEditing] = useState(bordered || autoFocus);
+  const [texto, setTexto] = useState(value || '');
+  const [abierto, setAbierto] = useState(false);
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => { setTexto(value || ''); }, [value]);
+
+  const opciones = React.useMemo(() => {
+    const q = normalize(texto.trim());
+    const lista = q
+      ? proveedores.filter(p => normalize(p.nombre).includes(q) || normalize(p.actividad || '').includes(q))
+      : proveedores;
+    return lista.slice(0, 50);
+  }, [texto, proveedores]);
+
+  const elegir = (nombre) => {
+    setTexto(nombre);
+    setAbierto(false);
+    if (!bordered) setEditing(false);
+    if (nombre !== (value || '')) onCommit(nombre);
+  };
+
+  const commitTexto = () => {
+    setAbierto(false);
+    if (!bordered) setEditing(false);
+    const limpio = texto.trim().toUpperCase();
+    if (limpio !== (value || '')) onCommit(limpio || null);
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setAbierto(true); setIdx(i => Math.min(i + 1, opciones.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (abierto && opciones[idx]) elegir(opciones[idx].nombre);
+      else e.target.blur();
+    } else if (e.key === 'Escape') { setTexto(value || ''); setAbierto(false); if (!bordered) setEditing(false); }
+  };
+
+  if (!editing) {
+    return (
+      <div onClick={() => { setEditing(true); setAbierto(true); setIdx(0); }}
+        style={{ cursor: 'text', fontSize: 12, padding: '2px 2px', minHeight: 20, whiteSpace: 'nowrap' }}>
+        {value || <span style={{ color: '#dadce0' }}>—</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        autoFocus={!bordered || autoFocus}
+        value={texto}
+        onChange={e => { setTexto(e.target.value.toUpperCase()); setAbierto(true); setIdx(0); }}
+        onFocus={() => { setAbierto(true); setIdx(0); }}
+        onBlur={commitTexto}
+        onKeyDown={onKeyDown}
+        placeholder="Proveedor"
+        style={{ ...inputStyle, minWidth: 150 }}
+      />
+      {abierto && opciones.length > 0 && (
+        <div style={proveedorDropdown}>
+          {opciones.map((p, i) => (
+            <div key={p.id}
+              onMouseDown={e => { e.preventDefault(); elegir(p.nombre); }}
+              onMouseEnter={() => setIdx(i)}
+              style={{ padding: '6px 10px', cursor: 'pointer', borderBottom: '1px solid #f1f3f4', background: i === idx ? '#f0f4ff' : '#fff' }}>
+              <div style={{ fontSize: 12, color: '#202124' }}>{p.nombre}</div>
+              {p.actividad && <div style={{ fontSize: 10, color: '#9aa0a6', marginTop: 1 }}>{p.actividad}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const proveedorDropdown = { position: 'absolute', top: '100%', left: 0, minWidth: '100%', width: 'max-content', maxWidth: 300, background: '#fff', border: '1px solid #dadce0', borderRadius: 7, zIndex: 100, maxHeight: 240, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', marginTop: 2, textAlign: 'left' };
+
 function DatePicker({ value, onChange, style = {} }) {
   const ref = React.useRef(null);
   const fmt = (iso) => {
@@ -509,14 +592,16 @@ function MetricsView({ onClose }) {
   );
 }
 
-function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha, propietario, hasFiles }) {
+function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta, onOpenFicha, propietario, hasFiles, proveedores }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
 
+  // Se lee de vuelta la fila guardada: la base puede completar campos
+  // automáticamente (fecha_dcto se fija/borra con un trigger al cambiar ESTADO).
   const update = async (field, value) => {
     const updates = { [field]: value };
-    await supabase.from('pagos').update(updates).eq('id', pago.id);
-    onUpdate({ ...pago, ...updates });
+    const { data } = await supabase.from('pagos').update(updates).eq('id', pago.id).select().single();
+    onUpdate(data ? { ...pago, ...data } : { ...pago, ...updates });
   };
 
   const ant = antiguedad(pago.fecha);
@@ -543,6 +628,12 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
         </div>
       </td>
       <td style={s.tdCenter}><DatePicker value={pago.fecha} onChange={v => update('fecha', v)} /></td>
+      <td style={s.tdCenter} title="Se registra automáticamente al pasar el estado a D; se borra si cambia a otro estado">
+        {pago.estado === 'D'
+          ? <DatePicker value={pago.fecha_dcto} onChange={v => update('fecha_dcto', v || null)} />
+          : <span style={{ fontSize: 11, color: '#dadce0' }}>—</span>}
+      </td>
+      <td style={{ ...s.td, minWidth: 150 }}><ProveedorInput value={pago.proveedor} proveedores={proveedores} onCommit={v => update('proveedor', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.pagado_por} options={PAGADO_POR_OPTIONS} onChange={v => update('pagado_por', v)} /></td>
       <td style={s.tdCenter}><InlineSelect value={pago.tipo} options={TIPO_OPTIONS} onChange={v => update('tipo', v)} /></td>
       <td style={s.tdCenter}><MoneyInput value={pago.comision} onChange={v => update('comision', v)} /></td>
@@ -567,13 +658,13 @@ function PagoRow({ pago, onUpdate, onDelete, onOpenNotes, fichaPropiedadResuelta
   );
 }
 
-function NewPagoRow({ onSave, onCancel, maxPosition, carteraPropietarioMap }) {
-  const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), pagado_por: '', tipo: '', comision: '', fecha_caja: '', notas: '' });
+function NewPagoRow({ onSave, onCancel, maxPosition, carteraPropietarioMap, proveedores }) {
+  const [form, setForm] = useState({ propiedad: '', descripcion: '', cxc: '', estado: 'P', orden: '', fecha: today(), proveedor: '', pagado_por: '', tipo: '', comision: '', fecha_caja: '', notas: '' });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const handleSave = async () => {
     if (!form.propiedad.trim()) return;
     const newPosition = (maxPosition || 0) + 1;
-    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, notas: form.notas || null, position: newPosition }).select().single();
+    const { data } = await supabase.from('pagos').insert({ propiedad: form.propiedad.trim(), descripcion: form.descripcion || null, cxc: parseCLP(form.cxc), estado: form.estado || null, orden: form.orden || null, fecha: form.fecha || today(), proveedor: form.proveedor || null, pagado_por: form.pagado_por || null, tipo: form.tipo || null, comision: parseCLP(form.comision), fecha_caja: form.fecha_caja || null, notas: form.notas || null, position: newPosition }).select().single();
     if (data) onSave(data);
   };
   const previewCajaFuera = isCajaFuera({ estado: form.estado, fecha_caja: form.fecha_caja });
@@ -586,6 +677,8 @@ function NewPagoRow({ onSave, onCancel, maxPosition, carteraPropietarioMap }) {
       <td style={s.tdCenter}><MoneyInput value={form.cxc} onChange={v => set('cxc', v)} alwaysVisible /></td>
       <td style={s.tdCenter}><select value={form.estado} onChange={e => set('estado', e.target.value)} style={selectStyle}>{ESTADO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><DatePicker value={form.fecha} onChange={v => set('fecha', v)} style={{ border: '1px solid #dadce0', borderRadius: 5, padding: '3px 6px', background: '#fff' }} /></td>
+      <td style={{ ...s.tdCenter, fontSize: 11, color: '#9aa0a6' }} title="Se completa automáticamente al guardar si el estado es D">{form.estado === 'D' ? 'hoy' : '—'}</td>
+      <td style={s.td}><ProveedorInput value={form.proveedor} proveedores={proveedores} onCommit={v => set('proveedor', v || '')} bordered /></td>
       <td style={s.tdCenter}><select value={form.pagado_por} onChange={e => set('pagado_por', e.target.value)} style={selectStyle}><option value="">—</option>{PAGADO_POR_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><select value={form.tipo} onChange={e => set('tipo', e.target.value)} style={selectStyle}><option value="">—</option>{TIPO_OPTIONS.map(o => <option key={o}>{o}</option>)}</select></td>
       <td style={s.tdCenter}><MoneyInput value={form.comision} onChange={v => set('comision', v)} alwaysVisible /></td>
@@ -638,6 +731,14 @@ export default function PagosPage() {
   const [carteraPropietarioMap, setCarteraPropietarioMap] = useState(new Map());
   const [pagoIdsWithFiles, setPagoIdsWithFiles] = useState(new Set());
   const [fichaPropiedad, setFichaPropiedad] = useState(null);
+  const [proveedores, setProveedores] = useState([]);
+
+  // Proveedores registrados (módulo Proveedores) para la lista de la columna PROVEEDOR
+  useEffect(() => {
+    supabase.from('proveedores').select('id, nombre, actividad').then(({ data }) => {
+      setProveedores((data || []).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' })));
+    });
+  }, []);
   const { exportToExcel } = useExcelExport();
 
   // Mapa inverso: nomenclatura abreviada (la que guarda esta página, vía
@@ -683,7 +784,7 @@ export default function PagosPage() {
     }
     if (searchText.trim()) {
       const words = normalize(searchText.trim()).split(/\s+/).filter(Boolean);
-      const COLS = ['propiedad', 'descripcion', 'estado', 'pagado_por', 'tipo'];
+      const COLS = ['propiedad', 'descripcion', 'estado', 'proveedor', 'pagado_por', 'tipo'];
       for (const word of words) {
         const orParts = COLS.map(col => `${col}.ilike.%${word}%`);
         // PROPIETARIO no es una columna de la tabla pagos (se resuelve desde
@@ -801,6 +902,8 @@ export default function PagosPage() {
       { key: 'cxc',         label: 'CxC' },
       { key: 'estado',      label: 'Estado' },
       { key: 'fecha',       label: 'Fecha' },
+      { key: 'fecha_dcto',  label: 'Fecha Dcto' },
+      { key: 'proveedor',   label: 'Proveedor' },
       { key: 'pagado_por',  label: 'Pagado Por' },
       { key: 'tipo',        label: 'Tipo' },
       { key: 'comision',    label: 'Comisión' },
@@ -812,7 +915,7 @@ export default function PagosPage() {
   };
 
   const activeFilters = filterPor.length > 0 || filterEstado.length > 0 || filterAntiguedad || search.trim().length > 0;
-  const HEADERS = ['PROPIEDAD', 'PROPIETARIO', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
+  const HEADERS = ['PROPIEDAD', 'PROPIETARIO', 'DESCRIPCIÓN', 'CxC', 'ESTADO', 'FECHA', 'FECHA DCTO', 'PROVEEDOR', 'PAGADO POR', 'TIPO', 'COMISIÓN', 'FECHA CAJA', 'ANTIGÜEDAD', 'CAJA', ''];
 
   return (
     <div style={s.container}>
@@ -845,14 +948,15 @@ export default function PagosPage() {
           <table style={s.table}>
             <thead><tr>{HEADERS.map((h, i) => <th key={i} style={{ ...s.th, textAlign: i < 3 ? 'left' : 'center' }}>{h}</th>)}</tr></thead>
             <tbody>
-              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={maxPosition} carteraPropietarioMap={carteraPropietarioMap} />}
+              {addingNew && <NewPagoRow onSave={handleSaveNew} onCancel={() => setAddingNew(false)} maxPosition={maxPosition} carteraPropietarioMap={carteraPropietarioMap} proveedores={proveedores} />}
               {pagos.length === 0 && !addingNew
-                ? <tr><td colSpan={14} style={s.empty}>No hay pagos registrados.</td></tr>
+                ? <tr><td colSpan={16} style={s.empty}>No hay pagos registrados.</td></tr>
                 : pagos.map(p => (
                   <PagoRow key={p.id} pago={p} onUpdate={handleUpdate} onDelete={handleDelete} onOpenNotes={setNotesFor}
                     fichaPropiedadResuelta={carteraReverseMap.get(p.propiedad) || null}
                     onOpenFicha={setFichaPropiedad}
                     propietario={carteraPropietarioMap.get(p.propiedad) || ''}
+                    proveedores={proveedores}
                     hasFiles={pagoIdsWithFiles.has(String(p.id))} />
                 ))
               }
