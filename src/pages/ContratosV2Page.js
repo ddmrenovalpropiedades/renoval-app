@@ -1,11 +1,11 @@
 // ════════════════════════════════════════════════════════════════
-// Contratos v2 (beta) — solo admins
+// Plantilla de contrato — solo admins
 // Vista "Probar":    datos de prueba → vista previa en vivo + Word
 //                    (puede usar el borrador sin guardar).
 // Vista "Editar":    editor de la plantilla; "Guardar" crea una versión nueva.
 //                    El borrador se respalda en este navegador.
 // Vista "Historial": versiones guardadas; restaurar crea una versión nueva.
-// No toca el generador actual (ContratoGeneratorPage.js).
+// El generador de contratos (ContratoGeneratorPage.js) usa la versión vigente.
 // ════════════════════════════════════════════════════════════════
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, FileText, History, PenLine, AlertTriangle, Save, RotateCcw, Undo } from 'lucide-react';
@@ -160,7 +160,7 @@ export default function ContratosV2Page() {
     <div style={s.wrapper}>
       <div style={s.header}>
         <div>
-          <h1 style={s.title}>Contratos v2 <span style={s.beta}>BETA</span></h1>
+          <h1 style={s.title}>Plantilla de contrato</h1>
           <p style={s.subtitle}>
             {cargando ? 'Cargando plantilla…'
               : vigente ? `Plantilla vigente: ${vigente.nombre} — versión ${vigente.version}`
