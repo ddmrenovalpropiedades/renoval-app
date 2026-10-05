@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from 'react';
-import { FileText, Shield, FlaskConical } from 'lucide-react';
+import { FileText, Shield, PenLine } from 'lucide-react';
 import ContratoGeneratorPage from './ContratoGeneratorPage';
 import GarantiaPage from './GarantiaPage';
 import useEsAdminDocs from '../lib/plantillas/useEsAdminDocs';
@@ -10,7 +10,7 @@ const ContratosV2Page = lazy(() => import('./ContratosV2Page'));
 const TABS = [
   { id: 'contratos', label: 'Contratos de arriendo',   icon: FileText },
   { id: 'garantia',  label: 'Liquidación de garantía', icon: Shield },
-  { id: 'v2',        label: 'Contratos v2 (beta)',     icon: FlaskConical, soloAdmin: true },
+  { id: 'v2',        label: 'Plantilla de contrato',   icon: PenLine,      soloAdmin: true },
 ];
 
 export default function ContratosPage() {
